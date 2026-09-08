@@ -1,0 +1,8 @@
+# claude 101 notes? keep for now
+#./notes101.md
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
