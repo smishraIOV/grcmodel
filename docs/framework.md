@@ -38,6 +38,16 @@ named authority who can halt activity, independent of day-to-day management.
 For both Risk and Compliance, we list here what actually constrains decisions 
 — these will serve as input list for the quantitative model's constraint set.
 
+A note on how these three families differ once they reach the quantitative
+model. They are not interchangeable buckets of expected loss, and GRC spend does
+not act on them the same way: better underwriting shifts the **mean** of credit
+losses, security and operational controls contain the **severity** of an incident
+without preventing it, and a compliance programme reduces the **probability** of
+a breach without softening the penalty once one lands. Compliance is modelled as
+rare but severe, because what is at stake is licence to operate rather than a
+proportional fine — that asymmetry is what makes the family worth separating at
+all. See [`quant-model.md`](quant-model.md) §3.
+
 There will always be sources of financial, compliance, technology, and operational
 risks that we may not be able to model explicitly. We should think about a generic 
 way to handle these unknowns in the quantitative model.

@@ -1,81 +1,182 @@
-"""Monte Carlo scaffold (docs/quant-model.md section 5.2).
+"""Monte Carlo stage (docs/quant-model.md section 5.2).
 
-Samples batched risk shocks for the families named in docs/framework.md
-section 1 and feeds them into the same FirmValueModel / optimize_policy
-harness quant/static.py uses with a single two-state shock. The
-distributions below are placeholder-simple (not calibrated to anything
-real) -- the deliverable this pass is the architecture that lets a
-Monte Carlo policy search reuse the static model's code unchanged, not
-realistic risk parameters.
+Samples batched risk draws for the families in docs/framework.md section 1 and
+feeds them to the same FirmValueModel / optimize_policy harness quant/static.py
+uses with its four explicit states. The distributions are illustrative, not
+calibrated -- which is exactly why quant/threshold.py reports break-even
+parameter values rather than treating any single answer as a point estimate.
+
+Results are reported across several seeds with a confidence interval. The
+severity distributions are heavy-tailed, so a single-seed answer quoted to four
+decimals overstates what the sample supports (docs/critical-review.md F6).
 """
 
-from dataclasses import dataclass
+import statistics
+from dataclasses import dataclass, field
 
 import torch
 
 from quant.device import get_device
-from quant.model import FirmValueModel, RiskDraw, optimize_policy
+from quant.model import (
+    FirmValueModel,
+    GrcAlphas,
+    GrcBudgets,
+    PolicyResult,
+    RiskDraw,
+    optimize_policy,
+)
+from quant.static import (
+    DISTRESS_REFERENCE,
+    FINANCING_CONVEXITY,
+    INITIAL_EQUITY,
+    PRODUCTION_CURVATURE,
+    PRODUCTION_SCALE,
+)
+
+DEFAULT_SEEDS = (0, 1, 2, 3, 4)
 
 
 @dataclass
 class RiskSamplerConfig:
-    """Placeholder distribution parameters for each risk family. Credit and
-    market risk are modeled as a continuous loss; tech-infra-driven
-    incidents and compliance breaches are modeled as rare (Bernoulli-gated)
-    but severe when they occur, per docs/framework.md section 1's
-    traditional-vs-crypto-native split.
+    """Illustrative distribution parameters, chosen to match the expected loss
+    of quant/static.py's four-state shock (4.0 credit + 3.5 operational +
+    1.5 compliance) so the two stages are comparable.
+
+    Credit is a continuous loss. Operational incidents are rare but heavy-
+    tailed when they land. A compliance breach is rarer still and carries a
+    fixed severity -- losing a licence costs what it costs.
     """
 
     credit_loss_mean: float = 4.0
-    op_incident_probability: float = 0.15
-    op_incident_severity_mean: float = 20.0
-    compliance_breach_probability: float = 0.05
-    compliance_breach_severity_mean: float = 15.0
+    op_probability: float = 0.25
+    op_severity_mean: float = 14.0
+    compliance_probability: float = 0.05
+    compliance_severity: float = 30.0
 
 
-def sample_risk_draw(n_paths: int, config: RiskSamplerConfig, device: torch.device) -> RiskDraw:
-    credit_loss = torch.distributions.Exponential(1.0 / config.credit_loss_mean).sample((n_paths,)).to(device)
+def sample_risk_draw(
+    n_paths: int, config: RiskSamplerConfig, generator: torch.Generator
+) -> RiskDraw:
+    def exponential(mean: float) -> torch.Tensor:
+        uniform = torch.rand(n_paths, generator=generator, dtype=torch.float64)
+        return -mean * torch.log1p(-uniform)
 
-    op_incident_occurs = torch.bernoulli(torch.full((n_paths,), config.op_incident_probability)).to(device)
-    op_incident_severity = torch.distributions.Exponential(1.0 / config.op_incident_severity_mean).sample(
-        (n_paths,)
-    ).to(device)
-    op_incident_loss = op_incident_occurs * op_incident_severity
-
-    compliance_breach_occurs = torch.bernoulli(torch.full((n_paths,), config.compliance_breach_probability)).to(
-        device
-    )
-    compliance_breach_severity = torch.distributions.Exponential(
-        1.0 / config.compliance_breach_severity_mean
-    ).sample((n_paths,)).to(device)
-    compliance_breach_loss = compliance_breach_occurs * compliance_breach_severity
+    def bernoulli(probability: float) -> torch.Tensor:
+        return (
+            torch.rand(n_paths, generator=generator, dtype=torch.float64) < probability
+        ).to(torch.float64)
 
     return RiskDraw(
-        credit_loss=credit_loss,
-        op_incident_loss=op_incident_loss,
-        compliance_breach_loss=compliance_breach_loss,
+        credit_loss=exponential(config.credit_loss_mean),
+        op_occurs=bernoulli(config.op_probability),
+        op_severity=exponential(config.op_severity_mean),
+        compliance_occurs=bernoulli(config.compliance_probability),
+        compliance_severity=torch.full((n_paths,), config.compliance_severity, dtype=torch.float64),
+        base_weight=torch.ones(n_paths, dtype=torch.float64),
+        compliance_base_probability=config.compliance_probability,
     )
+
+
+def build_model(**overrides) -> FirmValueModel:
+    params = dict(
+        initial_equity=INITIAL_EQUITY,
+        financing_convexity=FINANCING_CONVEXITY,
+        distress_reference=DISTRESS_REFERENCE,
+        production_scale=PRODUCTION_SCALE,
+        production_curvature=PRODUCTION_CURVATURE,
+        alphas=GrcAlphas(),
+    )
+    params.update(overrides)
+    return FirmValueModel(**params)
 
 
 def run_policy_search(
     model: FirmValueModel,
-    n_paths: int = 4096,
+    n_paths: int = 8192,
     config: RiskSamplerConfig | None = None,
-    seed: int | None = 0,
-) -> tuple[float, float]:
-    """Same optimize_policy harness quant/static.py uses, but with a large
-    sampled batch of risk draws instead of a fixed two-state shock."""
+    seed: int = 0,
+    n_steps: int = 3000,
+) -> PolicyResult:
+    """One sample-average-approximation solve: draw a batch, optimize against it."""
+    generator = torch.Generator().manual_seed(seed)
+    draw = sample_risk_draw(n_paths, config or RiskSamplerConfig(), generator)
+    return optimize_policy(model, draw, n_steps=n_steps, device=get_device())
+
+
+@dataclass
+class SeedStudy:
+    """Policy results across independent samples, so the sampling error in the
+    answer is visible rather than hidden behind a fixed default seed."""
+
+    results: list[PolicyResult] = field(default_factory=list)
+
+    def interval(self, attribute: str) -> tuple[float, float]:
+        """Mean and 95% confidence half-width for one reported quantity."""
+        values = [getattr(result, attribute) for result in self.results]
+        mean = statistics.fmean(values)
+        if len(values) < 2:
+            return mean, 0.0
+        return mean, 1.96 * statistics.stdev(values) / len(values) ** 0.5
+
+
+def run_seed_study(
+    model: FirmValueModel,
+    n_paths: int = 8192,
+    seeds: tuple[int, ...] = DEFAULT_SEEDS,
+    config: RiskSamplerConfig | None = None,
+    n_steps: int = 3000,
+) -> SeedStudy:
+    return SeedStudy(
+        [
+            run_policy_search(model, n_paths=n_paths, config=config, seed=seed, n_steps=n_steps)
+            for seed in seeds
+        ]
+    )
+
+
+def loss_quantiles(
+    draw: RiskDraw, result: PolicyResult, alphas: GrcAlphas, quantiles: tuple[float, ...]
+) -> list[float]:
+    """Distribution of mitigated loss at the chosen policy -- the tail that the
+    convex financing premium actually prices."""
+    budgets = GrcBudgets(
+        credit=torch.tensor(result.credit, dtype=torch.float64),
+        operational=torch.tensor(result.operational, dtype=torch.float64),
+        compliance=torch.tensor(result.compliance, dtype=torch.float64),
+    )
+    losses = draw.mitigated_loss(budgets, alphas)
+    return [torch.quantile(losses, q).item() for q in quantiles]
+
+
+def main() -> None:
     device = get_device()
-    if seed is not None:
-        torch.manual_seed(seed)
-    risk_draw = sample_risk_draw(n_paths, config or RiskSamplerConfig(), device)
-    return optimize_policy(model, risk_draw, device=device)
+    print(f"device: {device}")
+    n_paths = 8192
+    model = build_model()
+    study = run_seed_study(model, n_paths=n_paths)
+
+    print(f"\nMonte Carlo policy search: {n_paths} paths x {len(DEFAULT_SEEDS)} seeds")
+    print(f"{'quantity':>22} | {'mean':>9} | {'95% CI':>13}")
+    for label, attribute in (
+        ("credit GRC", "credit"),
+        ("operational GRC", "operational"),
+        ("compliance GRC", "compliance"),
+        ("total GRC", "total"),
+        ("firm value", "value"),
+        ("constrained fraction", "constrained_fraction"),
+    ):
+        mean, half_width = study.interval(attribute)
+        print(f"{label:>22} | {mean:>9.3f} | +/- {half_width:>9.3f}")
+
+    generator = torch.Generator().manual_seed(DEFAULT_SEEDS[0])
+    draw = sample_risk_draw(n_paths, RiskSamplerConfig(), generator)
+    quantiles = (0.5, 0.9, 0.99)
+    values = loss_quantiles(draw, study.results[0], model.alphas, quantiles)
+    print("\nMitigated loss distribution at the chosen policy (seed 0)")
+    print("  " + "  ".join(f"p{int(q * 100)}={v:.2f}" for q, v in zip(quantiles, values)))
+    print("\nPrecision note: budgets are reported to 3 decimals because the")
+    print("confidence interval above is wider than the 4th.")
 
 
 if __name__ == "__main__":
-    device = get_device()
-    print(f"device: {device}")
-    model = FirmValueModel(initial_equity=3.0, financing_convexity=2.0, grc_alpha=0.3)
-    g_star, value_star = run_policy_search(model)
-    print(f"optimal g: {g_star:.4f}")
-    print(f"expected firm value: {value_star:.4f}")
+    main()

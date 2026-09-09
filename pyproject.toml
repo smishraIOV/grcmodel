@@ -1,5 +1,5 @@
 [project]
-name = "claude-code-101"
+name = "GRCmodel"
 version = "0.1.0"
 description = "GRC framework and quantitative model"
 readme = "readme.md"
@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "numpy>=2.5.3",
     "torch>=2.14.0",
 ]
 

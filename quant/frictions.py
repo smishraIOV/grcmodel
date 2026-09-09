@@ -1,34 +1,51 @@
-"""Cost/mitigation functions from docs/quant-model.md section 3.
+"""Cost, payoff and mitigation functions from docs/quant-model.md section 3.
 
-All functions are torch-differentiable so they can sit inside an
-autograd optimization loop (quant/model.py's optimize_policy).
+All functions are torch-differentiable so they can sit inside an autograd
+optimization loop (quant/model.py's optimize_policy).
 """
 
 import torch
 
 
-def financing_cost(shortfall: torch.Tensor, convexity: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
-    """Convex cost of raising external financing to cover a capital shortfall.
+def financing_cost(
+    shortfall: torch.Tensor,
+    convexity: float,
+    reference: float,
+    scale: float = 1.0,
+) -> torch.Tensor:
+    """Convex cost of raising external finance to cover a shortfall.
 
-    The Froot-Stein term: cost rises faster than linearly in the shortfall
-    as `convexity` grows past 1.0. `shortfall` should already be clamped to
-    >= 0 (no cost when there's no shortfall).
+    `reference` (K in the docs) carries money units, so `shortfall / reference`
+    is dimensionless and the result is money. The earlier form -- a bare
+    `shortfall ** convexity` -- subtracted money^convexity from money, which
+    made the model's answer depend on whether the firm was denominated in
+    dollars or cents (docs/critical-review.md F1). With K present, `convexity`
+    is a pure shape parameter.
+
+    `shortfall` must already be clamped to >= 0. `convexity` must be >= 1;
+    below 1 the derivative at shortfall = 0 is unbounded.
     """
-    return scale * shortfall**convexity
+    return scale * reference * (shortfall / reference) ** convexity
 
 
-def grc_mitigation(g: torch.Tensor, alpha: float = 1.0) -> torch.Tensor:
-    """Fraction of risk-shock losses avoided by GRC investment level `g`.
+def production(investment: torch.Tensor, scale: float, curvature: float) -> torch.Tensor:
+    """Concave payoff from deploying capital: F(I) = A*S*(1 - exp(-I/S)).
 
-    Diminishing returns: mitigation -> 1 as g grows, but each extra dollar
-    of `g` buys less additional mitigation than the last (per
-    docs/quant-model.md section 3's GRC-investment-cost note).
+    F'(0) = A, so investing is worthwhile at the margin when A > 1, and the
+    unconstrained optimum is I* = S*ln(A). This is the channel that makes risk
+    management value-adding rather than merely loss-avoiding: when a bad draw
+    leaves internal wealth below I*, the firm must either underinvest or pay
+    the convex financing premium above.
     """
-    return 1.0 - torch.exp(-alpha * g)
+    return scale * curvature * (1.0 - torch.exp(-investment / curvature))
 
 
-def grc_investment_cost(g: torch.Tensor) -> torch.Tensor:
-    """Direct cost of GRC spend itself. Linear (dollar-for-dollar spend);
-    the diminishing returns live in grc_mitigation's effect, not this cost.
+def exponential_mitigation(quantity: torch.Tensor, g: torch.Tensor, alpha: float) -> torch.Tensor:
+    """Shrink `quantity` by exp(-alpha * g) for GRC spend `g`.
+
+    Diminishing returns: each additional unit of spend removes less than the
+    last. Which moment of which risk family this is applied to -- a mean, a
+    severity, or an occurrence probability -- is quant/model.py's decision, not
+    this function's.
     """
-    return g
+    return quantity * torch.exp(-alpha * g)

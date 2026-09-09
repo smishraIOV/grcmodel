@@ -1,101 +1,212 @@
-# Quantitative GRC model — a tractable first formulation
+# Quantitative GRC model — formulation and current implementation
 
-This document turns `readme.md`'s aspirational goal into an explicit formulation,
-and recommends a first tractable implementation. It builds directly on the choices made in
-[`framework.md`](framework.md) — in particular, the firm-value definition in
-its §3.
+This document turns `readme.md`'s aspirational goal into an explicit formulation
+and records what is actually built. It builds on the choices in
+[`framework.md`](framework.md) — in particular the firm-value definition in its §3.
 
 ## 1. State variables
 
-- Capital / equity, `E`
-- Deposit volume, `D`
-- Portfolio composition and risk metrics of deployed assets (e.g. expected
-  loss, volatility, concentration)
-- Liquidity buffer, `L`
-- Operational-risk indicator (incident frequency/severity estimate, driven
-  by the tech-infra overlay in `framework.md` §2)
-- Compliance-risk score (proximity to breaching a binding regime from
-  `framework.md` §1)
+| state | symbol | implemented? |
+|---|---|---|
+| Capital / equity | $E$ | **yes** — `FirmValueModel.initial_equity` |
+| Internal wealth after the risk draw | $w$ | **yes** — derived, `FirmValueModel.wealth` |
+| Deposit volume | $D$ | no |
+| Portfolio composition / risk metrics | — | no |
+| Liquidity buffer | $L_{\text{buf}}$ | no |
+| Operational-risk indicator | — | partial — enters as a risk-family exposure, not as evolving state |
+| Compliance-risk score | — | partial — enters as a breach probability, not as evolving state |
+
+The model is a two-period problem, so nothing here evolves over time yet. The
+unimplemented rows are the honest gap between this section and the code.
 
 ## 2. Controls
 
-- GRC investment levels: risk staffing/tooling spend, compliance spend,
-  security/tech-infra investment
-- Capital allocation across lending/investment strategies
-- Target liquidity buffer
-- Deposit pricing / redemption-term incentives
+| control | symbol | implemented? |
+|---|---|---|
+| GRC investment, split by risk family | $g_c,\ g_o,\ g_k$ | **yes** — `GrcBudgets` |
+| Capital allocation to investment, state-contingent | $I$ | **yes** — per-path, chosen after the shock |
+| Target liquidity buffer | — | no |
+| Deposit pricing / redemption-term incentives | — | no |
 
-## 3. Frictions and costs — where Froot-Stein plugs in
+## 3. Frictions, costs and the investment channel
 
-- **Convex cost of external financing** under a capital shortfall — the
-  core Froot-Stein term: as `E` falls, the marginal cost of raising more
-  capital rises faster than linearly.
-- **Cost of regulatory penalties** — triggered by breaching a compliance
-  constraint from `framework.md` §1.
-- **Cost of tech/operational incidents** — losses and downside from the
-  crypto-native risk column in `framework.md` §1 (hacks, oracle failures,
-  depegs), scaled by the operational-risk state variable.
-- **Cost of GRC investment itself** — assumed to have diminishing returns
-  (each additional dollar of GRC spend reduces expected distress cost by
-  less than the last).
+**Convex cost of external finance.** With internal wealth $w$ and desired
+investment $I$, the firm raises $e = \max(0,\ I - w)$ externally at
+
+$$
+P(e) = \sigma\, K \left( \frac{e}{K} \right)^{\gamma}
+$$
+
+where $\gamma$ is the financing convexity and $\sigma$ a switch that turns the
+friction off ($\sigma = 0$) or on ($\sigma = 1$) — which is how the Froot-Stein
+premium in §6 is measured.
+
+$K$ is a reference distress level carrying money units. It is not decoration:
+without it the expression is $e^{\gamma}$, which subtracts
+$\text{money}^{\gamma}$ from money and makes the model's answer depend on whether
+the firm is denominated in dollars or cents.
+
+**The investment opportunity.** Deployed capital returns
+
+$$
+F(I) = A\, S \left( 1 - e^{-I/S} \right)
+$$
+
+concave, with unconstrained optimum $I^{\star} = S \ln A$. This is the term that
+makes risk management *value-adding* rather than merely loss-avoiding. Froot,
+Scharfstein & Stein (1993) requires three ingredients — costly external finance,
+an investment opportunity whose funding depends on internal wealth, and a
+risk-management instrument. A model with only the first and third can say
+"losses are expensive, reduce them"; it cannot support `readme.md`'s claim that
+GRC *increases firm value*.
+
+**GRC acts on the moment that each risk family actually moves.** All three
+families were previously summed and mitigated by one uniform factor, which made
+`framework.md`'s taxonomy mathematically inert.
+
+| family | GRC reduces | why |
+|---|---|---|
+| credit | the **mean** loss | better underwriting shifts the whole distribution |
+| operational | the **severity** | controls contain an incident; they do not prevent it |
+| compliance | the **probability** | a programme prevents breaches; it does not soften the penalty |
+
+Mitigation is $e^{-\alpha g}$ in all three cases — diminishing returns, so each
+additional unit of spend removes less than the last.
+
+**Reducing a probability is not differentiable through a sample.** The
+compliance channel cannot work by shrinking a drawn Bernoulli indicator.
+Indicators are drawn once at a base probability $p_0$, and each path is reweighted
+by the likelihood ratio
+
+$$
+\frac{p(g_k)}{p_0} \ \text{ on breach paths,} \qquad
+\frac{1 - p(g_k)}{1 - p_0} \ \text{ otherwise,}
+\qquad p(g_k) = p_0\, e^{-\alpha_k g_k}
+$$
+
+This is unbiased, differentiable in $g_k$, and keeps breaches discrete — which
+matters, because it is the spread those breaches create that the convex premium
+prices.
 
 ## 4. Objective
 
-Maximize the firm-value definition fixed in `framework.md` §3 — expected PV
-of net cash flows minus expected distress/friction costs above — subject to:
-- Solvency (`E > 0` under the modeled loss distribution)
-- Liquidity (buffer `L` sufficient against a modeled redemption-run
-  scenario)
-- Regulatory constraints (the binding regimes named in `framework.md` §1)
+At $t_0$ the firm chooses GRC budgets $g_c, g_o, g_k$. At $t_1$ it observes the
+risk draw, leaving internal wealth
 
-This is the honest statement of the "full optimal control problem" the
-readme already flags as impractical — stated explicitly here so later
-simplifications are visible tradeoffs, not silent ones.
+$$
+w = E - \sum_{f} g_f - L(g)
+$$
 
-## 5. A tractable path to a first model
+and then chooses investment $I$, funding $e = \max(0,\ I - w)$ externally. The
+problem is
 
-Solving §4 exactly is out of scope. Recommended sequence, each step
-producing something usable before moving to the next:
+$$
+\max_{g,\ I(\cdot)} \ \mathbb{E}\Big[\, w - I + F(I) - P\big(\max(0,\ I - w)\big) \,\Big]
+$$
 
-1. **Static two-period Froot-Stein model.** Collapse the state to just `E`
-   and one risk shock; derive the qualitative result that optimal GRC
-   investment rises with the convexity of distress costs. Purpose: sanity
-   check that the cost/objective shapes chosen in §3–4 actually produce the
-   Froot-Stein intuition before building anything more elaborate.
+The expectation is probability-weighted over paths, with the weights themselves
+depending on $g_k$ per §3.
 
-2. **Monte Carlo simulation over risk events.** Simulate draws of 
-* investment opportunities, losses, tech/operational incidents, and compliance breaches; 
-   compare the resulting expected-value / loss-distribution across a few candidate GRC
-   investment policies.
+Constraints from the original formulation — solvency, a liquidity buffer against
+a modelled run, and regulatory limits — are **not** imposed as hard constraints.
+Distress enters through the convex financing cost instead. Adding them is future
+work, not something the current code approximates.
 
-3. **MDP / value iteration (further out).** Only worth pursuing once the
-   state space from §1 has been scoped down small enough to be numerically
-   tractable — flagged here as a future option, not a near-term step.
+## 5. Staged path
 
-## 6. First implementable milestone
+1. **Static model** — a small explicitly-weighted state space. Built:
+   `quant/static.py`.
+2. **Monte Carlo** — the same model against a large sampled batch. Built:
+   `quant/simulate.py`.
+3. **MDP / value iteration** — not started, and deliberately not next. The state
+   space is not the current bottleneck; parameter provenance is.
 
-A small Python prototype implementing step 5.1/5.2 above: the static
-Froot-Stein tradeoff, plus a basic Monte Carlo loop over the three risk
-categories in §3.
+## 6. Results
 
-**Status: in progress.** Implemented in PyTorch (autograd + Adam), with
-Apple Silicon (MPS) as the default device, in the `quant/` package:
-- `quant/model.py` — the shared `FirmValueModel` (§3–4's cost/objective
-  terms) and `optimize_policy()` autograd loop, used by both stages below.
-- `quant/static.py` (§5.1) 
-  * a two-state stochastic shock (needed for the
-  financing-cost convexity to actually bite via Jensen's inequality
-  * with a single deterministic risk shock, the optimal GRC investment comes out independent of financing-cost convexity 
-  * mathematically, the Froot-Stein effect is a Jensen's-inequality result that requires genuine uncertainty, not just a convex cost applied to a fixed number. 
-  * Claude switched the static model's shock to a two-state stochastic draw (reusing the batch-mean path already built for Monte Carlo), which restored the expected result: optimal `g` rises monotonically from 2.92 to 4.32 as convexity goes from 1.0 to 4.0.
-  * Full derivation and debugging trace: [`static-model-debug-notes.md`](static-model-debug-notes.md).
-  * Run: `uv run python scripts/run_static_model.py`.
-- `quant/simulate.py` (§5.2) — placeholder risk-shock samplers per
-  `framework.md` §1's taxonomy, feeding the same `FirmValueModel` /
-  `optimize_policy()` with a large batch instead of two states. Run:
-  `uv run python -m quant.simulate`.
-- `tests/test_static_model.py` — checks the qualitative Froot-Stein result
-  (optimal GRC investment rises with convexity) holds.
+Run `uv run python scripts/run_static_model.py`.
 
-Not yet done: calibrating `quant/simulate.py`'s distributions to anything
-real, and §5.3 (MDP).
+### The Froot-Stein premium
+
+The same firm solved twice, with the financing friction off and on. The gap is
+GRC spend that exists *only* because external finance is costly.
+
+| budget | no friction | closed form | with friction | premium |
+|---|---|---|---|---|
+| credit | 0.6077 | 0.6077 | 0.9932 | 0.3854 |
+| operational | 0.1626 | 0.1626 | 0.8935 | 0.7309 |
+| compliance | 0.0001 | 0.0000 | 0.6686 | 0.6685 |
+| **total** | **0.7705** | **0.7704** | **2.5553** | **1.7848** |
+
+Firm value 16.0768 (no friction) → 9.8342 (friction). The constraint binds on
+52.0% of probability mass.
+
+The "closed form" column is the analytic risk-neutral optimum
+
+$$
+g_f^{\star} = \max\left( 0,\ \frac{\ln(\alpha_f X_f)}{\alpha_f} \right)
+$$
+
+for family $f$ with exposure $X_f$, which the frictionless solve reproduces to
+four decimals — a check that the optimizer and the objective agree with analysis.
+
+The compliance row is the sharpest case: a firm facing costless external finance
+would run **no compliance programme at all** at these parameters, because a unit
+of spend buys back less than a unit of expected loss. The same firm facing convex
+financing costs spends 0.67. The entire programme is Froot-Stein premium.
+
+### Mean-preserving spread
+
+The mechanism itself. Credit loss mean held at 4.0 while its spread widens:
+
+| spread | credit GRC | total GRC | firm value |
+|---|---|---|---|
+| 0.00 | 0.6077 | 2.1172 | 10.4183 |
+| 0.50 | 0.6938 | 2.2618 | 10.2836 |
+| 1.00 | 0.7891 | 2.3652 | 10.1387 |
+| 1.50 | 0.8890 | 2.4572 | 9.9885 |
+| 2.00 | 0.9932 | 2.5553 | 9.8342 |
+
+At zero spread, credit GRC sits exactly on the risk-neutral benchmark (0.6077):
+with a deterministic credit loss there is nothing for the convex premium to act
+on through that channel. Every unit above it is bought by spread alone.
+
+### Monte Carlo
+
+`uv run python -m quant.simulate` — 8192 paths × 5 seeds, reported with a 95%
+confidence interval because the severity distributions are heavy-tailed and a
+single-seed answer quoted to four decimals overstates what the sample supports.
+
+### Break-even analysis
+
+`uv run python -m quant.threshold`. Nothing here can calibrate $\alpha$, so the
+decision-useful output is a threshold rather than a point estimate:
+
+| family | exposure $X_f$ | risk-neutral break-even $\alpha$ | break-even with friction |
+|---|---|---|---|
+| credit | 4.00 | 0.250 | 0.227 |
+| operational | 3.50 | 0.286 | 0.231 |
+| compliance | 1.50 | 0.667 | 0.265 |
+
+The risk-neutral column is $\alpha = 1 / X_f$, the point below which a unit of
+spend buys back less than a unit of expected loss.
+
+Read the compliance row as: *this programme pays provided you believe a unit of
+spend removes at least 26.5% of exposure, even though pure expected-loss
+reduction would demand 66.7%.* The 0.401 gap is the Froot-Stein premium expressed
+as a threshold, and it is largest for compliance because that is where the tail
+sits.
+
+## 7. Superseded result
+
+An earlier version reported that optimal GRC investment rises with financing-cost
+convexity (2.92 → 4.32). That result did not survive dimensional correction of the
+cost function and a parameterization that is not permanently insolvent; see
+[`critical-review.md`](critical-review.md) F1–F2. The convexity comparative static
+is regime-dependent and is no longer claimed.
+
+## 8. Not done
+
+- Calibrating any distribution or $\alpha$ to real data. Every parameter is illustrative.
+- The unimplemented state variables and controls in §1–§2.
+- Hard solvency / liquidity / regulatory constraints (§4).
+- §5.3, the MDP.

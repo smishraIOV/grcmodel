@@ -9,12 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from quant.static import run_convexity_sweep
-from quant.device import get_device
+from quant.static import main
 
 if __name__ == "__main__":
-    device = get_device()
-    print(f"device: {device}")
-    print(f"{'convexity':>10} | {'optimal g':>10} | {'firm value':>10}")
-    for convexity, g_star, value_star in run_convexity_sweep():
-        print(f"{convexity:>10.2f} | {g_star:>10.4f} | {value_star:>10.4f}")
+    main()
