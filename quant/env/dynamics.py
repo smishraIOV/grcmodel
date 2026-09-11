@@ -51,24 +51,48 @@ class StandardDynamics:
     profile: NumericsProfile
     financing_scale: float = 1.0
     equity_floor: float = -float("inf")
+    # Fraction of the GRC stock that decays each period. 1.0 makes the stock
+    # equal the flow, which is the static model: spend buys one period of
+    # protection and nothing more.
+    grc_depreciation: float = 1.0
     differentiable: bool = True
+
+    def grc_stock(self, state: FirmState, action: FirmAction) -> torch.Tensor:
+        """Next period's GRC capital: K' = (1 - delta) K + g.
+
+        Mitigation is applied to this *post-spend* stock, so a control bought
+        this quarter protects this quarter. The alternative -- mitigating on
+        the opening stock, so spend takes a period to bite -- is arguably more
+        realistic for a compliance programme and would add an install lag, but
+        it costs the exact reduction to the static model at delta = 1 and buys
+        an unmeasurable parameter. Persistence is where the option value comes
+        from, not delay: at delta < 1 a quarter's spend keeps working in later
+        quarters without being respent, which is what makes pre-emptive GRC
+        worth more than its one-period loss reduction and what makes this more
+        than the static problem repeated.
+
+        alpha applies to the stock, not the flow, which keeps its units
+        identical to the static model's.
+        """
+        return (1.0 - self.grc_depreciation) * state.grc_stock + action.grc
 
     # -- sub-steps -------------------------------------------------------
 
-    def mitigated_loss(self, grc: torch.Tensor, shock: Shock) -> torch.Tensor:
+    def mitigated_loss(self, stock: torch.Tensor, shock: Shock) -> torch.Tensor:
         """Loss after GRC, each family acting on its own moment.
 
-        Compliance is absent here on purpose: its budget acts through the path
-        weight, by making a breach rarer rather than cheaper.
+        Takes the GRC *stock*, not the period's spend. Compliance is absent
+        here on purpose: its budget acts through the path weight, by making a
+        breach rarer rather than cheaper.
         """
-        credit = exponential_mitigation(shock.credit_loss, grc[..., 0], self.alphas.credit)
+        credit = exponential_mitigation(shock.credit_loss, stock[..., 0], self.alphas.credit)
         operational = shock.op_occurs * exponential_mitigation(
-            shock.op_severity, grc[..., 1], self.alphas.operational
+            shock.op_severity, stock[..., 1], self.alphas.operational
         )
         compliance = shock.compliance_occurs * shock.compliance_severity
         return credit + operational + compliance
 
-    def path_weight(self, grc: torch.Tensor, shock: Shock) -> torch.Tensor:
+    def path_weight(self, stock: torch.Tensor, shock: Shock) -> torch.Tensor:
         """Likelihood ratio for the compliance budget's effect on breach odds.
 
         A breach is discrete, so the budget cannot act by shrinking a sampled
@@ -84,9 +108,17 @@ class StandardDynamics:
         """
         p0 = shock.compliance_base_probability
         p = exponential_mitigation(
-            self.profile.tensor(p0), grc[..., 2], self.alphas.compliance
+            self.profile.tensor(p0), stock[..., 2], self.alphas.compliance
         )
-        ratio = torch.where(shock.compliance_occurs > 0.5, p / p0, (1.0 - p) / (1.0 - p0))
+        # torch.where evaluates both branches, so a bare p / p0 produces a NaN
+        # gradient at p0 = 0 even though that branch is never selected -- and
+        # p0 = 0 is a config someone reaches for to switch the channel off.
+        # Flooring the denominator keeps the unselected branch finite; where it
+        # bites there are no breach paths for it to apply to.
+        safe_p0 = max(p0, torch.finfo(self.profile.dtype).tiny)
+        ratio = torch.where(
+            shock.compliance_occurs > 0.5, p / safe_p0, (1.0 - p) / (1.0 - p0)
+        )
         return shock.base_weight * ratio
 
     def financing(self, wealth: torch.Tensor, investment: torch.Tensor):
@@ -103,7 +135,8 @@ class StandardDynamics:
 
     def step(self, state: FirmState, action: FirmAction, shock: Shock) -> StepResult:
         spend = action.total_grc()
-        loss = self.mitigated_loss(action.grc, shock)
+        stock = self.grc_stock(state, action)
+        loss = self.mitigated_loss(stock, shock)
         wealth = state.equity - spend - loss
         external, premium = self.financing(wealth, action.investment)
         produced = production(
@@ -112,7 +145,7 @@ class StandardDynamics:
 
         equity = wealth - action.investment + produced - premium
         survives = equity >= self.equity_floor
-        moved = state.advance(equity=equity, grc_stock=action.grc, alive=state.alive & survives)
+        moved = state.advance(equity=equity, grc_stock=stock, alive=state.alive & survives)
         nxt = moved.freeze_dead(state)
 
         return StepResult(
@@ -121,7 +154,7 @@ class StandardDynamics:
             # in equity and realized by the terminal value. Stage 2 splits out
             # a dividend once there is a discount rate to trade it off against.
             reward=torch.zeros_like(equity),
-            weight=self.path_weight(action.grc, shock),
+            weight=self.path_weight(stock, shock),
             terminated=state.alive & ~survives,
             info={
                 "loss": loss,
@@ -130,5 +163,7 @@ class StandardDynamics:
                 "premium": premium,
                 "production": produced,
                 "grc_spend": spend,
+                "grc_flow": action.grc,
+                "grc_stock": stock,
             },
         )

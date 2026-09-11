@@ -29,7 +29,12 @@ from quant.model import GrcBudgets
 from quant.numerics import REFERENCE
 from quant.params import DEFAULTS
 from quant.solvers.analytic import family_exposures, frictionless_benchmark
-from quant.solvers.pathwise import perfect_information_bound
+from quant.solvers.neural import train_pathwise
+from quant.solvers.pathwise import (
+    PerPathPolicy,
+    optimize_constant,
+    perfect_information_bound,
+)
 from quant.static import build_model, build_shock
 
 FAMILIES = ("credit", "operational", "compliance")
@@ -252,7 +257,9 @@ def test_frictionless_horizon_one_recovers_the_closed_form():
     shock = FourStateSampler(DEFAULTS.shock)(crn.at(0), REFERENCE)
     benchmark = frictionless_benchmark(shock, DEFAULTS.alphas)
 
-    _, result = perfect_information_bound(env, crn, n_steps=20000)
+    # shared_budgets: GRC is committed before the quarter's shock is seen,
+    # which is the timing the closed form is derived under.
+    _, result = perfect_information_bound(env, crn, n_steps=20000, shared_budgets=True)
 
     for index, family in enumerate(FAMILIES):
         expected = getattr(benchmark, family)
@@ -297,8 +304,10 @@ def test_reproduces_the_published_froot_stein_premium():
     run that had one more decimal of precision than it had converged.
     """
     crn = CommonRandomNumbers(0, 1, 4, REFERENCE)
-    off = perfect_information_bound(four_state_env(0.0), crn, n_steps=20000)[1]
-    on = perfect_information_bound(four_state_env(1.0), crn, n_steps=20000)[1]
+    solve = lambda scale: perfect_information_bound(
+        four_state_env(scale), crn, n_steps=20000, shared_budgets=True
+    )[1]
+    off, on = solve(0.0), solve(1.0)
 
     assert off.grc[0] == pytest.approx(0.6077, abs=1e-3)
     assert off.grc[1] == pytest.approx(0.1626, abs=1e-3)
@@ -313,3 +322,157 @@ def test_reproduces_the_published_froot_stein_premium():
     # The regime check the project requires before trusting any comparative
     # static: degenerate at 0 or 1 (docs/static-model-debug-notes.md section 6).
     assert 0.05 < on.constrained_fraction < 0.95
+
+
+# -- Stage 2: horizon, discounting, GRC as a stock -------------------------
+
+
+def test_rates_round_trip_to_their_annual_values():
+    """Per-period discount and depreciation are derived from annual rates, so
+    compounding them back over a year must return the annual figure. A
+    plausible-looking but wrong conversion here would rescale every
+    intertemporal result silently."""
+    firm = DEFAULTS.firm
+    assert firm.discount() ** firm.periods_per_year == pytest.approx(
+        1.0 / (1.0 + firm.annual_discount_rate), rel=1e-12
+    )
+    survives = (1.0 - firm.grc_depreciation()) ** firm.periods_per_year
+    assert survives == pytest.approx(1.0 - firm.annual_grc_depreciation, rel=1e-12)
+
+
+def test_grc_stock_follows_its_law_of_motion():
+    """K' = (1 - delta) K + g, compounded over the horizon.
+
+    The single most important addition of this stage: a stock is what makes
+    spend persist, and persistence is what gives pre-emptive GRC option value
+    rather than making it a repeated one-period expense.
+    """
+    delta, spend = 0.2, 0.5
+    env = FirmEnv(
+        EnvConfig(profile=REFERENCE, horizon=4, grc_depreciation=delta), MonteCarloSampler(DEFAULTS.sampler)
+    )
+    policy = ConstantPolicy(grc=(spend, spend, spend), investment=6.0, profile=REFERENCE)
+    trajectory = env.rollout(policy, CommonRandomNumbers(0, 4, 64, REFERENCE), False)
+
+    expected = 0.0
+    for state in trajectory.states[1:]:
+        expected = (1.0 - delta) * expected + spend
+        assert state.grc_stock[:, 0].max().item() == pytest.approx(expected, rel=1e-12)
+
+
+def test_full_depreciation_makes_the_stock_the_flow():
+    """delta = 1 is the static model's assumption: spend buys one period of
+    protection and nothing carries. This is the reduction the earlier stages'
+    regression tests depend on."""
+    env = FirmEnv(
+        EnvConfig(profile=REFERENCE, horizon=3, grc_depreciation=1.0), MonteCarloSampler(DEFAULTS.sampler)
+    )
+    policy = ConstantPolicy(grc=(0.4, 0.4, 0.4), investment=6.0, profile=REFERENCE)
+    trajectory = env.rollout(policy, CommonRandomNumbers(0, 3, 64, REFERENCE), False)
+    for state in trajectory.states[1:]:
+        assert state.grc_stock[:, 0].max().item() == pytest.approx(0.4, rel=1e-12)
+
+
+def test_frictionless_multi_period_repeats_the_closed_form():
+    """Rung 1b. With no friction, no barrier and no carried stock the periods
+    are independent, and each one's budget is the same closed form the static
+    model solves. Tests the recursion without letting new economics in.
+
+    The compliance channel is switched off here, and the reason is a finding in
+    itself. FourStateSampler enumerates its states rather than drawing them, so
+    a path sees the *same* shock every period. Compounding the compliance
+    likelihood ratio over T periods then gives each path w**T rather than w,
+    which is a tilted measure -- not the one the closed form is derived under,
+    and the budget misses it by 1e-4 at three periods. That is the reweighting
+    failing for a reason quite separate from the variance growth in
+    test_importance_weights_decay_geometrically_in_the_horizon: correlated
+    shocks make the compounded weights *biased* for the marginal expectation,
+    not merely noisy. With the channel off the weights are constant, the
+    marginal expectation is exact, and the identity holds.
+    """
+    # alpha_k = 0 makes p(g) = p0, so every likelihood ratio is exactly one and
+    # the weights are constant. Setting the breach probability to zero instead
+    # would do it too, but leaves the four-state world with zero-weight breach
+    # states and is a worse test for it.
+    alphas = replace(DEFAULTS.alphas, compliance=0.0)
+    env = FirmEnv(
+        EnvConfig(
+            profile=REFERENCE, financing_scale=0.0, horizon=3, discount=0.97, alphas=alphas
+        ),
+        FourStateSampler(DEFAULTS.shock),
+    )
+    crn = CommonRandomNumbers(0, 3, 4, REFERENCE)
+    benchmark = frictionless_benchmark(FourStateSampler(DEFAULTS.shock)(None, REFERENCE), alphas)
+
+    policy, _ = perfect_information_bound(env, crn, n_steps=20000, shared_budgets=True)
+    budgets = torch.nn.functional.softplus(policy.raw_budgets).detach()
+
+    for period in range(3):
+        for index, family in enumerate(FAMILIES):
+            expected = getattr(benchmark, family)
+            # Loose because of the step budget, not because the identity is
+            # approximate: measured, this reaches 1.1e-5 at 20000 steps and
+            # 1.2e-9 at 60000. Three periods means three times the parameters
+            # and a discounted gradient, so it settles more slowly than the
+            # one-period case, which hits ~1e-15.
+            tolerance = 1e-3 if expected == 0.0 else 1e-4
+            assert abs(budgets[period, index].item() - expected) < tolerance, (period, family)
+
+
+def test_per_path_policy_contains_the_constant_policy():
+    """The property that makes warm-starting the bound sound: the clairvoyant
+    parameterization can represent a constant policy exactly, so starting
+    there can only improve on it."""
+    env = FirmEnv(EnvConfig.quarterly(3), MonteCarloSampler(DEFAULTS.sampler))
+    crn = CommonRandomNumbers(0, 3, 256, REFERENCE)
+    constant, reference = optimize_constant(env, crn, n_steps=800)
+
+    mirror = PerPathPolicy(crn.batch, env.config.horizon, REFERENCE)
+    mirror.fill_from_constant(constant.raw, env.config.horizon, crn.batch)
+    assert evaluate(mirror, env, crn).value == pytest.approx(reference.value, rel=1e-12)
+
+
+def test_perfect_information_dominates_implementable_policies():
+    """The sandwich: V(constant) <= V(neural) <= V_PI.
+
+    The bound is the cheapest correctness check a learner has. A policy above
+    it has an information leak, a mis-signed discount or a death that failed to
+    absorb -- none of which is visible from the value on its own.
+    """
+    env = FirmEnv(EnvConfig.quarterly(4), MonteCarloSampler(DEFAULTS.sampler))
+    crn = CommonRandomNumbers(0, 4, 512, REFERENCE)
+
+    constant = optimize_constant(env, crn, n_steps=1200)[1]
+    neural = train_pathwise(env, crn, n_steps=800).evaluation
+    bound = perfect_information_bound(env, crn, n_steps=1500)[1]
+
+    assert constant.value <= bound.value + 1e-9
+    assert neural.value <= bound.value + 1e-9
+    assert neural.value >= constant.value - 1e-9, (
+        "state feedback did worse than a constant -- an optimization failure, "
+        "since the network can represent a constant"
+    )
+
+
+def test_the_convex_cost_needs_a_barrier_to_stay_finite():
+    """Why the quarterly model has an insolvency barrier switched on.
+
+    The financing premium is K(e/K)^gamma with e = I - wealth, so once equity
+    is negative the shortfall grows, the premium grows faster, and equity
+    roughly squares each period. Recorded as a test because it is invisible at
+    one period -- the static model could not have shown it -- and because it is
+    the arithmetic reason a survival model is needed, independent of the
+    economic one.
+    """
+    policy = ConstantPolicy(grc=(0.7, 0.7, 0.7), investment=11.0, profile=REFERENCE)
+    crn = CommonRandomNumbers(0, 6, 512, REFERENCE)
+    sampler = MonteCarloSampler(DEFAULTS.sampler)
+
+    unbounded = FirmEnv(EnvConfig.quarterly(6, equity_floor=-float("inf")), sampler)
+    final = unbounded.rollout(policy, crn, False).states[-1].equity
+    assert final.mean().item() < -1e30, "the divergence this test documents is gone"
+
+    bounded = FirmEnv(EnvConfig.quarterly(6), sampler)  # barrier at zero by default
+    trajectory = bounded.rollout(policy, crn, False)
+    assert torch.isfinite(trajectory.states[-1].equity).all()
+    assert 0.0 < trajectory.states[-1].alive.double().mean().item() < 1.0

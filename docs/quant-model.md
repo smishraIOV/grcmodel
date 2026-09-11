@@ -8,8 +8,10 @@ and records what is actually built. It builds on the choices in
 
 | state | symbol | implemented? |
 |---|---|---|
-| Capital / equity | $E$ | **yes** — `FirmValueModel.initial_equity` |
-| Internal wealth after the risk draw | $w$ | **yes** — derived, `FirmValueModel.wealth` |
+| Capital / equity | $E$ | **yes** — `FirmState.equity`, evolving |
+| GRC capital stock, by family | $G_c, G_o, G_k$ | **yes** — `FirmState.grc_stock` |
+| Internal wealth after the risk draw | $w$ | **yes** — derived, `StandardDynamics.step` |
+| Alive / failed | — | **yes** — `FirmState.alive`, absorbing |
 | Deposit volume | $D$ | no |
 | Portfolio composition / risk metrics | — | no |
 | Liquidity buffer | $L_{\text{buf}}$ | no |
@@ -125,7 +127,7 @@ exactly the one-period problem that benchmark solves.
 |---|---|---|
 | 0 | Numerics profiles, provenance | **built** — `quant/numerics.py` |
 | 1 | Environment seam: state, action, dynamics, policy, one evaluator | **built** — `quant/env/` |
-| 2 | Horizon, discounting, GRC as a depreciating stock | not started |
+| 2 | Horizon, discounting, GRC as a depreciating stock | **built** — `EnvConfig.quarterly` |
 | 3 | Grid / fitted value iteration on a reduced config | not started |
 | 4 | Survival hazard, cliff events, abandonment option | not started |
 | 5 | The learner (truncated-BPTT actor-critic) | not started |
@@ -217,6 +219,52 @@ The mechanism itself. Credit loss mean held at 4.0 while its spread widens:
 At zero spread, credit GRC sits exactly on the risk-neutral benchmark (0.6077):
 with a deterministic credit loss there is nothing for the convex premium to act
 on through that channel. Every unit above it is bought by spread alone.
+
+### Multi-period: GRC as a stock rather than an expense
+
+`uv run python scripts/run_dynamic_model.py`. Eight quarters, 2048 paths,
+discount 0.9809/quarter, insolvency barrier at zero. GRC capital follows
+$G' = (1-\delta)G + g$ with mitigation $e^{-\alpha G}$ applied to the stock;
+$\delta = 1$ recovers the static model's assumption that spend buys exactly
+one period of protection.
+
+| GRC decay | solver | value | spend/qtr | end stock | survives |
+|---|---|---|---|---|---|
+| 1.000 | constant | 14.2597 | 0.6210 | 0.6210 | 39.1% |
+| 1.000 | neural | 14.8169 | 0.5633 | 0.5247 | 40.6% |
+| 1.000 | PI bound | 26.0902 | 1.1330 | 1.2066 | 56.1% |
+| 0.069 | constant | 25.3795 | 2.6634 | 12.4100 | 60.3% |
+| 0.069 | neural | 36.6010 | 2.5153 | 11.6895 | 79.1% |
+| 0.069 | PI bound | 44.7375 | 1.7433 | 8.1726 | 78.7% |
+
+Persistence is worth **+147% of firm value** (14.82 → 36.60) and takes survival
+from 41% to 79%. The firm also spends **more** per quarter, not less
+(0.56 → 2.52): a unit of spend now protects every later quarter, so more of it
+is worth buying. That is the intertemporal content the static model could not
+express — it is not the one-period answer repeated.
+
+Three solvers, one `evaluate`. `constant` is the best state-independent action
+and the floor a learner must clear; `neural` is state feedback trained by
+backpropagation through the rollout; `PI bound` chooses every control per path
+with the future known and is therefore not implementable. The sandwich
+$V(\text{constant}) \le V(\text{neural}) \le V_{PI}$ is asserted on every run.
+
+Two things found by building this, both invisible at one period:
+
+- **The convex financing cost is unbounded below over a horizon.** The premium
+  is $K(e/K)^\gamma$ with $e = I - w$, so once equity goes negative the
+  shortfall grows, the premium grows faster, and equity roughly squares each
+  quarter — reaching $-2 \times 10^{7}$ by quarter three and overflowing
+  float64 by quarter eight. The insolvency barrier is what makes the problem
+  well posed, so survival does real work here for arithmetic reasons before it
+  does for economic ones.
+- **A hard barrier creates a gradient desert.** Limited liability means a
+  failed firm is worth a constant, so a dead path's gradient is exactly zero
+  and carries no signal about how death might have been avoided. Cold-started,
+  the perfect-information solver converges below a plain constant policy (14.4
+  against 25.4). It is warm-started from the constant policy for that reason.
+  A smooth survival hazard does not have this problem, which argues for §5's
+  stage 4 on numerical grounds as well as economic ones.
 
 ### Monte Carlo
 

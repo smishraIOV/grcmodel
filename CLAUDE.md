@@ -13,6 +13,7 @@ uv run pytest                                 # test suite
 uv run python scripts/run_static_model.py     # Froot-Stein premium + spread sweep
 uv run python -m quant.simulate               # Monte Carlo, multi-seed
 uv run python -m quant.threshold              # break-even analysis
+uv run python scripts/run_dynamic_model.py    # multi-period, GRC as a stock
 uv run python scripts/bench_profiles.py       # where the accelerator starts paying
 ```
 

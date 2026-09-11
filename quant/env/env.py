@@ -65,14 +65,51 @@ class EnvConfig:
     profile: NumericsProfile = DEFAULT_PROFILE
     firm: FirmParams = field(default_factory=lambda: DEFAULTS.firm)
     alphas: GrcAlphas = field(default_factory=lambda: DEFAULTS.alphas)
+    # The defaults are the *reduction*, not the intended model: one period,
+    # no discounting, GRC stock equal to flow. That configuration has a closed
+    # form and reproduces the published static results, so it is what the
+    # regression tests run against. `EnvConfig.quarterly` is the real model.
     horizon: int = 1
     discount: float = 1.0
+    grc_depreciation: float = 1.0
     financing_scale: float = 1.0
     equity_floor: float = -float("inf")
     terminal: TerminalValue = field(default_factory=LiquidationValue)
     # What a path that crossed the barrier is worth. Distinct from `terminal`
     # because a firm that died does not choose how it is valued.
     failure_value: float = 0.0
+
+    @classmethod
+    def quarterly(cls, horizon: int, firm: FirmParams | None = None, **overrides) -> "EnvConfig":
+        """The dynamic model: quarterly periods, discounted, GRC accumulating.
+
+        Discount and depreciation come from the annual rates in FirmParams, so
+        they stay consistent with each other and with `periods_per_year`.
+
+        The insolvency barrier is on by default here, and it is not decoration.
+        The convex financing cost is unbounded below: the premium is
+        K(e/K)^gamma with e = I - wealth, so once equity goes negative the
+        shortfall grows, the premium grows faster, and equity squares each
+        period. Measured on this model it reaches -2e7 by quarter three and
+        overflows float64 by quarter eight. One period cannot compound, which
+        is why the static model never showed it.
+
+        A real firm does not run to minus ten-to-the-three-hundred; it fails.
+        So the barrier is what makes the multi-period problem well posed at
+        all, and it is the first place survival does real work in this model --
+        an argument for the stage 4 framing that arrived from the arithmetic
+        rather than from the economics.
+        """
+        firm = firm or DEFAULTS.firm
+        settings = dict(
+            firm=firm,
+            horizon=horizon,
+            discount=firm.discount(),
+            grc_depreciation=firm.grc_depreciation(),
+            equity_floor=0.0,
+        )
+        settings.update(overrides)  # an explicit override wins over the derived rate
+        return cls(**settings)
 
 
 class FirmEnv:
@@ -87,6 +124,7 @@ class FirmEnv:
             profile=config.profile,
             financing_scale=config.financing_scale,
             equity_floor=config.equity_floor,
+            grc_depreciation=config.grc_depreciation,
         )
 
     def reset(self, batch: int) -> FirmState:
@@ -154,10 +192,17 @@ class FirmEnv:
 
 @dataclass
 class EvalResult:
-    """What a policy is worth, plus the diagnostics that say whether to believe it."""
+    """What a policy is worth, plus the diagnostics that say whether to believe it.
+
+    `grc` is the per-period GRC *flow*, averaged over periods and paths -- the
+    spend an executive would budget. At a one-period horizon with no
+    depreciation it coincides with the stock, which is why it matches the
+    static model's reported budgets.
+    """
 
     value: float
     grc: tuple[float, float, float]
+    grc_stock: tuple[float, float, float]
     constrained_fraction: float
     survival_rate: float
     effective_sample_size: float
@@ -180,15 +225,33 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         # zero, and a fixed absolute epsilon is float64-scaled -- under float32
         # it sits at the noise floor and every path reads as constrained.
         negligible = env.config.firm.distress_reference * torch.finfo(profile.dtype).eps ** 0.5
-        constrained = profile.sum(
-            (trajectory.infos[0]["external"] > negligible).to(profile.dtype) * weights
-        )
-        grc = profile.sum(trajectory.states[1].grc_stock * weights.unsqueeze(-1), dim=0)
+        horizon = len(trajectory.infos)
+        per_path = weights.unsqueeze(-1)
+
+        # Diagnostics count only paths that were alive when the action was
+        # taken. A dead path still has a policy evaluated on its frozen state
+        # and that action still lands in `info`, but it changes nothing and
+        # averaging it in makes the reported budget meaningless -- it reads as
+        # whatever the policy happens to output in a region it is never graded
+        # on.
+        live = [state.alive.to(profile.dtype) for state in trajectory.states[:-1]]
+        live_mass = sum(profile.sum(mask * weights) for mask in live)
+
+        constrained = sum(
+            profile.sum((info["external"] > negligible).to(profile.dtype) * mask * weights)
+            for info, mask in zip(trajectory.infos, live)
+        ) / live_mass
+        flow = sum(
+            profile.sum(info["grc_flow"] * (mask * weights).unsqueeze(-1), dim=0)
+            for info, mask in zip(trajectory.infos, live)
+        ) / live_mass
+        stock = profile.sum(trajectory.states[-1].grc_stock * per_path, dim=0)
         survival = profile.sum(trajectory.states[-1].alive.to(profile.dtype) * weights)
 
     return EvalResult(
         value=value.item(),
-        grc=(grc[0].item(), grc[1].item(), grc[2].item()),
+        grc=(flow[0].item(), flow[1].item(), flow[2].item()),
+        grc_stock=(stock[0].item(), stock[1].item(), stock[2].item()),
         constrained_fraction=constrained.item(),
         survival_rate=survival.item(),
         effective_sample_size=trajectory.effective_sample_size(),

@@ -36,6 +36,14 @@ class FirmParams:
 
     These lived in quant/static.py, which meant the Monte Carlo stage imported
     them from the four-state model it was meant to be independent of.
+
+    A caveat that matters now that there is a horizon: the loss and production
+    parameters are *per period*, not annual rates. Only the discount and the
+    GRC depreciation below are expressed annually and converted. Until the
+    rest are rate-based, changing `periods_per_year` does not rescale the
+    economics and the model cannot be checked for time-scale invariance --
+    the same class of silent bug as the dimensional one in
+    docs/static-model-debug-notes.md section 4, one axis over.
     """
 
     initial_equity: float = 16.0
@@ -43,6 +51,21 @@ class FirmParams:
     distress_reference: float = 5.0
     production_scale: float = 3.0
     production_curvature: float = 10.0
+
+    periods_per_year: int = 4  # quarterly
+    annual_discount_rate: float = 0.08
+    # A control installed today still works in a year's time, but not forever:
+    # staff turn over, systems age, regulations move. Illustrative, like
+    # everything else here.
+    annual_grc_depreciation: float = 0.25
+
+    def discount(self) -> float:
+        """Per-period discount factor."""
+        return (1.0 + self.annual_discount_rate) ** (-1.0 / self.periods_per_year)
+
+    def grc_depreciation(self) -> float:
+        """Per-period fraction of the GRC stock that decays away."""
+        return 1.0 - (1.0 - self.annual_grc_depreciation) ** (1.0 / self.periods_per_year)
 
 
 @dataclass(frozen=True)
