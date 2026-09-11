@@ -48,8 +48,27 @@ without it the expression is $e^{\gamma}$, which subtracts
 $\text{money}^{\gamma}$ from money and makes the model's answer depend on whether
 the firm is denominated in dollars or cents.
 
-**Failure intensity.** The firm can die, and the rate at which it does depends
-on how well capitalized it is:
+**Failure intensity.** The firm can die, by three competing routes whose
+intensities add:
+
+| channel | driver | GRC acting on it |
+|---|---|---|
+| capital | equity falls toward insolvency | indirect — GRC leaves more equity behind |
+| operational | an incident becomes public, depositors leave | **operational GRC, directly** |
+| licence | a breach escalates to revocation | **compliance GRC, directly** |
+
+Credit has no hazard channel of its own, deliberately: bad underwriting erodes
+equity, and equity is already the capital channel's argument, so giving it one
+would count the same mechanism twice.
+
+The two GRC-reducible channels are $\bar{h}_f e^{-\alpha_f G_f} / 4$, reusing
+each family's existing $\alpha$ rather than introducing a second effectiveness
+parameter per family — nothing here can calibrate one, let alone two (§8). This
+is what makes GRC buy *survival* rather than only smaller losses, which is the
+difference between a programme justified by expected-loss reduction and one
+justified by the franchise it protects.
+
+The capital channel depends on how well capitalized the firm is:
 
 $$
 h(E) = \frac{\bar{h}}{4} \exp\!\left( \frac{\kappa^{\star} - \kappa}{s} \right),
@@ -149,7 +168,7 @@ exactly the one-period problem that benchmark solves.
 | 1 | Environment seam: state, action, dynamics, policy, one evaluator | **built** — `quant/env/` |
 | 2 | Horizon, discounting, GRC as a depreciating stock | **built** — `EnvConfig.quarterly` |
 | 3a | Smooth survival hazard replacing the hard barrier | **built** — `quant/hazard.py` |
-| 3b | GRC acting on the hazard, not only on losses | not started |
+| 3b | GRC acting on the hazard, not only on losses | **built** — `quant/hazard.py` |
 | 3c | Discrete cliff events; licence loss as absorbing | not started |
 | 3d | Abandonment / orderly wind-down option | not started |
 | 3e | Diagnostic bundle and the break-even outputs | not started |
@@ -259,15 +278,41 @@ one period of protection.
 
 | GRC decay | solver | value | spend/qtr | end stock | survives |
 |---|---|---|---|---|---|
-| 1.000 | constant | 14.1301 | 0.8091 | 0.8091 | 38.8% |
-| 1.000 | neural | 14.6745 | 0.7786 | 0.5873 | 39.9% |
-| 1.000 | PI bound | 26.2992 | 1.1870 | 1.6826 | 56.6% |
-| 0.069 | constant | 25.1594 | 2.5778 | 16.2519 | 59.7% |
-| 0.069 | neural | 35.5962 | 2.5087 | 11.8188 | 75.9% |
-| 0.069 | PI bound | 44.3781 | 1.7309 | 9.1730 | 78.0% |
+| 1.000 | constant | 8.9347 | 0.5508 | 0.5508 | 24.1% |
+| 1.000 | neural | 9.6172 | 1.2132 | 1.7679 | 28.0% |
+| 1.000 | PI bound | 16.9279 | 1.2262 | 1.8413 | 36.6% |
+| 0.069 | constant | 20.9330 | 3.3080 | 20.8553 | 52.2% |
+| 0.069 | neural | 31.2698 | 2.9864 | 14.1424 | 68.6% |
+| 0.069 | PI bound | 36.2385 | 2.5711 | 13.0239 | 69.9% |
 
-Persistence is worth **+143% of firm value** (14.67 → 35.60) and takes survival
-from 40% to 76%. The firm also spends **more** per quarter, not less
+### What the survival channel is worth
+
+Both budgets scored in the *same* world — the one where GRC reduces failure
+intensity as well as expected loss. Comparing them in their own worlds would be
+meaningless, since a world without those channels is simply less dangerous.
+
+| budget set for | spend/qtr | annual death | value |
+|---|---|---|---|
+| expected loss only | 2.5778 | 30.84% | 20.1470 |
+| loss **and** survival | 3.3080 | 27.76% | 20.9330 |
+
+Budgeting as though GRC only bought smaller losses understates the right spend
+by 28%, costs 3.8% of firm value, and adds 3.1 percentage points to the annual
+failure probability. That gap is the dynamic analogue of the Froot-Stein
+premium: spend that pays for itself only because the firm has a franchise worth
+surviving to keep.
+
+> **Regime warning.** At these parameters the annual failure probability at the
+> optimum is **27.5%**, far outside the 0.2–15% band that makes the survival
+> comparative statics trustworthy. The median firm is healthy — equity rises
+> from 16 to 30 over eight quarters — so the deaths are entirely tail events,
+> driven by the firm starting with a GRC stock of zero and facing the
+> un-mitigated base hazards while it builds one. Read the directions below;
+> do not read the magnitudes. Re-parameterizing into a non-degenerate regime is
+> the next piece of work, and it will move every number on this page.
+
+Persistence is worth **+225% of firm value** (9.62 → 31.27) and takes survival
+from 28% to 69%. The firm also spends **more** per quarter, not less
 (0.56 → 2.52): a unit of spend now protects every later quarter, so more of it
 is worth buying. That is the intertemporal content the static model could not
 express — it is not the one-period answer repeated.

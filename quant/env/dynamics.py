@@ -25,7 +25,7 @@ from quant.env.actions import FirmAction
 from quant.env.shocks import Shock
 from quant.env.state import FirmState, StepResult
 from quant.frictions import exponential_mitigation, financing_cost, production
-from quant.hazard import failure_intensity, log_survival
+from quant.hazard import failure_intensity, intensity_components, log_survival
 from quant.numerics import NumericsProfile
 from quant.params import FirmParams, GrcAlphas, HazardParams
 
@@ -62,8 +62,16 @@ class StandardDynamics:
     hazard: HazardParams | None = None
     differentiable: bool = True
 
-    def log_survival(self, state: FirmState, equity: torch.Tensor) -> torch.Tensor:
+    def log_survival(
+        self, state: FirmState, equity: torch.Tensor, stock: torch.Tensor
+    ) -> torch.Tensor:
         """log P(survive this period), given where the period left the firm.
+
+        Takes the GRC stock as well as equity, because two of the three hazard
+        channels are reduced by it directly. That is what makes GRC buy
+        survival rather than only smaller losses -- and it is the difference
+        between a programme justified by expected-loss reduction and one
+        justified by the franchise it protects.
 
         Two channels, deliberately layered. The smooth hazard does the economic
         work and supplies the gradient. The hard barrier underneath is a
@@ -74,7 +82,12 @@ class StandardDynamics:
         """
         intensity = (
             failure_intensity(
-                equity, self.firm.initial_equity, self.hazard, self.firm.periods_per_year
+                equity,
+                stock,
+                self.firm.initial_equity,
+                self.hazard,
+                self.alphas,
+                self.firm.periods_per_year,
             )
             if self.hazard is not None
             else torch.zeros_like(equity)
@@ -174,6 +187,18 @@ class StandardDynamics:
 
         equity = wealth - action.investment + produced - premium
         survives = equity >= self.equity_floor
+        intensity = (
+            intensity_components(
+                equity,
+                stock,
+                self.firm.initial_equity,
+                self.hazard,
+                self.alphas,
+                self.firm.periods_per_year,
+            )
+            if self.hazard is not None
+            else None
+        )
         moved = state.advance(equity=equity, grc_stock=stock, alive=state.alive & survives)
         nxt = moved.freeze_dead(state)
 
@@ -184,7 +209,7 @@ class StandardDynamics:
             # a dividend once there is a discount rate to trade it off against.
             reward=torch.zeros_like(equity),
             weight=self.path_weight(stock, shock),
-            log_survival=self.log_survival(state, equity),
+            log_survival=self.log_survival(state, equity, stock),
             terminated=state.alive & ~survives,
             info={
                 "loss": loss,
@@ -195,5 +220,6 @@ class StandardDynamics:
                 "grc_spend": spend,
                 "grc_flow": action.grc,
                 "grc_stock": stock,
+                "hazard": intensity,
             },
         )

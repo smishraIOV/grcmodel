@@ -25,7 +25,12 @@ from quant.env.actions import FirmAction
 from quant.env.env import ConstantPolicy, EnvConfig, FirmEnv, evaluate
 from quant.env.reward import LiquidationValue, Zero
 from quant.env.shocks import CommonRandomNumbers, FourStateSampler, MonteCarloSampler
-from quant.hazard import failure_intensity
+from quant.hazard import failure_intensity, intensity_components
+
+
+def ZERO_STOCK(like):
+    """A GRC stock of zero, shaped to match `like`."""
+    return torch.zeros(*like.shape, 3, dtype=like.dtype, device=like.device)
 from quant.model import GrcBudgets
 from quant.numerics import REFERENCE
 from quant.params import DEFAULTS
@@ -506,7 +511,7 @@ def test_hazard_responds_to_equity():
     just as silent: the model runs, converges, and means nothing.
     """
     equity = REFERENCE.tensor([24.0, 16.0, 8.0, 4.0, 1.0, -2.0])
-    intensity = failure_intensity(equity, 16.0, DEFAULTS.hazard, 4)
+    intensity = failure_intensity(equity, ZERO_STOCK(equity), 16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
     assert (intensity[1:] > intensity[:-1]).all(), "hazard must rise as equity falls"
     assert intensity[0] < 0.1 * intensity[-1], "response is too flat to be doing any work"
 
@@ -517,15 +522,17 @@ def test_hazard_gives_gradient_where_a_barrier_gives_none():
     underflowed."""
     for value in (16.0, 8.0, 4.0, 1.0, -2.0):
         equity = REFERENCE.tensor(value, requires_grad=True)
-        torch.exp(-failure_intensity(equity, 16.0, DEFAULTS.hazard, 4)).backward()
+        torch.exp(-failure_intensity(equity, ZERO_STOCK(equity), 16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)).backward()
         assert equity.grad.item() > 1e-6, f"no gradient at equity {value}"
 
 
 def test_hazard_is_invariant_to_the_currency_unit():
     """The intensity depends on equity only through a ratio, so redenominating
     the firm must not change it (docs/static-model-debug-notes.md section 4)."""
-    base = failure_intensity(REFERENCE.tensor([8.0, 2.0]), 16.0, DEFAULTS.hazard, 4)
-    scaled = failure_intensity(REFERENCE.tensor([800.0, 200.0]), 1600.0, DEFAULTS.hazard, 4)
+    equity = REFERENCE.tensor([8.0, 2.0])
+    base = failure_intensity(equity, ZERO_STOCK(equity), 16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
+    big = REFERENCE.tensor([800.0, 200.0])
+    scaled = failure_intensity(big, ZERO_STOCK(big), 1600.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
     assert torch.allclose(base, scaled, atol=1e-14)
 
 
@@ -559,3 +566,93 @@ def test_survival_survives_a_long_horizon_without_underflowing():
     assert all(torch.isfinite(step).all() for step in survival)
     assert (survival[-1] <= survival[0]).all()
     assert survival[-1].max().item() > 0.0, "every path underflowed to zero"
+
+
+# -- Bite 3b: GRC acts on the hazard, not only on losses -------------------
+
+
+def no_grc_hazard():
+    """Hazard with only the capital channel -- the bite-3a configuration."""
+    return replace(DEFAULTS.hazard, annual_operational_rate=0.0, annual_licence_rate=0.0)
+
+
+def test_zero_base_rates_reduce_to_the_capital_channel():
+    """The reduction. With both GRC-reducible rates at zero, only capital
+    drives the hazard and the bite-3a behaviour is recovered exactly."""
+    equity = REFERENCE.tensor([16.0, 4.0])
+    stock = REFERENCE.tensor([[5.0, 5.0, 5.0], [5.0, 5.0, 5.0]])
+    parts = intensity_components(equity, stock, 16.0, no_grc_hazard(), DEFAULTS.alphas, 4)
+    assert torch.equal(parts["operational"], torch.zeros_like(equity))
+    assert torch.equal(parts["licence"], torch.zeros_like(equity))
+
+
+def test_competing_risks_compose_additively():
+    """Intensities add; survival probabilities multiply. Composing the other
+    way round would double-count the overlap and understate survival."""
+    equity = REFERENCE.tensor([12.0, 6.0])
+    stock = REFERENCE.tensor([[2.0, 3.0, 4.0], [1.0, 1.0, 1.0]])
+    parts = intensity_components(equity, stock, 16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
+    total = failure_intensity(equity, stock, 16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
+    assert torch.allclose(total, sum(parts.values()), atol=1e-14)
+
+
+def test_grc_stock_reduces_the_hazard_it_acts_on():
+    """Operational GRC reduces the run hazard, compliance GRC the licence
+    hazard, each with diminishing returns."""
+    equity = REFERENCE.tensor([16.0])
+    levels = [0.0, 2.0, 6.0, 12.0]
+    for column, channel in ((1, "operational"), (2, "compliance")):
+        intensities = []
+        for level in levels:
+            stock = REFERENCE.tensor([[0.0, 0.0, 0.0]])
+            stock[0, column] = level
+            parts = intensity_components(equity, stock, 16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
+            intensities.append(parts["operational" if column == 1 else "licence"].item())
+        assert intensities[0] > intensities[1] > intensities[2] > intensities[3], channel
+        # Diminishing returns: each further unit removes less than the last.
+        first, second = intensities[0] - intensities[1], intensities[1] - intensities[2]
+        assert first / 2.0 > second / 4.0, f"{channel} is not concave in spend"
+
+
+def test_credit_grc_has_no_direct_hazard_channel():
+    """Deliberate, not an omission. Bad underwriting erodes equity, and equity
+    is already the capital channel's argument -- giving credit its own hazard
+    would count the same mechanism twice."""
+    equity = REFERENCE.tensor([16.0])
+    bare = REFERENCE.tensor([[0.0, 0.0, 0.0]])
+    credit_only = REFERENCE.tensor([[20.0, 0.0, 0.0]])
+    args = (16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
+    assert torch.equal(
+        failure_intensity(equity, bare, *args), failure_intensity(equity, credit_only, *args)
+    )
+
+
+def test_grc_spend_rises_when_it_buys_survival():
+    """The economics of this bite, measured two ways.
+
+    First: with GRC reaching the hazard directly, a unit of spend buys
+    franchise protection as well as a smaller loss, so more of it is worth
+    buying.
+
+    Second, and the one that means something to a risk owner: both policies are
+    then scored in the *same* world -- the one with the hazard channels in it.
+    Comparing survival across two different hazard models would be
+    meaningless, since the world without those channels is simply less
+    dangerous. What this measures is the cost of setting a budget as though GRC
+    only reduced expected loss, when in fact it also buys survival.
+    """
+    sampler = MonteCarloSampler(DEFAULTS.sampler)
+    crn = CommonRandomNumbers(0, 6, 1024, REFERENCE)
+    real = FirmEnv(EnvConfig.quarterly(6), sampler)
+
+    naive, _ = optimize_constant(
+        FirmEnv(EnvConfig.quarterly(6, hazard=no_grc_hazard()), sampler), crn, n_steps=2500
+    )
+    aware, aware_result = optimize_constant(real, crn, n_steps=2500)
+
+    naive_result = evaluate(naive, real, crn)
+    assert aware_result.total_grc > naive_result.total_grc * 1.05, (
+        f"spend barely moved: {naive_result.total_grc:.3f} -> {aware_result.total_grc:.3f}"
+    )
+    assert aware_result.survival_rate > naive_result.survival_rate
+    assert aware_result.value > naive_result.value

@@ -122,8 +122,23 @@ class HazardParams:
     """
 
     annual_base_rate: float = 0.5
-    capital_target: float = 0.4   # ratio of opening equity at which hazard is half its base
+    capital_target: float = 0.4   # ratio of opening equity at which hazard equals its base
     capital_scale: float = 0.2    # how sharply hazard responds around that point
+
+    # Two further channels, each reducible by the GRC stock of its family.
+    # Competing risks compose additively in intensity, so these sum with the
+    # capital channel above rather than multiplying.
+    #
+    # Operational: an incident becomes public and depositors leave. This is how
+    # a crypto intermediary actually fails -- a bridge exploit or a custody
+    # failure, not an accounting threshold crossed on a particular Tuesday.
+    # Licence: a compliance breach escalates to revocation, which ends the firm
+    # regardless of its balance sheet.
+    #
+    # Rates below are at ZERO GRC stock, so they are what the firm faces with no
+    # programme at all, not what it faces in practice.
+    annual_operational_rate: float = 0.15
+    annual_licence_rate: float = 0.08
 
 
 @dataclass(frozen=True)

@@ -31,15 +31,31 @@ first few quarters and converges below a plain constant policy under either
 death channel. Warm-starting remains necessary; the hazard buys gradient in the
 region an already-sensible policy actually operates in, not everywhere.
 
-Everything here is a rate per unit time, and every argument to an exponential
-is dimensionless. Survival is accumulated in log space by the caller, which
-matters once horizons get long enough for a product of per-period
-probabilities to underflow float32.
+**Three competing risks, composed additively.** Intensities add, survival
+probabilities multiply -- which is why this module returns intensities and
+lets the caller accumulate their sum in log space:
+
+    capital       rises as equity falls. GRC reaches it only indirectly, by
+                  leaving more equity behind.
+    operational   an incident becomes public and depositors leave. Operational
+                  GRC reduces it directly.
+    licence       a breach escalates to revocation. Compliance GRC reduces it
+                  directly.
+
+That split is what makes GRC buy *survival* rather than only buying smaller
+losses, and it is the difference between a programme justified by expected-loss
+reduction and one justified by the franchise it protects. Credit has no hazard
+channel of its own on purpose: bad underwriting erodes equity, and equity is
+already the capital channel's argument. Adding a fourth channel for it would be
+counting the same mechanism twice.
 """
 
 import torch
 
-from quant.params import HazardParams
+from quant.frictions import exponential_mitigation
+from quant.params import GrcAlphas, HazardParams
+
+OPERATIONAL, COMPLIANCE = 1, 2  # columns of the GRC stock
 
 
 def capital_ratio(equity: torch.Tensor, reference_equity: float) -> torch.Tensor:
@@ -48,13 +64,13 @@ def capital_ratio(equity: torch.Tensor, reference_equity: float) -> torch.Tensor
     return equity / reference_equity
 
 
-def failure_intensity(
+def capital_intensity(
     equity: torch.Tensor,
     reference_equity: float,
     params: HazardParams,
     periods_per_year: int,
 ) -> torch.Tensor:
-    """Per-period hazard rate, exponential in the capital shortfall.
+    """Per-period hazard from being thinly capitalized.
 
         h = (base / periods_per_year) * exp((target - kappa) / scale)
 
@@ -84,6 +100,75 @@ def failure_intensity(
     # a frozen equity.
     exponent = torch.clamp((params.capital_target - kappa) / params.capital_scale, max=50.0)
     return (params.annual_base_rate / periods_per_year) * torch.exp(exponent)
+
+
+def grc_reduced_intensity(
+    annual_rate: float, stock: torch.Tensor, alpha: float, periods_per_year: int
+) -> torch.Tensor:
+    """Per-period intensity of a hazard a GRC stock acts on directly.
+
+        h = (rate / periods_per_year) * exp(-alpha * G)
+
+    Same mitigation curve and the same alpha the loss channels use. Giving each
+    channel its own effectiveness parameter would be more general and less
+    honest: nothing in this repo can calibrate one alpha, let alone two per
+    family (docs/quant-model.md section 8).
+
+    alpha carries units of 1/money and G is money, so the exponent is
+    dimensionless.
+    """
+    return exponential_mitigation(
+        torch.as_tensor(annual_rate / periods_per_year, dtype=stock.dtype, device=stock.device),
+        stock,
+        alpha,
+    )
+
+
+def intensity_components(
+    equity: torch.Tensor,
+    grc_stock: torch.Tensor,
+    reference_equity: float,
+    params: HazardParams,
+    alphas: GrcAlphas,
+    periods_per_year: int,
+) -> dict[str, torch.Tensor]:
+    """The three channels separately, for diagnostics and for the tests.
+
+    Reported apart because "slow death by attrition" and "a licence was pulled"
+    are different failures with different remedies, and a single number cannot
+    tell a risk owner which one is binding.
+    """
+    return {
+        "capital": capital_intensity(equity, reference_equity, params, periods_per_year),
+        "operational": grc_reduced_intensity(
+            params.annual_operational_rate,
+            grc_stock[..., OPERATIONAL],
+            alphas.operational,
+            periods_per_year,
+        ),
+        "licence": grc_reduced_intensity(
+            params.annual_licence_rate,
+            grc_stock[..., COMPLIANCE],
+            alphas.compliance,
+            periods_per_year,
+        ),
+    }
+
+
+def failure_intensity(
+    equity: torch.Tensor,
+    grc_stock: torch.Tensor,
+    reference_equity: float,
+    params: HazardParams,
+    alphas: GrcAlphas,
+    periods_per_year: int,
+) -> torch.Tensor:
+    """Total per-period hazard. Competing risks add in intensity."""
+    return sum(
+        intensity_components(
+            equity, grc_stock, reference_equity, params, alphas, periods_per_year
+        ).values()
+    )
 
 
 def log_survival(intensity: torch.Tensor) -> torch.Tensor:
