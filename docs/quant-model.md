@@ -48,6 +48,26 @@ without it the expression is $e^{\gamma}$, which subtracts
 $\text{money}^{\gamma}$ from money and makes the model's answer depend on whether
 the firm is denominated in dollars or cents.
 
+**Failure intensity.** The firm can die, and the rate at which it does depends
+on how well capitalized it is:
+
+$$
+h(E) = \frac{\bar{h}}{4} \exp\!\left( \frac{\kappa^{\star} - \kappa}{s} \right),
+\qquad \kappa = E / E_0
+$$
+
+Implemented in `quant/hazard.py`. Exponential rather than logistic because a
+logistic saturates, and at its base rate even a firm with deeply negative
+equity would survive the quarter — which is not a description of insolvency.
+The exponent is a ratio over a dimensionless scale, so it stays unit-invariant.
+
+Death is not sampled. Each path carries the *probability* it is still alive,
+accumulated in log space, and value is an expectation over survival. That is
+what keeps the objective differentiable in everything driving the hazard: a
+sampled death is a step function of equity and carries no gradient. Measured,
+$dS/dE$ is non-zero from $\kappa = 1$ down to about $\kappa = -0.5$, against
+exactly zero everywhere under a hard barrier.
+
 **The investment opportunity.** Deployed capital returns
 
 $$
@@ -128,9 +148,18 @@ exactly the one-period problem that benchmark solves.
 | 0 | Numerics profiles, provenance | **built** — `quant/numerics.py` |
 | 1 | Environment seam: state, action, dynamics, policy, one evaluator | **built** — `quant/env/` |
 | 2 | Horizon, discounting, GRC as a depreciating stock | **built** — `EnvConfig.quarterly` |
-| 3 | Grid / fitted value iteration on a reduced config | not started |
-| 4 | Survival hazard, cliff events, abandonment option | not started |
+| 3a | Smooth survival hazard replacing the hard barrier | **built** — `quant/hazard.py` |
+| 3b | GRC acting on the hazard, not only on losses | not started |
+| 3c | Discrete cliff events; licence loss as absorbing | not started |
+| 3d | Abandonment / orderly wind-down option | not started |
+| 3e | Diagnostic bundle and the break-even outputs | not started |
+| 4 | Grid / fitted value iteration on a reduced config | not started |
 | 5 | The learner (truncated-BPTT actor-critic) | not started |
+
+Survival moved ahead of the grid solver after stage 2: the hard insolvency
+barrier turned out to be required for the multi-period problem to be finite at
+all, and a grid solver's inner maximization would inherit its gradient
+pathology.
 
 Stages 1–3 keep the convex financing cost as scaffolding so each step has an
 exact regression target; stage 4 is where it is replaced and where §6 is
@@ -230,15 +259,15 @@ one period of protection.
 
 | GRC decay | solver | value | spend/qtr | end stock | survives |
 |---|---|---|---|---|---|
-| 1.000 | constant | 14.2597 | 0.6210 | 0.6210 | 39.1% |
-| 1.000 | neural | 14.8169 | 0.5633 | 0.5247 | 40.6% |
-| 1.000 | PI bound | 26.0902 | 1.1330 | 1.2066 | 56.1% |
-| 0.069 | constant | 25.3795 | 2.6634 | 12.4100 | 60.3% |
-| 0.069 | neural | 36.6010 | 2.5153 | 11.6895 | 79.1% |
-| 0.069 | PI bound | 44.7375 | 1.7433 | 8.1726 | 78.7% |
+| 1.000 | constant | 14.1301 | 0.8091 | 0.8091 | 38.8% |
+| 1.000 | neural | 14.6745 | 0.7786 | 0.5873 | 39.9% |
+| 1.000 | PI bound | 26.2992 | 1.1870 | 1.6826 | 56.6% |
+| 0.069 | constant | 25.1594 | 2.5778 | 16.2519 | 59.7% |
+| 0.069 | neural | 35.5962 | 2.5087 | 11.8188 | 75.9% |
+| 0.069 | PI bound | 44.3781 | 1.7309 | 9.1730 | 78.0% |
 
-Persistence is worth **+147% of firm value** (14.82 → 36.60) and takes survival
-from 41% to 79%. The firm also spends **more** per quarter, not less
+Persistence is worth **+143% of firm value** (14.67 → 35.60) and takes survival
+from 40% to 76%. The firm also spends **more** per quarter, not less
 (0.56 → 2.52): a unit of spend now protects every later quarter, so more of it
 is worth buying. That is the intertemporal content the static model could not
 express — it is not the one-period answer repeated.
@@ -262,9 +291,11 @@ Two things found by building this, both invisible at one period:
   failed firm is worth a constant, so a dead path's gradient is exactly zero
   and carries no signal about how death might have been avoided. Cold-started,
   the perfect-information solver converges below a plain constant policy (14.4
-  against 25.4). It is warm-started from the constant policy for that reason.
-  A smooth survival hazard does not have this problem, which argues for §5's
-  stage 4 on numerical grounds as well as economic ones.
+  against 25.4), which is not a bound at all; it is warm-started from the
+  constant policy for that reason. The smooth hazard in §3 narrows the desert
+  but does not close it — survival still underflows to zero below about
+  $\kappa = -0.5$, and a cold start drives paths there within a few quarters
+  (3.2 against 25.2). Warm-starting is required under either death channel.
 
 ### Monte Carlo
 

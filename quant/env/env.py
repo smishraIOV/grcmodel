@@ -28,7 +28,7 @@ from quant.env.reward import LiquidationValue, TerminalValue
 from quant.env.shocks import CommonRandomNumbers, Shock
 from quant.env.state import N_FAMILIES, FirmState, Trajectory
 from quant.numerics import DEFAULT_PROFILE, NumericsProfile
-from quant.params import DEFAULTS, FirmParams, GrcAlphas
+from quant.params import DEFAULTS, FirmParams, GrcAlphas, HazardParams
 
 Sampler = Callable[[dict[str, torch.Tensor], NumericsProfile], Shock]
 
@@ -74,6 +74,7 @@ class EnvConfig:
     grc_depreciation: float = 1.0
     financing_scale: float = 1.0
     equity_floor: float = -float("inf")
+    hazard: HazardParams | None = None
     terminal: TerminalValue = field(default_factory=LiquidationValue)
     # What a path that crossed the barrier is worth. Distinct from `terminal`
     # because a firm that died does not choose how it is valued.
@@ -106,7 +107,12 @@ class EnvConfig:
             horizon=horizon,
             discount=firm.discount(),
             grc_depreciation=firm.grc_depreciation(),
-            equity_floor=0.0,
+            # Not an economic barrier any more -- the hazard is. This sits far
+            # enough below zero that survival there is already exactly zero, so
+            # freezing the path costs no gradient; it exists only to stop the
+            # unbounded financing premium from overflowing float64.
+            equity_floor=-5.0 * firm.initial_equity,
+            hazard=DEFAULTS.hazard,
         )
         settings.update(overrides)  # an explicit override wins over the derived rate
         return cls(**settings)
@@ -125,6 +131,7 @@ class FirmEnv:
             financing_scale=config.financing_scale,
             equity_floor=config.equity_floor,
             grc_depreciation=config.grc_depreciation,
+            hazard=config.hazard,
         )
 
     def reset(self, batch: int) -> FirmState:
@@ -150,15 +157,23 @@ class FirmEnv:
         )
 
     def terminal_value(self, state: FirmState) -> torch.Tensor:
-        alive_value = self.config.terminal(state)
-        dead_value = torch.full_like(alive_value, self.config.failure_value)
-        return torch.where(state.alive, alive_value, dead_value)
+        """What a surviving firm is worth at the horizon.
+
+        Only the surviving value: paths that failed are accounted for by the
+        survival weighting in Trajectory.path_values, which collects
+        `failure_value` at the date of failure rather than at the horizon. The
+        mask is a numerical guard -- a path frozen at the barrier can hold a
+        large negative equity, and multiplying it by a zero survival weight is
+        cleaner than relying on the arithmetic.
+        """
+        value = self.config.terminal(state)
+        return torch.where(state.alive, value, torch.zeros_like(value))
 
     def rollout(
         self, policy: Policy, crn: CommonRandomNumbers, differentiable: bool = True
     ) -> Trajectory:
         state = self.reset(crn.batch)
-        states, rewards, weights, infos = [state], [], [], []
+        states, rewards, weights, survivals, infos = [state], [], [], [], []
 
         context = contextlib.nullcontext() if differentiable else torch.no_grad()
         with context:
@@ -170,6 +185,7 @@ class FirmEnv:
                 states.append(state)
                 rewards.append(result.reward)
                 weights.append(result.weight)
+                survivals.append(result.log_survival)
                 infos.append(result.info)
 
             terminal = self.terminal_value(state)
@@ -178,6 +194,7 @@ class FirmEnv:
             states=states,
             rewards=rewards,
             weights=weights,
+            log_survivals=survivals,
             terminal_value=terminal,
             infos=infos,
         )
@@ -186,7 +203,7 @@ class FirmEnv:
         """Probability-weighted expected discounted return. Differentiable."""
         weights = trajectory.path_weights()
         return self.config.profile.sum(
-            trajectory.path_values(self.config.discount) * weights
+            trajectory.path_values(self.config.discount, self.config.failure_value) * weights
         )
 
 
@@ -234,7 +251,8 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         # averaging it in makes the reported budget meaningless -- it reads as
         # whatever the policy happens to output in a region it is never graded
         # on.
-        live = [state.alive.to(profile.dtype) for state in trajectory.states[:-1]]
+        survival = trajectory.cumulative_survival()
+        live = [survival[step] for step in range(len(trajectory.infos))]
         live_mass = sum(profile.sum(mask * weights) for mask in live)
 
         constrained = sum(
@@ -245,14 +263,20 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
             profile.sum(info["grc_flow"] * (mask * weights).unsqueeze(-1), dim=0)
             for info, mask in zip(trajectory.infos, live)
         ) / live_mass
-        stock = profile.sum(trajectory.states[-1].grc_stock * per_path, dim=0)
-        survival = profile.sum(trajectory.states[-1].alive.to(profile.dtype) * weights)
+        # Survival-weighted, for the same reason the flow is: a failed path's
+        # state is frozen and the policy is still evaluated on it, so its
+        # action is whatever the network happens to emit in a region it is
+        # never graded on. Unweighted, that read as an end stock of 9.8 in a
+        # configuration where the stock cannot exceed one quarter's spend.
+        survives = profile.sum(survival[-1] * weights)
+        final = (survival[-1] * weights).unsqueeze(-1)
+        stock = profile.sum(trajectory.states[-1].grc_stock * final, dim=0) / survives
 
     return EvalResult(
         value=value.item(),
         grc=(flow[0].item(), flow[1].item(), flow[2].item()),
         grc_stock=(stock[0].item(), stock[1].item(), stock[2].item()),
         constrained_fraction=constrained.item(),
-        survival_rate=survival.item(),
+        survival_rate=survives.item(),
         effective_sample_size=trajectory.effective_sample_size(),
     )

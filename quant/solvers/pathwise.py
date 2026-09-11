@@ -150,11 +150,16 @@ def perfect_information_bound(
 
     That the desert exists is the more important finding. It is the first
     place in this project where differentiating the simulator stops working,
-    and it arrived from a hard barrier rather than from anything exotic. A
-    smooth survival hazard does not have this problem -- the gradient flows
-    through the probability of crossing rather than dying at the crossing --
-    which is an argument for the survival framing on numerical grounds as well
-    as economic ones.
+    and it arrived from a hard barrier rather than from anything exotic.
+
+    A smooth survival hazard (quant/hazard.py) narrows it but does not close
+    it, which is worth stating because this docstring previously claimed
+    otherwise. The hazard restores the gradient in the region a sensible policy
+    operates in; it cannot help where survival has underflowed to exactly zero,
+    and a cold start drives paths there within a few quarters. Measured over
+    eight quarters, a cold start reaches 10.5 against a constant policy's 25.4
+    with a hard barrier and 3.2 against 25.2 with the hazard. Warm-starting is
+    required either way.
 
     Left to itself (`warm_start=None`) this turns on exactly when a barrier is
     active, because that is when the desert exists. With no barrier nothing

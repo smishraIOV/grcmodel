@@ -25,6 +25,7 @@ from quant.env.actions import FirmAction
 from quant.env.env import ConstantPolicy, EnvConfig, FirmEnv, evaluate
 from quant.env.reward import LiquidationValue, Zero
 from quant.env.shocks import CommonRandomNumbers, FourStateSampler, MonteCarloSampler
+from quant.hazard import failure_intensity
 from quant.model import GrcBudgets
 from quant.numerics import REFERENCE
 from quant.params import DEFAULTS
@@ -476,3 +477,85 @@ def test_the_convex_cost_needs_a_barrier_to_stay_finite():
     trajectory = bounded.rollout(policy, crn, False)
     assert torch.isfinite(trajectory.states[-1].equity).all()
     assert 0.0 < trajectory.states[-1].alive.double().mean().item() < 1.0
+
+
+# -- Bite 3a: smooth survival hazard --------------------------------------
+
+
+def test_hazard_off_reproduces_the_barrier_model():
+    """The reduction. With no hazard every surviving path has survival exactly
+    one, so the value is the stage-2 expression unchanged."""
+    env_off = FirmEnv(EnvConfig.quarterly(4, hazard=None, equity_floor=0.0), MonteCarloSampler(DEFAULTS.sampler))
+    policy = ConstantPolicy(grc=(0.6, 0.6, 0.6), investment=9.0, profile=REFERENCE)
+    crn = CommonRandomNumbers(0, 4, 512, REFERENCE)
+    trajectory = env_off.rollout(policy, crn, False)
+
+    survival = trajectory.cumulative_survival()[-1]
+    alive = trajectory.states[-1].alive
+    assert torch.equal(survival[alive], torch.ones_like(survival[alive]))
+    assert torch.equal(survival[~alive], torch.zeros_like(survival[~alive]))
+
+
+def test_hazard_responds_to_equity():
+    """The trap this whole channel has to avoid.
+
+    An exogenous death rate leaves firm value linear in equity, which removes
+    the Froot-Stein content entirely and makes the hazard a discount-rate
+    adjustment wearing a costume. It is the dynamic form of the
+    deterministic-loss trap in docs/static-model-debug-notes.md section 2, and
+    just as silent: the model runs, converges, and means nothing.
+    """
+    equity = REFERENCE.tensor([24.0, 16.0, 8.0, 4.0, 1.0, -2.0])
+    intensity = failure_intensity(equity, 16.0, DEFAULTS.hazard, 4)
+    assert (intensity[1:] > intensity[:-1]).all(), "hazard must rise as equity falls"
+    assert intensity[0] < 0.1 * intensity[-1], "response is too flat to be doing any work"
+
+
+def test_hazard_gives_gradient_where_a_barrier_gives_none():
+    """Why the channel was replaced. A step function has zero derivative
+    everywhere it is defined; a hazard has one wherever survival has not
+    underflowed."""
+    for value in (16.0, 8.0, 4.0, 1.0, -2.0):
+        equity = REFERENCE.tensor(value, requires_grad=True)
+        torch.exp(-failure_intensity(equity, 16.0, DEFAULTS.hazard, 4)).backward()
+        assert equity.grad.item() > 1e-6, f"no gradient at equity {value}"
+
+
+def test_hazard_is_invariant_to_the_currency_unit():
+    """The intensity depends on equity only through a ratio, so redenominating
+    the firm must not change it (docs/static-model-debug-notes.md section 4)."""
+    base = failure_intensity(REFERENCE.tensor([8.0, 2.0]), 16.0, DEFAULTS.hazard, 4)
+    scaled = failure_intensity(REFERENCE.tensor([800.0, 200.0]), 1600.0, DEFAULTS.hazard, 4)
+    assert torch.allclose(base, scaled, atol=1e-14)
+
+
+def test_value_is_nonlinear_in_equity():
+    """Froot-Stein needs curvature in the value function. With a state-dependent
+    hazard that curvature is derived rather than assumed -- which is the claim
+    this stage exists to support, so it gets asserted rather than asserted
+    about."""
+    policy = ConstantPolicy(grc=(0.6, 0.6, 0.6), investment=9.0, profile=REFERENCE)
+    crn = CommonRandomNumbers(0, 4, 1024, REFERENCE)
+
+    values = []
+    for equity in (8.0, 12.0, 16.0):
+        firm = replace(DEFAULTS.firm, initial_equity=equity)
+        env = FirmEnv(EnvConfig.quarterly(4, firm=firm), MonteCarloSampler(DEFAULTS.sampler))
+        values.append(evaluate(policy, env, crn).value)
+
+    second_difference = values[0] - 2 * values[1] + values[2]
+    assert abs(second_difference) > 1e-3, f"value is linear in equity: {values}"
+
+
+def test_survival_survives_a_long_horizon_without_underflowing():
+    """Survival is summed in logs and exponentiated once. A product of
+    per-period probabilities underflows inside horizons this model cares
+    about; the sum does not."""
+    env = FirmEnv(EnvConfig.quarterly(40), MonteCarloSampler(DEFAULTS.sampler))
+    policy = ConstantPolicy(grc=(1.2, 1.2, 1.2), investment=10.0, profile=REFERENCE)
+    trajectory = env.rollout(policy, CommonRandomNumbers(0, 40, 512, REFERENCE), False)
+
+    survival = trajectory.cumulative_survival()
+    assert all(torch.isfinite(step).all() for step in survival)
+    assert (survival[-1] <= survival[0]).all()
+    assert survival[-1].max().item() > 0.0, "every path underflowed to zero"

@@ -105,6 +105,28 @@ class SamplerParams:
 
 
 @dataclass(frozen=True)
+class HazardParams:
+    """Intensity of firm failure, as a function of how well capitalized it is.
+
+    A logistic in the capital ratio rather than a power law. Every argument to
+    the exponential must be dimensionless, and a ratio over a dimensionless
+    scale is that by construction; a power of a money quantity is how the
+    financing cost acquired its units bug (docs/static-model-debug-notes.md
+    section 4).
+
+    The base rate is the intensity a maximally distressed firm faces, not the
+    one a healthy firm faces. At `capital_target` the hazard is half of it.
+    Illustrative, like everything else here -- but unlike alpha, these have
+    external anchors that could be used: bank failure rates by capital ratio,
+    rating-agency default rates, observed crypto-lender failures.
+    """
+
+    annual_base_rate: float = 0.5
+    capital_target: float = 0.4   # ratio of opening equity at which hazard is half its base
+    capital_scale: float = 0.2    # how sharply hazard responds around that point
+
+
+@dataclass(frozen=True)
 class ModelParams:
     """Everything the static and Monte Carlo stages need, in one place."""
 
@@ -112,6 +134,7 @@ class ModelParams:
     alphas: GrcAlphas = field(default_factory=GrcAlphas)
     shock: ShockParams = field(default_factory=ShockParams)
     sampler: SamplerParams = field(default_factory=SamplerParams)
+    hazard: HazardParams = field(default_factory=HazardParams)
 
 
 DEFAULTS = ModelParams()

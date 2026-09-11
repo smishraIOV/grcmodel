@@ -70,9 +70,10 @@ class StepResult:
     """
 
     state: FirmState
-    reward: torch.Tensor       # (B,)
-    weight: torch.Tensor       # (B,)
-    terminated: torch.Tensor   # (B,) bool, died during THIS step
+    reward: torch.Tensor        # (B,)
+    weight: torch.Tensor        # (B,)
+    log_survival: torch.Tensor  # (B,) log P(survive this period), <= 0
+    terminated: torch.Tensor    # (B,) bool, crossed the hard barrier THIS step
     info: dict
 
 
@@ -83,8 +84,23 @@ class Trajectory:
     states: list[FirmState]
     rewards: list[torch.Tensor]
     weights: list[torch.Tensor]
+    log_survivals: list[torch.Tensor]
     terminal_value: torch.Tensor
     infos: list[dict]
+
+    def cumulative_survival(self) -> list[torch.Tensor]:
+        """[S_0 = 1, S_1, ..., S_T], the probability a path is still alive.
+
+        Summed in logs and exponentiated once. A product of per-period
+        probabilities underflows float32 well inside a horizon this model
+        cares about, and the sum does not.
+        """
+        running = torch.zeros_like(self.log_survivals[0])
+        survival = [torch.exp(running)]
+        for step in self.log_survivals:
+            running = running + step
+            survival.append(torch.exp(running))
+        return survival
 
     def path_weights(self) -> torch.Tensor:
         """Normalized probability weight per path, compounded over the horizon."""
@@ -93,12 +109,27 @@ class Trajectory:
             weight = weight * step_weight
         return weight / weight.sum()
 
-    def path_values(self, discount: float) -> torch.Tensor:
-        """Discounted return per path, terminal value included."""
+    def path_values(self, discount: float, failure_value: float = 0.0) -> torch.Tensor:
+        """Discounted return per path, survival-weighted.
+
+        Death is not sampled. Each path carries the *probability* it is still
+        alive, so value is an expectation over survival rather than an average
+        over drawn failures: the surviving mass earns the rewards and the
+        terminal value, and the mass that failed during a period collects the
+        failure value at that date.
+
+        That is what makes the objective differentiable in everything that
+        drives the hazard. A sampled death is a step function of equity and
+        carries no gradient; a survival probability carries one everywhere.
+        """
+        survival = self.cumulative_survival()
         total = torch.zeros_like(self.terminal_value)
         for step, reward in enumerate(self.rewards):
-            total = total + (discount**step) * reward
-        return total + (discount ** len(self.rewards)) * self.terminal_value
+            total = total + (discount**step) * survival[step + 1] * reward
+            if failure_value:
+                died = survival[step] - survival[step + 1]
+                total = total + (discount ** (step + 1)) * died * failure_value
+        return total + (discount ** len(self.rewards)) * survival[-1] * self.terminal_value
 
     def effective_sample_size(self) -> float:
         """Kish ESS of the compounded weights, as a fraction of the batch.

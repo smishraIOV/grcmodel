@@ -25,8 +25,9 @@ from quant.env.actions import FirmAction
 from quant.env.shocks import Shock
 from quant.env.state import FirmState, StepResult
 from quant.frictions import exponential_mitigation, financing_cost, production
+from quant.hazard import failure_intensity, log_survival
 from quant.numerics import NumericsProfile
-from quant.params import FirmParams, GrcAlphas
+from quant.params import FirmParams, GrcAlphas, HazardParams
 
 
 class FirmDynamics(Protocol):
@@ -55,7 +56,35 @@ class StandardDynamics:
     # equal the flow, which is the static model: spend buys one period of
     # protection and nothing more.
     grc_depreciation: float = 1.0
+    # None switches the smooth hazard off, leaving the hard barrier as the only
+    # death channel. That is the configuration the closed-form and static
+    # regression tests run against, not the intended model.
+    hazard: HazardParams | None = None
     differentiable: bool = True
+
+    def log_survival(self, state: FirmState, equity: torch.Tensor) -> torch.Tensor:
+        """log P(survive this period), given where the period left the firm.
+
+        Two channels, deliberately layered. The smooth hazard does the economic
+        work and supplies the gradient. The hard barrier underneath is a
+        numerical backstop: the convex financing premium is unbounded below, so
+        without an absorbing floor equity squares each period and overflows
+        float64 within eight quarters. With the hazard on, the barrier should
+        rarely bind -- approaching it already costs survival continuously.
+        """
+        intensity = (
+            failure_intensity(
+                equity, self.firm.initial_equity, self.hazard, self.firm.periods_per_year
+            )
+            if self.hazard is not None
+            else torch.zeros_like(equity)
+        )
+        survived = log_survival(intensity)
+        crossed = torch.full_like(equity, -float("inf"))
+        alive_now = torch.where(equity >= self.equity_floor, survived, crossed)
+        # A path that was already gone contributes no further hazard; its
+        # cumulative survival is already zero.
+        return torch.where(state.alive, alive_now, torch.zeros_like(equity))
 
     def grc_stock(self, state: FirmState, action: FirmAction) -> torch.Tensor:
         """Next period's GRC capital: K' = (1 - delta) K + g.
@@ -155,6 +184,7 @@ class StandardDynamics:
             # a dividend once there is a discount rate to trade it off against.
             reward=torch.zeros_like(equity),
             weight=self.path_weight(stock, shock),
+            log_survival=self.log_survival(state, equity),
             terminated=state.alive & ~survives,
             info={
                 "loss": loss,
