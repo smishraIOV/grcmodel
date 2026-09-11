@@ -23,8 +23,9 @@ Two thresholds matter, and they differ:
 
 from dataclasses import dataclass, replace
 
-from quant.device import get_device
+from quant.cli import parse_profile, print_header
 from quant.model import family_exposures, optimize_policy
+from quant.numerics import DEFAULT_PROFILE, NumericsProfile
 from quant.static import ALPHAS, build_model, build_shock
 
 FAMILIES = ("credit", "operational", "compliance")
@@ -47,7 +48,10 @@ class ThresholdRow:
 
 
 def run_family_sweep(
-    family: str, alphas: list[float] | None = None, n_steps: int = 3000
+    family: str,
+    alphas: list[float] | None = None,
+    n_steps: int = 3000,
+    profile: NumericsProfile = DEFAULT_PROFILE,
 ) -> list[ThresholdRow]:
     """Sweep one family's mitigation effectiveness, holding the others fixed.
 
@@ -55,10 +59,12 @@ def run_family_sweep(
     alpha to zero: spend then buys no mitigation, so the optimizer drives that
     budget to zero on its own rather than needing it pinned there.
     """
-    device = get_device()
-    draw = build_shock()
+    draw = build_shock(profile=profile)
     without = optimize_policy(
-        build_model(alphas=replace(ALPHAS, **{family: 0.0})), draw, n_steps=n_steps, device=device
+        build_model(alphas=replace(ALPHAS, **{family: 0.0})),
+        draw,
+        n_steps=n_steps,
+        profile=profile,
     ).value
 
     rows = []
@@ -67,7 +73,7 @@ def run_family_sweep(
             build_model(alphas=replace(ALPHAS, **{family: alpha})),
             draw,
             n_steps=n_steps,
-            device=device,
+            profile=profile,
         )
         rows.append(
             ThresholdRow(
@@ -80,18 +86,27 @@ def run_family_sweep(
     return rows
 
 
-def budget_at(family: str, alpha: float, n_steps: int = 2000) -> float:
+def budget_at(
+    family: str,
+    alpha: float,
+    n_steps: int = 2000,
+    profile: NumericsProfile = DEFAULT_PROFILE,
+) -> float:
     result = optimize_policy(
         build_model(alphas=replace(ALPHAS, **{family: alpha})),
-        build_shock(),
+        build_shock(profile=profile),
         n_steps=n_steps,
-        device=get_device(),
+        profile=profile,
     )
     return getattr(result, family)
 
 
 def materiality_threshold(
-    family: str, low: float = 0.01, high: float = 1.0, iterations: int = 10
+    family: str,
+    low: float = 0.01,
+    high: float = 1.0,
+    iterations: int = 10,
+    profile: NumericsProfile = DEFAULT_PROFILE,
 ) -> float | None:
     """Smallest alpha at which the family earns a material budget, by bisection.
 
@@ -99,28 +114,29 @@ def materiality_threshold(
     a grid point says only "somewhere below here" and invites reading the
     sweep's resolution as the model's precision.
     """
-    if budget_at(family, high) < MATERIALITY:
+    if budget_at(family, high, profile=profile) < MATERIALITY:
         return None
-    if budget_at(family, low) >= MATERIALITY:
+    if budget_at(family, low, profile=profile) >= MATERIALITY:
         return low
     for _ in range(iterations):
         midpoint = (low + high) / 2
-        if budget_at(family, midpoint) >= MATERIALITY:
+        if budget_at(family, midpoint, profile=profile) >= MATERIALITY:
             high = midpoint
         else:
             low = midpoint
     return high
 
 
-def main() -> None:
-    print(f"device: {get_device()}\n")
-    exposures = family_exposures(build_shock())
+def main(profile: NumericsProfile | None = None) -> None:
+    profile = profile or parse_profile(__doc__.splitlines()[0])
+    print_header(profile)
+    exposures = family_exposures(build_shock(profile=profile))
 
     for family in FAMILIES:
         exposure = exposures[family]
         risk_neutral = 1.0 / exposure
-        rows = run_family_sweep(family)
-        threshold = materiality_threshold(family)
+        rows = run_family_sweep(family, profile=profile)
+        threshold = materiality_threshold(family, profile=profile)
 
         print(f"{family.upper()}  (expected exposure {exposure:.2f})")
         print(f"  risk-neutral break-even alpha = 1/exposure = {risk_neutral:.3f}")

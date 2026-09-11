@@ -25,8 +25,13 @@ Deposits go into "vaults". Investment managers invest these assets into various 
 uv run python scripts/run_static_model.py   # Froot-Stein premium + mean-preserving spread
 uv run python -m quant.simulate             # Monte Carlo, reported across seeds
 uv run python -m quant.threshold            # break-even analysis
+uv run python scripts/bench_profiles.py     # where the accelerator starts paying
 uv run pytest                               # test suite
 ```
+
+Each entry point takes `--profile {reference,cpu-fast,fast}` and prints the
+profile, torch version and commit it ran under. Numbers quoted anywhere in
+`docs/` come from `reference`.
 
 The headline number: with external finance costless the firm spends 0.77 on GRC;
 facing convex financing costs the same firm spends 2.56. That gap is the
@@ -38,26 +43,57 @@ Parameters are illustrative and uncalibrated, which is why `quant/threshold.py`
 reports the effectiveness a programme must reach to be worth running rather than
 a spend recommendation.
 
-## This runs on CPU in float64, deliberately — not on the GPU
+## Numerics: a profile per workload, not one global default
 
-Despite being a PyTorch project on Apple Silicon, the default device is **CPU**
-and the default dtype is **float64**. This is not an oversight, and switching it
-to MPS to "speed it up" will make things worse on both counts:
+The default is **CPU in float64**, and that is deliberate — but it is a
+property of *this* workload, not a property of the project. `quant/numerics.py`
+defines three profiles and every entry point takes `--profile`:
 
-* **MPS cannot allocate float64 at all.** PyTorch raises
-  `Cannot convert a MPS Tensor to float64 dtype`. The precision is not optional
-  here: the zero-friction control test asserts that optimal GRC budgets land on a
-  closed-form analytic benchmark, and it matches to ~1e-15. Under float32 that
-  assertion degrades to roughly 1e-7 and stops being a meaningful check on
-  whether the optimizer and the objective agree.
-* **MPS is also slower for this problem.** Measured: 200 backward passes over
-  20,000 paths take 0.015 s on CPU and 0.031 s on MPS. The tensors are tiny — a
-  three-element vector of controls plus a few thousand paths — so kernel-launch
-  overhead dominates the arithmetic and the GPU never gets to work.
+| profile | device | dtype | for |
+|---|---|---|---|
+| `reference` | CPU | float64 | analytic oracles, anything quoted in `docs/` |
+| `cpu-fast` | CPU | float32 | many small deterministic solves |
+| `fast` | MPS | float32 | large rollouts and grid sweeps |
 
-`quant/device.py` keeps `get_device(prefer_accelerator=True)` as an opt-in, and
-`get_dtype()` will hand back float32 if you take it, because MPS accepts nothing
-else. Worth revisiting only if batch sizes grow by orders of magnitude.
+**Why float64 is the default.** One assertion needs it: the zero-friction
+control test checks that optimal GRC budgets land on a closed-form analytic
+benchmark, and in float64 it matches to ~1e-15. That is a real check on
+whether the optimizer and the objective agree. It runs on a four-state world,
+so it costs nothing to keep it exact.
+
+**Why that is not an argument against the GPU.** The precision requirement
+belongs to the oracle, not to the simulation. A Monte Carlo estimate over 8192
+paths carries a sampling standard error around 1e-2 relative; float32 epsilon
+is 1e-7. Sampling noise dominates rounding by five orders of magnitude, which
+is why `simulate.py` already reports budgets to three decimals. Measured, the
+three profiles agree on the static solve to four decimals — `tests/test_numerics.py::test_profiles_agree`
+holds float32-on-MPS to 1e-5 relative on firm value.
+
+**Where the accelerator starts paying.** MPS carries a fixed dispatch cost of
+roughly 160 µs per optimizer step that does not shrink with the batch; CPU
+cost grows with it. So the crossover is a batch size, and it is lower than
+this file used to claim (M4 Pro, torch 2.14, 200 steps, seconds):
+
+| n | `reference` | `cpu-fast` | `fast` |
+|---|---|---|---|
+| 4 | **0.009** | 0.011 | 0.033 |
+| 1,024 | 0.012 | **0.012** | 0.032 |
+| 4,096 | 0.040 | 0.036 | **0.032** |
+| 131,072 | 0.288 | 0.252 | **0.036** |
+| 1,048,576 | 0.709 | 0.448 | **0.161** |
+
+An earlier version of this section reported MPS as twice as slow at 20,000
+paths. That measurement did not discard MPS's one-off compilation cost, which
+is tens of milliseconds and swamps a short timing loop. Warm, the accelerator
+is ahead from about 4k elements for elementwise path work and about 1k once a
+network is in the loop. `quant/static.py` runs at n=4, so CPU is genuinely
+right for it; the dynamic model in `docs/quant-model.md` §5 will not be.
+
+**Randomness is always drawn on CPU in float64, then cast.** A `torch.Generator`
+on MPS uses a different algorithm from CPU's: same seed, different numbers.
+Drawing on CPU makes the scenario set bit-identical across profiles, so
+changing profile changes arithmetic rounding and nothing else — which is what
+makes comparing them a test rather than a confound.
 
 ## See also
 

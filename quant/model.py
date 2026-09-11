@@ -23,21 +23,21 @@ from dataclasses import dataclass
 
 import torch
 
-from quant.device import get_device, get_dtype
 from quant.frictions import exponential_mitigation, financing_cost, production
+from quant.numerics import DEFAULT_PROFILE, NumericsProfile
+from quant.params import GrcAlphas
 
-
-@dataclass
-class GrcAlphas:
-    """Mitigation effectiveness per risk family: how much of the family's
-    exposure one unit of GRC spend removes. These are the parameters nothing
-    in this repo can currently calibrate, which is why quant/threshold.py
-    reports break-even values for them rather than trusting a point estimate.
-    """
-
-    credit: float = 0.3
-    operational: float = 0.3
-    compliance: float = 0.3
+__all__ = [
+    "GrcAlphas",
+    "GrcBudgets",
+    "RiskDraw",
+    "FrictionlessBenchmark",
+    "PolicyResult",
+    "FirmValueModel",
+    "family_exposures",
+    "frictionless_benchmark",
+    "optimize_policy",
+]
 
 
 @dataclass
@@ -83,9 +83,9 @@ class RiskDraw:
     base_weight: torch.Tensor
     compliance_base_probability: float
 
-    def to(self, device: torch.device, dtype: torch.dtype) -> "RiskDraw":
+    def to(self, profile: NumericsProfile) -> "RiskDraw":
         def move(tensor: torch.Tensor) -> torch.Tensor:
-            return tensor.to(device=device, dtype=dtype)
+            return profile.to(tensor)
 
         return RiskDraw(
             credit_loss=move(self.credit_loss),
@@ -249,7 +249,7 @@ def optimize_policy(
     draw: RiskDraw,
     n_steps: int = 4000,
     lr: float = 0.05,
-    device: torch.device | None = None,
+    profile: NumericsProfile | None = None,
 ) -> PolicyResult:
     """Jointly choose the three GRC budgets and the per-path investment level
     that maximize firm value, by gradient ascent with Adam.
@@ -262,12 +262,11 @@ def optimize_policy(
     initialized at 0 -- the natural starting point for a spend level -- would
     never receive a signal to move away from it.
     """
-    device = device or get_device()
-    dtype = get_dtype(device)
-    draw = draw.to(device, dtype)
+    profile = profile or DEFAULT_PROFILE
+    draw = draw.to(profile)
 
-    raw_budgets = torch.zeros(3, device=device, dtype=dtype, requires_grad=True)
-    raw_investment = torch.zeros(draw.n_paths(), device=device, dtype=dtype, requires_grad=True)
+    raw_budgets = profile.zeros(3, requires_grad=True)
+    raw_investment = profile.zeros(draw.n_paths(), requires_grad=True)
     optimizer = torch.optim.Adam([raw_budgets, raw_investment], lr=lr)
 
     for _ in range(n_steps):
@@ -283,7 +282,13 @@ def optimize_policy(
         value = model.compute_value(budgets, investment, draw)
         external = torch.clamp(investment - model.wealth(budgets, draw), min=0.0)
         weights = draw.path_weights(budgets, model.alphas)
-        constrained = ((external > 1e-9).to(dtype) * weights).sum()
+        # A money-valued threshold, not a bare 1e-9: `external` is softplus
+        # output so it is never exactly zero, and a fixed absolute epsilon is
+        # float64-scaled -- under float32 it sits at the noise floor and every
+        # path reads as constrained. Scaling the reference level by sqrt(eps)
+        # keeps both the units and the meaning across profiles.
+        negligible = model.distress_reference * torch.finfo(profile.dtype).eps ** 0.5
+        constrained = profile.sum((external > negligible).to(profile.dtype) * weights)
 
     return PolicyResult(
         credit=budgets.credit.item(),

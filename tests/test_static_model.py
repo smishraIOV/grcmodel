@@ -190,11 +190,18 @@ def test_default_parameters_sit_in_the_constrained_regime():
 def test_exposures_match_the_constructed_shock():
     """Guards the closed-form benchmark: if exposures drift from what
     build_shock actually contains, every benchmark assertion above is
-    measuring the wrong thing."""
+    measuring the wrong thing.
+
+    Compared with a relative tolerance rather than `==`. The exact form passed
+    only because build_shock used to construct its tensors without a dtype and
+    so got float32, where 0.5*7.0 lands on 3.5 exactly; in float64 the
+    probability-weighted sum is 3.4999999999999996. Asserting bitwise equality
+    on a weighted sum of floats was testing the rounding, not the exposures.
+    """
     exposures = family_exposures(build_shock())
-    assert exposures["credit"] == 4.0
-    assert exposures["operational"] == 3.5
-    assert exposures["compliance"] == 1.5
+    assert math.isclose(exposures["credit"], 4.0, rel_tol=1e-12)
+    assert math.isclose(exposures["operational"], 3.5, rel_tol=1e-12)
+    assert math.isclose(exposures["compliance"], 1.5, rel_tol=1e-12)
 
 
 def test_production_has_the_expected_unconstrained_optimum():
