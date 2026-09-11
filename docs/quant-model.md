@@ -114,12 +114,60 @@ work, not something the current code approximates.
 
 ## 5. Staged path
 
-1. **Static model** — a small explicitly-weighted state space. Built:
-   `quant/static.py`.
-2. **Monte Carlo** — the same model against a large sampled batch. Built:
-   `quant/simulate.py`.
-3. **MDP / value iteration** — not started, and deliberately not next. The state
-   space is not the current bottleneck; parameter provenance is.
+The destination is a multi-period model of a firm that can die, solved
+numerically with a learned policy. Periods are **quarterly**. The two-period
+convex-cost model is being replaced outright rather than kept as a special
+case — but the closed-form benchmark in §6 survives the replacement, because
+setting the discount factor to zero removes the continuation value and leaves
+exactly the one-period problem that benchmark solves.
+
+| stage | what it adds | status |
+|---|---|---|
+| 0 | Numerics profiles, provenance | **built** — `quant/numerics.py` |
+| 1 | Environment seam: state, action, dynamics, policy, one evaluator | **built** — `quant/env/` |
+| 2 | Horizon, discounting, GRC as a depreciating stock | not started |
+| 3 | Grid / fitted value iteration on a reduced config | not started |
+| 4 | Survival hazard, cliff events, abandonment option | not started |
+| 5 | The learner (truncated-BPTT actor-critic) | not started |
+
+Stages 1–3 keep the convex financing cost as scaffolding so each step has an
+exact regression target; stage 4 is where it is replaced and where §6 is
+withdrawn.
+
+**Stage 1, as built.** `quant/env/` factors the single-expression objective in
+`quant/model.py` into a per-period transition (`dynamics.py`), a state
+(`state.py`), an action and the one squashing map (`actions.py`), pre-drawn
+common random numbers (`shocks.py`), and a single `evaluate` that scores every
+solver (`env.py`). Two properties carry the design:
+
+- **Non-anticipativity is a property of the policy, not the dynamics.**
+  `rollout` hands a policy the state and then draws the shock, so a policy that
+  sees only state cannot condition on what has not happened. That is what lets
+  one environment serve both an honest state-feedback policy and the
+  deliberately clairvoyant bound below.
+- **`optimize_policy` was never a policy optimizer.** Its free per-path
+  investment vector is a clairvoyant choice — correct at one period, because
+  all uncertainty resolves before the single decision, but an upper bound at
+  any longer horizon. It is now `solvers/pathwise.perfect_information_bound`,
+  which gives `V(any implementable policy) ≤ V* ≤ V_PI` for free. A learner
+  reporting a value above `V_PI` has a bug.
+
+### Fork not yet taken: firm maturity
+
+The model will eventually split in two, and the split changes the horizon:
+
+- **Mature organization** — an existing deposit franchise, survival dominated
+  by run and licence hazards, infinite-horizon discounted with a stationary
+  policy. This is what the stages above build.
+- **Young / pre-revenue** — no deposit franchise, so continuation value is not
+  an annuity on deposits. Survival is runway-driven, the terminal object is an
+  exit or acquisition option rather than a perpetuity, and compliance GRC acts
+  mainly as a gate on growth rather than as death-avoidance. Shorter, finite
+  horizon.
+
+Nothing built so far preempts this. `TerminalValue` (`quant/env/reward.py`) is
+already a strategy object and `horizon` is configuration rather than an
+assumption baked into a solver.
 
 ## 6. Results
 

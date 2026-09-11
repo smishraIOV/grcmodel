@@ -1,0 +1,315 @@
+"""Rung 0 and Rung 1 for the environment seam.
+
+Rung 0 is properties no solver can be right about if the environment is wrong:
+the accounting identity, non-anticipativity, absorption, reproducibility.
+Three agreeing solvers on a broken simulator agree wrongly, so these come
+first.
+
+Rung 1 is the exact degeneration -- at a one-period horizon with the financing
+friction off, the closed form is known and must be reproduced.
+
+The identity test against quant/model.py is deliberately temporary. That
+module is scaffolding: the convex financing cost is replaced by a survival
+hazard in a later stage, and this test goes with it. Until then it is the
+strongest guard available, because it compares two implementations of the same
+function rather than two optimizers' outputs, and so holds to machine
+precision rather than to a convergence tolerance.
+"""
+
+from dataclasses import replace
+
+import pytest
+import torch
+
+from quant.env.actions import FirmAction
+from quant.env.env import ConstantPolicy, EnvConfig, FirmEnv, evaluate
+from quant.env.reward import LiquidationValue, Zero
+from quant.env.shocks import CommonRandomNumbers, FourStateSampler, MonteCarloSampler
+from quant.model import GrcBudgets
+from quant.numerics import REFERENCE
+from quant.params import DEFAULTS
+from quant.solvers.analytic import family_exposures, frictionless_benchmark
+from quant.solvers.pathwise import perfect_information_bound
+from quant.static import build_model, build_shock
+
+FAMILIES = ("credit", "operational", "compliance")
+
+
+def four_state_env(financing_scale=1.0, horizon=1, **overrides):
+    config = EnvConfig(
+        profile=REFERENCE, financing_scale=financing_scale, horizon=horizon, **overrides
+    )
+    return FirmEnv(config, FourStateSampler(DEFAULTS.shock))
+
+
+def monte_carlo_env(batch=512, horizon=1, **overrides):
+    config = EnvConfig(profile=REFERENCE, horizon=horizon, **overrides)
+    return FirmEnv(config, MonteCarloSampler(DEFAULTS.sampler))
+
+
+class FixedAction:
+    """A policy that replays one prepared action. Not state-dependent."""
+
+    def __init__(self, grc, investment):
+        self.grc, self.investment = grc, investment
+
+    def __call__(self, state):
+        return FirmAction(
+            grc=self.grc.expand(state.batch(), 3), investment=self.investment
+        )
+
+
+# -- Rung 0 ---------------------------------------------------------------
+
+
+def test_objective_matches_the_static_model():
+    """The seam changed the shape of the code, not the economics.
+
+    Compares the rolled-out value against quant/model.py's single-expression
+    objective on random controls. Both compute the same function, so this holds
+    at machine precision -- unlike any comparison of two optimizers, which can
+    only agree to a convergence tolerance.
+    """
+    crn = CommonRandomNumbers(0, 1, 4, REFERENCE)
+    draw = build_shock(profile=REFERENCE)
+    generator = torch.Generator().manual_seed(0)
+
+    worst = 0.0
+    for financing_scale in (0.0, 1.0):
+        env = four_state_env(financing_scale)
+        legacy = build_model(financing_scale=financing_scale)
+        for _ in range(100):
+            grc = torch.rand(3, generator=generator, dtype=torch.float64) * 3.0
+            investment = torch.rand(4, generator=generator, dtype=torch.float64) * 15.0
+            new = env.value_of(
+                env.rollout(FixedAction(grc, investment), crn, differentiable=False)
+            ).item()
+            old = legacy.compute_value(
+                GrcBudgets.from_vector(grc), investment, draw
+            ).item()
+            worst = max(worst, abs(new - old) / max(1.0, abs(old)))
+
+    assert worst < 1e-12, f"worst relative disagreement {worst:.3e}"
+
+
+def test_accounting_identity_holds_elementwise():
+    """equity' = equity - grc - loss - investment + production - premium.
+
+    Asserted per path rather than in expectation. A sign error or a
+    double-counted term that cancels on average would pass any test written on
+    the mean, and this is the cheapest possible guard against it.
+    """
+    env = monte_carlo_env()
+    crn = CommonRandomNumbers(3, 1, 512, REFERENCE)
+    generator = torch.Generator().manual_seed(1)
+
+    for _ in range(20):
+        grc = torch.rand(3, generator=generator, dtype=torch.float64) * 2.0
+        investment = torch.rand(512, generator=generator, dtype=torch.float64) * 12.0
+        start = env.reset(512)
+        shock = env.sampler(crn.at(0), REFERENCE)
+        result = env.dynamics.step(start, FixedAction(grc, investment)(start), shock)
+        info = result.info
+
+        expected = (
+            start.equity
+            - info["grc_spend"]
+            - info["loss"]
+            - investment
+            + info["production"]
+            - info["premium"]
+        )
+        assert torch.allclose(result.state.equity, expected, atol=1e-10, rtol=0.0)
+
+
+def test_policy_cannot_see_the_future():
+    """Non-anticipativity, asserted against the random stream directly.
+
+    Perturb the shocks of period 2 and the trajectory through period 2 must be
+    bitwise unchanged. This is the bug that is hardest to notice when you own
+    your own simulator -- a leak shows up as a policy that is mysteriously good
+    rather than as anything that looks wrong.
+    """
+    env = monte_carlo_env(horizon=3)
+    policy = ConstantPolicy(grc=(0.5, 0.5, 0.5), investment=8.0, profile=REFERENCE)
+
+    crn = CommonRandomNumbers(11, 3, 256, REFERENCE)
+    before = env.rollout(policy, crn, differentiable=False)
+
+    crn.uniforms["credit"][2] = 1.0 - crn.uniforms["credit"][2]
+    crn.uniforms["op_severity"][2] = 1.0 - crn.uniforms["op_severity"][2]
+    after = env.rollout(policy, crn, differentiable=False)
+
+    for step in range(3):  # states after 0, 1 and 2 periods use shocks t<2
+        assert torch.equal(before.states[step].equity, after.states[step].equity), step
+    assert not torch.equal(before.states[3].equity, after.states[3].equity), (
+        "perturbing the final period changed nothing -- the shock is not being used"
+    )
+
+
+def test_death_is_absorbing():
+    """Once dead, always dead, and the state stops moving.
+
+    Death is a mask rather than a removal from the batch, which keeps shapes
+    static and keeps every path aligned with its own slice of the random
+    stream. The cost of that choice is that absorption has to be asserted; it
+    is not structural.
+    """
+    env = monte_carlo_env(horizon=3, equity_floor=12.0)  # high enough to kill most paths
+    policy = ConstantPolicy(grc=(0.2, 0.2, 0.2), investment=6.0, profile=REFERENCE)
+    trajectory = env.rollout(policy, CommonRandomNumbers(5, 3, 512, REFERENCE), False)
+
+    alive = [state.alive for state in trajectory.states]
+    assert alive[1].sum() < alive[0].sum(), "nothing died; the test is not exercising this"
+
+    for earlier, later in zip(alive, alive[1:]):
+        assert not (later & ~earlier).any(), "a dead path came back to life"
+
+    for before, after in zip(trajectory.states[1:], trajectory.states[2:]):
+        dead = ~before.alive
+        assert torch.equal(before.equity[dead], after.equity[dead]), "dead path kept moving"
+
+
+def test_rollout_is_reproducible():
+    env = monte_carlo_env(horizon=2)
+    policy = ConstantPolicy(grc=(0.3, 0.3, 0.3), investment=7.0, profile=REFERENCE)
+    first = env.rollout(policy, CommonRandomNumbers(2, 2, 256, REFERENCE), False)
+    second = env.rollout(policy, CommonRandomNumbers(2, 2, 256, REFERENCE), False)
+    assert torch.equal(first.states[-1].equity, second.states[-1].equity)
+
+
+def test_observation_is_invariant_to_the_currency_unit():
+    """Features are divided by initial equity, so redenominating the firm
+    leaves the learner's inputs unchanged (docs/static-model-debug-notes.md
+    section 4, one axis over)."""
+    base = monte_carlo_env()
+    scaled = FirmEnv(
+        replace(
+            base.config, firm=replace(DEFAULTS.firm, initial_equity=DEFAULTS.firm.initial_equity * 100)
+        ),
+        base.sampler,
+    )
+    assert torch.allclose(
+        base.observe(base.reset(8)), scaled.observe(scaled.reset(8)), atol=1e-12
+    )
+
+
+def test_importance_weights_decay_geometrically_in_the_horizon():
+    """The compliance channel's likelihood ratio compounds multiplicatively.
+
+    Per-step ratios multiply, so the effective sample size falls as
+    ESS(1)**T -- geometric, which is the shape asserted here. Measured on this
+    environment at p0=0.05, alpha_k=0.3, 4096 paths (fraction of batch
+    retained):
+
+        g_k   p(g_k)   T=1     T=8     T=32    T=64
+        1.0   0.0370   0.997   0.973   0.896   0.803
+        2.0   0.0274   0.990   0.920   0.716   0.518
+        8.0   0.0045   0.959   0.718   0.257   0.065
+
+    Worth reading carefully before concluding anything: the decay is real but
+    mild at the horizons this model is aimed at. Over 8-12 quarters a
+    plausible compliance budget retains 85-97% of the sample. The reweighting
+    is a reason to move compliance into the dynamics as an event intensity
+    eventually; it is not a reason to do so before the horizon is long or the
+    budget large. If a later change breaks the geometric law, the reweighting
+    has silently stopped being what it claims.
+    """
+    budget = 8.0  # large, to make the effect measurable in a fast test
+    ess = {}
+    for horizon in (1, 8, 32):
+        env = monte_carlo_env(horizon=horizon)
+        policy = ConstantPolicy(grc=(0.5, 0.5, budget), investment=8.0, profile=REFERENCE)
+        crn = CommonRandomNumbers(4, horizon, 4096, REFERENCE)
+        ess[horizon] = env.rollout(policy, crn, False).effective_sample_size()
+
+    assert ess[1] > ess[8] > ess[32], f"expected monotone decay, got {ess}"
+    for horizon in (8, 32):
+        predicted = ess[1] ** horizon
+        assert abs(ess[horizon] - predicted) < 0.03, (
+            f"T={horizon}: {ess[horizon]:.3f} is not the geometric {predicted:.3f}"
+        )
+
+
+# -- Rung 1 ---------------------------------------------------------------
+
+
+def test_exposures_are_exact_in_the_four_state_world():
+    """The enumerated shock is what makes the closed form assertable at 1e-6
+    rather than at sampling error."""
+    exposures = family_exposures(FourStateSampler(DEFAULTS.shock)(None, REFERENCE))
+    assert exposures["credit"] == pytest.approx(4.0, rel=1e-12)
+    assert exposures["operational"] == pytest.approx(3.5, rel=1e-12)
+    assert exposures["compliance"] == pytest.approx(1.5, rel=1e-12)
+
+
+def test_frictionless_horizon_one_recovers_the_closed_form():
+    """Rung 1a. With no financing friction the objective separates across
+    families and each budget has a closed form. Any deviation means the
+    environment and the analysis disagree."""
+    env = four_state_env(financing_scale=0.0)
+    crn = CommonRandomNumbers(0, 1, 4, REFERENCE)
+    shock = FourStateSampler(DEFAULTS.shock)(crn.at(0), REFERENCE)
+    benchmark = frictionless_benchmark(shock, DEFAULTS.alphas)
+
+    _, result = perfect_information_bound(env, crn, n_steps=20000)
+
+    for index, family in enumerate(FAMILIES):
+        expected = getattr(benchmark, family)
+        # A budget whose optimum is exactly zero is only approached
+        # asymptotically through softplus, so it gets a looser tolerance.
+        tolerance = 1e-3 if expected == 0.0 else 1e-6
+        assert abs(result.grc[index] - expected) < tolerance, family
+
+
+def test_terminal_value_is_what_the_firm_is_optimizing():
+    """At this stage every period's reward is zero and all value is terminal:
+    the firm retains everything and is valued at the end. So halving the
+    recovery on liquidation must halve firm value at a fixed policy.
+
+    A consequence worth stating, because it is a trap for the next stage: with
+    zero rewards a `Zero` terminal value makes the entire objective identically
+    zero, gradients vanish, and every control sits wherever it was initialized
+    while the optimizer reports success. `Zero` only becomes meaningful once
+    per-period rewards exist.
+    """
+    policy = ConstantPolicy(grc=(0.9, 0.9, 0.6), investment=9.0, profile=REFERENCE)
+    crn = CommonRandomNumbers(0, 1, 4, REFERENCE)
+
+    full = evaluate(policy, four_state_env(terminal=LiquidationValue(recovery=1.0)), crn)
+    half = evaluate(policy, four_state_env(terminal=LiquidationValue(recovery=0.5)), crn)
+
+    assert half.value == pytest.approx(0.5 * full.value, rel=1e-12)
+
+    nothing = evaluate(policy, four_state_env(terminal=Zero()), crn)
+    assert nothing.value == pytest.approx(0.0, abs=1e-12)
+
+
+def test_reproduces_the_published_froot_stein_premium():
+    """The stage's headline guard: the rewritten environment gives back the
+    numbers in docs/quant-model.md section 6.
+
+    Asserted at 1e-3, not tighter, and the reason matters. These digits are a
+    property of where Adam was after a fixed number of steps, not of the
+    optimum -- the published run used 4000 steps and had not fully settled the
+    credit coordinate. At 20000 both the old and the new solver converge to
+    0.993179, so the published 0.9932 is right; it was simply quoted from a
+    run that had one more decimal of precision than it had converged.
+    """
+    crn = CommonRandomNumbers(0, 1, 4, REFERENCE)
+    off = perfect_information_bound(four_state_env(0.0), crn, n_steps=20000)[1]
+    on = perfect_information_bound(four_state_env(1.0), crn, n_steps=20000)[1]
+
+    assert off.grc[0] == pytest.approx(0.6077, abs=1e-3)
+    assert off.grc[1] == pytest.approx(0.1626, abs=1e-3)
+    assert off.value == pytest.approx(16.0768, abs=1e-3)
+
+    assert on.grc[0] == pytest.approx(0.9932, abs=1e-3)
+    assert on.grc[1] == pytest.approx(0.8935, abs=1e-3)
+    assert on.grc[2] == pytest.approx(0.6686, abs=1e-3)
+    assert on.value == pytest.approx(9.8342, abs=1e-3)
+    assert on.constrained_fraction == pytest.approx(0.520, abs=1e-3)
+
+    # The regime check the project requires before trusting any comparative
+    # static: degenerate at 0 or 1 (docs/static-model-debug-notes.md section 6).
+    assert 0.05 < on.constrained_fraction < 0.95
