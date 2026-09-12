@@ -221,29 +221,34 @@ reader can agree or disagree with.
 
 **The headline, with no uncalibrated parameter in it:**
 
-> A programme costing 0.99 a year, against a business worth 19.07 as a going
-> concern, must cut the annual probability of failure by at least **517 basis
+> A programme costing 1.00 a year, against a business worth 19.05 as a going
+> concern, must cut the annual probability of failure by at least **527 basis
 > points** to pay for itself.
 
 Both inputs are things a board already has a view on.
 
-**GRC spend should peak at middling capitalisation.** A well-capitalised firm
-faces too little risk to be worth buying down; a nearly-failed one has too little
-business left to protect, and below a threshold should be winding down instead.
-GRC is a genuine decision only in the band between.
+**GRC spend should peak at middling capitalisation.** 0.25 a quarter at equity
+16, against 0.02 at equity 4 — where the firm should be winding down instead —
+and 0.04 at equity 64, where the risk is too small to be worth buying down. A
+well-capitalised firm faces too little risk to bother; a nearly-failed one has
+too little business left to protect. GRC is a genuine decision only in the band
+between.
 
-**The programme is paid for almost entirely by survival, not by smaller losses.**
-A firm budgeting only for expected loss reduction would spend seventy times less.
-As an effectiveness threshold, a compliance programme pays if you believe a unit
-of spend removes 15% of exposure, where pure loss-reduction arithmetic would
-demand an impossible 992%.
+**Survival, not smaller losses, pays for most of the programme.** A firm
+budgeting only for expected loss reduction would spend fifty times less. As an
+effectiveness threshold, a compliance programme pays if you believe a unit of
+spend removes 15% of exposure, where pure loss-reduction arithmetic would demand
+an impossible 992%. How *much* of the programme survival accounts for is partly
+a function of the two-year horizon — see section 6.
 
 **Accumulation matters more than the annual number.** Treating GRC as a stock
-that persists rather than an expense that vanishes is worth **+34% of firm
-value**.
+that persists rather than an expense that vanishes is worth **+33% of firm
+value** — and the firm buys slightly *less* per quarter, because a control that
+persists delivers the same protection for a smaller flow.
 
 **The less a failure would destroy, the less a programme to avoid it is worth.**
-Spend falls 41% as recovery in failure rises from nothing to 80%.
+Spend falls 41% as recovery in failure rises from nothing to 80%: 0.31 a quarter
+when failure destroys everything, 0.18 when it destroys a fifth.
 
 ---
 
