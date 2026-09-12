@@ -193,7 +193,7 @@ exactly the one-period problem that benchmark solves.
 | 3e | Diagnostic bundle and the break-even outputs | **built** — `quant/studies/breakeven.py` |
 | — | Funding constraint: the balance sheet gates investment | **built** — live but weak, see §6 |
 | — | Payout control: dividends out of profit, keeping capital scarce | **built** — `FirmAction.payout` |
-| 4 | Grid / fitted value iteration on a reduced config | not started |
+| 4 | Grid value iteration on a reduced config, and the agreement metric | **built** — `quant/solvers/gridvi.py` |
 | 5 | The learner (truncated-BPTT actor-critic) | not started |
 
 Survival moved ahead of the grid solver after stage 2: the hard insolvency
@@ -503,6 +503,52 @@ Two things found by building this, both invisible at one period:
 `uv run python -m quant.simulate` — 8192 paths × 5 seeds, reported with a 95%
 confidence interval because the severity distributions are heavy-tailed and a
 single-seed answer quoted to four decimals overstates what the sample supports.
+
+### Checking the solvers against something that is not a solver
+
+`quant/solvers/gridvi.py`. Every solver up to this point is a gradient method
+on the same objective, so they can all be wrong in the same way. The grid
+shares only the *dynamics* — it calls the same `StandardDynamics.step` the
+rollouts do — and has nothing else in common: no gradients, no policy
+parameterization, no Adam. Backward induction rather than fixed-point
+iteration, because the environment is finite-horizon and a stationary solution
+would be answering a different question.
+
+It solves a **named restriction**, not the full model: state is equity and a
+single GRC stock held equal across families; action is total spend and
+investment; payout is fixed and wind-down is off. The binding constraint on a
+grid solver here is the action space, not the state space — five continuous
+controls at ten points each would be 100,000 evaluations per node. The rung's
+job is to be right, not general.
+
+**Agreement, and what it is worth.** Comparing $V^{\text{grid}}$ with a
+rollout value conflates three errors: the grid's discretization, the learner's
+optimization, and Monte Carlo noise. The metric used instead is the one-step
+policy-improvement gap $Q^{\text{grid}}(s, a_\pi(s)) - V^{\text{grid}}(s)$,
+evaluated at states the policy actually visits, so both terms come from the
+same value function and the discretization largely cancels.
+
+| policy | honest MC value | gap vs grid |
+|---|---|---|
+| grid's own (tabular) | 37.3483 | +0.28% |
+| optimized constant | 37.5000 | +0.28% |
+| neural (state feedback) | 37.7494 | −1.10% |
+
+The constant-policy solver reaches its answer by Adam on a differentiable
+rollout and the grid reaches its by enumeration; they agree to **0.3%**. That
+is the evidence this rung exists to produce.
+
+The neural row is the interesting one and it is not a failure. It scores
+*worst* on the grid's metric while winning on honest evaluation, because it
+chooses a payout the grid's restriction holds fixed. Agreement with this rung
+is only meaningful inside the restriction — which is worth stating plainly,
+since a metric that quietly penalizes a policy for using a control the referee
+cannot see would look like a learner bug for a long time.
+
+Direct value agreement converges with the grid's shock sample — 7.7% at 48
+draws, 3.6% at 768, 2.0% at 3072, monotone — which is what identifies the
+residual as sampling rather than disagreement. The severity distributions are
+heavy-tailed, so a small sample misses the tail and the grid overstates value.
 
 ### Break-even analysis
 
