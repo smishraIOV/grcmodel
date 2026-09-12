@@ -15,6 +15,7 @@ uv run python -m quant.simulate               # Monte Carlo, multi-seed
 uv run python -m quant.threshold              # break-even analysis
 uv run python scripts/run_dynamic_model.py    # multi-period, GRC as a stock
 uv run python scripts/run_breakevens.py       # the decision-facing break-evens
+uv run python scripts/run_seed_study.py       # solver comparison across seeds, out of sample
 uv run python scripts/bench_profiles.py       # where the accelerator starts paying
 ```
 
@@ -46,9 +47,18 @@ profile, torch version and commit it ran under.
 - **Keep cost functions dimensionally consistent.** Anything raised to a power
   needs a reference level carrying the same units, or results silently depend on
   the currency the firm is denominated in. §4 of the same document.
-- **Check the regime before trusting a comparative static.** `optimize_policy`
-  returns `constrained_fraction`; if it is 0 or 1 the model is in a degenerate
-  regime and its comparative statics are meaningless. §6.
+- **Check the regime before trusting a comparative static.** Every solver
+  returns a diagnostic bundle — `annual_death_probability` (usable band roughly
+  0.2%–15%), `going_concern_share`, `underinvestment_fraction`. At 0 or 1 the
+  model is in a degenerate regime and its comparative statics are meaningless.
+  `docs/static-model-debug-notes.md` §6.
+- **The grid solver only grades policies inside its own restriction.** It fixes
+  payout and disables wind-down, so its value function assumes the firm reverts
+  to that restriction after the current step. A policy using a control the grid
+  holds fixed is charged against a continuation it will not follow, and scores
+  badly while being better — the neural policy is worst on the grid's metric
+  and best on honest evaluation. Do not read a disagreement as a learner bug
+  until the learner has been confined to the same restriction.
 
 ## Documentation
 

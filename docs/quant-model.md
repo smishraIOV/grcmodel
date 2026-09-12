@@ -194,7 +194,7 @@ exactly the one-period problem that benchmark solves.
 | — | Funding constraint: the balance sheet gates investment | **built** — live but weak, see §6 |
 | — | Payout control: dividends out of profit, keeping capital scarce | **built** — `FirmAction.payout` |
 | 4 | Grid value iteration on a reduced config, and the agreement metric | **built** — `quant/solvers/gridvi.py` |
-| 5 | The learner (truncated-BPTT actor-critic) | not started |
+| 5 | The learner: horizon scaling, multi-seed, out-of-sample | **built** — `quant/studies/seeds.py`; verdict in §6 |
 
 Survival moved ahead of the grid solver after stage 2: the hard insolvency
 barrier turned out to be required for the multi-period problem to be finite at
@@ -506,6 +506,15 @@ single-seed answer quoted to four decimals overstates what the sample supports.
 
 ### Checking the solvers against something that is not a solver
 
+> **Read this before grading any learner against the grid.** The grid solves a
+> *restricted* problem — payout fixed, wind-down off — so its value function
+> assumes the firm reverts to that restriction after the current step. A policy
+> that uses a control the grid holds fixed is charged against a continuation it
+> will not actually follow, and scores badly while being better. The neural
+> policy below does exactly this: worst on the grid's metric, best on honest
+> evaluation. **A disagreement with this rung is not evidence of a learner bug
+> until the learner has been confined to the same restriction.**
+
 `quant/solvers/gridvi.py`. Every solver up to this point is a gradient method
 on the same objective, so they can all be wrong in the same way. The grid
 shares only the *dynamics* — it calls the same `StandardDynamics.step` the
@@ -582,6 +591,47 @@ Direct value agreement converges with the grid's shock sample — 7.7% at 48
 draws, 3.6% at 768, 2.0% at 3072, monotone — which is what identifies the
 residual as sampling rather than disagreement. The severity distributions are
 heavy-tailed, so a small sample misses the tail and the grid overstates value.
+
+### Does state feedback earn its place?
+
+`uv run python scripts/run_seed_study.py`. Every other number on this page
+comes from one draw of the scenarios and one optimizer start. That is the
+practice `quant/simulate.py` was corrected for in the static model, and the
+dynamic model reintroduced it — a rollout looks deterministic once the common
+random numbers are fixed. It is deterministic. It is also one sample.
+
+Trained on 512 paths, scored on 4096 **held out**, across five seeds. Both the
+scenario draw and the network initialization vary together, so the spread
+bounds both sources at once.
+
+| quarters | solver | median | 95% CI | range over seeds |
+|---|---|---|---|---|
+| 8 | constant | 53.003 | ±0.192 | [52.605, 53.138] |
+| 8 | neural | 53.138 | ±1.017 | [52.792, 55.414] |
+| 32 | constant | 122.249 | ±0.493 | [121.308, 122.496] |
+| 32 | neural | 136.264 | ±0.303 | [135.533, 136.413] |
+
+**At eight quarters, state feedback is worth nothing.** The median edge is
++0.25% and the neural interval covers the constant policy's — a single run
+reporting the network as better is reporting its seed. **At thirty-two it is
+worth +11.5%,** with intervals that do not overlap.
+
+That is a real answer to a question this project should be willing to have
+answered against it. A learner is a means, not a deliverable, and at the
+horizon the staged path targets the simplest policy in the ladder is not
+measurably beaten. The advantage appears only when the firm lives long enough
+for reacting to circumstances to compound.
+
+**Truncated backpropagation is not needed, contrary to §5's original plan.**
+Full BPTT through the rollout is stable at thirty-two quarters — the neural
+edge grows with horizon rather than degrading, which is the opposite of the
+instability that would have justified a critic and K-step windows. That
+machinery is not built, and the measurement is the reason rather than the
+schedule.
+
+Overfitting is small but real, and is now measured rather than assumed: 0.12%
+to 0.17% at eight quarters, 0.54% to 0.92% at thirty-two. Knowing its size is
+the only way to know it is small.
 
 ### Break-even analysis
 
