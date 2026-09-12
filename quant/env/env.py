@@ -91,6 +91,7 @@ class EnvConfig:
     funding_constrained: bool = False
     allow_payout: bool = False
     cliff: CliffParams | None = None
+    credit_scales_with_book: bool = True
     terminal: TerminalValue = field(default_factory=LiquidationValue)
 
     @classmethod
@@ -193,6 +194,7 @@ class FirmEnv:
             equity_floor=config.equity_floor,
             grc_depreciation=config.grc_depreciation,
             hazard=config.hazard,
+            credit_scales_with_book=config.credit_scales_with_book,
             allow_abandonment=config.allow_abandonment,
             funding_constrained=config.funding_constrained,
             allow_payout=config.allow_payout,

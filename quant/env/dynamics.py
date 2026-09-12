@@ -72,6 +72,13 @@ class StandardDynamics:
     # None switches the cliff channel off, which is what the reduction and the
     # closed-form benchmark run under.
     cliff: CliffParams | None = None
+    # Off for the exactly-solvable oracle, which needs credit loss to be
+    # exogenous: the closed form g* = ln(alpha X)/alpha requires the objective
+    # to separate across families, and a loss proportional to a chosen book
+    # does not separate. The oracle is a deliberately degenerate configuration
+    # (four states, no hazard, no funding constraint) and this is one more
+    # restriction of the same kind.
+    credit_scales_with_book: bool = False
     differentiable: bool = True
 
     def cliff_loss(self, state: FirmState, stock: torch.Tensor, shock: Shock):
@@ -194,14 +201,29 @@ class StandardDynamics:
 
     # -- sub-steps -------------------------------------------------------
 
-    def mitigated_loss(self, stock: torch.Tensor, shock: Shock) -> torch.Tensor:
+    def mitigated_loss(
+        self, stock: torch.Tensor, shock: Shock, book: torch.Tensor
+    ) -> torch.Tensor:
         """Loss after GRC, each family acting on its own moment.
 
         Takes the GRC *stock*, not the period's spend. Compliance is absent
         here on purpose: its budget acts through the path weight, by making a
         breach rarer rather than cheaper.
+
+        **Credit loss scales with the book.** `shock.credit_loss` is a loss rate
+        per unit deployed when `credit_scales_with_book` is on, so lending twice
+        as much costs twice the expected defaults. It was an exogenous money
+        amount, which meant the firm could expand its balance sheet at no
+        additional credit risk -- measured, expected loss was 0.2712 a quarter
+        whether it deployed 5 or 80. That inverts the central banking
+        trade-off: there was no cost to taking assets.
+
+        Operational and compliance losses do *not* scale with the book. An
+        incident costs what it costs, and a regulator's penalty is not
+        proportional to the loan portfolio.
         """
-        credit = exponential_mitigation(shock.credit_loss, stock[..., 0], self.alphas.credit)
+        rate = exponential_mitigation(shock.credit_loss, stock[..., 0], self.alphas.credit)
+        credit = rate * book if self.credit_scales_with_book else rate
         operational = shock.op_occurs * exponential_mitigation(
             shock.op_severity, stock[..., 1], self.alphas.operational
         )
@@ -280,21 +302,34 @@ class StandardDynamics:
     def step(self, state: FirmState, action: FirmAction, shock: Shock) -> StepResult:
         spend = action.total_grc()
         stock = self.grc_stock(state, action)
-        loss = self.mitigated_loss(stock, shock)
+
+        # Lend first, then find out what defaults. A bank sets its book from
+        # the capital it has at the start of the period; losses arrive on what
+        # it lent. The previous ordering computed losses before the funding
+        # decision, which cannot work once credit loss depends on the size of
+        # the book -- the book would have to be known before it was chosen.
+        #
+        # The Froot-Stein channel survives the reordering and is arguably
+        # better for it: a bad quarter now constrains lending in the *next*
+        # quarter through lower equity, which is how the constraint actually
+        # bites in a bank.
+        fundable = state.equity - spend
+        capacity = self.funding_capacity(fundable)
+        investment = torch.minimum(action.investment, capacity)
+
+        loss = self.mitigated_loss(stock, shock, investment)
         cliff = (
             self.cliff_loss(state, stock, shock)
             if self.cliff is not None
             else torch.zeros_like(loss)
         )
         loss = loss + cliff
-        wealth = state.equity - spend - loss
+        wealth = fundable - loss
 
-        # The firm may want more than it can fund. What it deploys is the
-        # lesser of the two, so a bad quarter forces underinvestment rather
-        # than merely making investment expensive.
-        capacity = self.funding_capacity(wealth)
-        investment = torch.minimum(action.investment, capacity)
-
+        # Priced against wealth *after* losses, as before. Only the funding
+        # capacity had to move ahead of the losses -- the book cannot be sized
+        # by a quantity that depends on the book. Keeping the premium where it
+        # was preserves the machine-precision identity against quant/model.py.
         external, premium = self.financing(wealth, investment)
         produced = production(
             investment, self.firm.production_scale, self.firm.production_curvature

@@ -324,7 +324,11 @@ class AnnualRates:
     # Losses. A *rate* per year for how often, a magnitude per event for how
     # bad -- severities do not scale with frequency, because an incident is the
     # size it is however often you look.
-    credit_loss: float = 0.80          # expected credit loss per year
+    # Credit loss is a RATE on the book -- a fraction of what is deployed,
+    # lost per year -- not a money amount. 3.4% against the ~23.5 the firm
+    # funds reproduces the 0.80 a year it used to lose at that book size, so
+    # the level is unchanged and only its dependence on the book is new.
+    credit_loss_rate: float = 0.034    # fraction of deployed book lost per year
     op_events: float = 1.0             # operational incidents per year
     op_severity: float = 0.70          # per incident
     compliance_events: float = 0.20    # breaches per year
@@ -350,7 +354,8 @@ def model_at(periods_per_year: int, rates: AnnualRates = ANNUAL) -> ModelParams:
             production_curvature=rates.curvature_per_period * periods_per_year,
         ),
         sampler=SamplerParams(
-            credit_loss_mean=rates.credit_loss / periods_per_year,
+            # A per-period loss rate on the book, not a money amount.
+            credit_loss_mean=rates.credit_loss_rate / periods_per_year,
             op_probability=rates.op_events / periods_per_year,
             op_severity_mean=rates.op_severity,
             compliance_probability=rates.compliance_events / periods_per_year,

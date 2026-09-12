@@ -52,7 +52,12 @@ def four_state_env(financing_scale=1.0, horizon=1, **overrides):
     Deliberately not DEFAULTS: the closed form exists to check the solvers, so
     it must not move when the dynamic model is recalibrated for plausibility.
     """
-    settings = dict(firm=ORACLE.firm, alphas=ORACLE.alphas)
+    # credit_scales_with_book=False: the closed form requires the objective to
+    # separate across families, and a loss proportional to a chosen book does
+    # not separate. One more deliberate restriction on the oracle.
+    settings = dict(
+        firm=ORACLE.firm, alphas=ORACLE.alphas, credit_scales_with_book=False
+    )
     settings.update(overrides)
     config = EnvConfig(
         profile=REFERENCE, financing_scale=financing_scale, horizon=horizon, **settings
@@ -432,7 +437,8 @@ def test_frictionless_multi_period_repeats_the_closed_form():
     alphas = replace(ORACLE.alphas, compliance=0.0)
     env = FirmEnv(
         EnvConfig(
-            profile=REFERENCE, financing_scale=0.0, horizon=3, discount=0.97, alphas=alphas
+            profile=REFERENCE, financing_scale=0.0, horizon=3, discount=0.97,
+            alphas=alphas, credit_scales_with_book=False,
         ),
         FourStateSampler(ORACLE.shock),
     )
@@ -996,20 +1002,33 @@ def test_investment_never_exceeds_what_can_be_funded():
     assert info["funding_binds"].all(), "wanting 500 should bind everywhere"
 
 
-def test_a_bad_quarter_forces_underinvestment():
-    """The Froot-Stein channel in its hard form: a large loss leaves less
-    internal wealth, less wealth means less funding, and less funding means
-    investment the firm wanted and could not make. The static model priced that
-    with a convex premium; here it is a quantity the firm simply does not get.
-    """
-    env = FirmEnv(EnvConfig.quarterly(1), MonteCarloSampler(DEFAULTS.sampler))
-    policy = ConstantPolicy(grc=(0.3, 0.3, 0.3), investment=11.0, profile=REFERENCE)
-    info = env.rollout(policy, CommonRandomNumbers(0, 1, 4096, REFERENCE), False).infos[0]
+def test_a_bad_quarter_constrains_the_next_one():
+    """The Froot-Stein channel, now operating across periods rather than within
+    one.
 
-    binds = info["funding_binds"]
-    assert binds.any() and not binds.all(), "should bind in the tail, not everywhere"
-    # The paths where it binds are the ones that took the larger losses.
-    assert info["loss"][binds].mean() > info["loss"][~binds].mean()
+    A bank sets its book from the capital it has at the start of a period;
+    defaults arrive on what it lent. So a large loss cannot constrain the
+    lending that produced it -- it constrains the *next* period, through lower
+    equity. That reordering was forced by making credit loss depend on the book:
+    the book cannot be sized by a quantity that depends on the book.
+
+    The channel is the same one and is if anything closer to how a bank works;
+    only its timing moved.
+    """
+    env = FirmEnv(EnvConfig.quarterly(4), MonteCarloSampler(DEFAULTS.sampler))
+    policy = ConstantPolicy(grc=(0.02, 0.02, 0.02), investment=40.0, profile=REFERENCE)
+    trajectory = env.rollout(policy, CommonRandomNumbers(0, 4, 8192, REFERENCE), False)
+
+    # Split on the first quarter's loss, then look at the second quarter's book.
+    first_loss = trajectory.infos[0]["loss"]
+    heavy = first_loss > first_loss.median()
+    second_book = trajectory.infos[1]["investment"]
+
+    assert second_book[heavy].mean() < second_book[~heavy].mean(), (
+        "a heavier loss must leave the firm lending less next quarter"
+    )
+    binds = trajectory.infos[1]["funding_binds"]
+    assert binds.any(), "the funding cap should bind somewhere at this book size"
 
 
 # -- Payout: the first genuine intertemporal trade-off ---------------------
@@ -1151,3 +1170,38 @@ def test_compounded_path_weights_survive_a_long_horizon():
     assert torch.isfinite(weights).all()
     assert weights.sum().item() == pytest.approx(1.0, rel=1e-12)
     assert trajectory.effective_sample_size() > 0.5
+
+
+def test_credit_loss_scales_with_the_book():
+    """The central banking trade-off: taking more assets must cost more risk.
+
+    It did not. `shock.credit_loss` was an exogenous money amount drawn
+    independently of the investment action, so expected loss was 0.2712 a
+    quarter whether the firm deployed 5 or 80 -- expanding the balance sheet
+    was free on the risk side, which inverts the decision a bank actually
+    faces. Credit loss is now a rate on what is deployed.
+
+    Operational and compliance losses deliberately do *not* scale: an incident
+    costs what it costs, and a regulator's penalty is not proportional to the
+    loan portfolio.
+    """
+    env = FirmEnv(EnvConfig.quarterly(1), MonteCarloSampler(DEFAULTS.sampler))
+    crn = CommonRandomNumbers(0, 1, 8192, REFERENCE)
+    stock = REFERENCE.full((8192, 3), 0.65)
+    shock = env.sampler(crn.at(0), REFERENCE)
+
+    small = env.dynamics.mitigated_loss(stock, shock, REFERENCE.full((8192,), 5.0))
+    large = env.dynamics.mitigated_loss(stock, shock, REFERENCE.full((8192,), 25.0))
+    assert large.mean() > small.mean(), "a bigger book must carry more credit loss"
+
+    # The difference is credit alone, so it is exactly proportional to the book.
+    credit_only = (large - small) / 20.0
+    rate = env.dynamics.mitigated_loss(
+        stock, shock, REFERENCE.full((8192,), 1.0)
+    ) - env.dynamics.mitigated_loss(stock, shock, torch.zeros(8192, dtype=torch.float64))
+    assert torch.allclose(credit_only, rate, atol=1e-12)
+
+    # And the oracle keeps it exogenous, because the closed form needs the
+    # objective to separate across families.
+    oracle = four_state_env()
+    assert oracle.dynamics.credit_scales_with_book is False
