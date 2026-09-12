@@ -47,15 +47,33 @@ class LiquidationValue:
 
 @dataclass(frozen=True)
 class PerpetuityValue:
-    """Equity plus a multiple of it, standing in for the continuing franchise.
+    """Equity, plus the value of the business that is still there.
 
-    A placeholder shape, not a calibrated one: the franchise should grow with
-    the deposit base rather than with equity, which is why deposits become
-    state in a later stage. Kept explicit so the assumption is visible.
+    The franchise is **added**, not multiplied. That distinction is the whole
+    of this class and getting it wrong broke three separate channels.
+
+    Written as `(1 + m) * equity`, a unit of equity retained to the horizon is
+    worth `(1 + m)` while a unit distributed today is worth 1 -- a pure
+    arbitrage the firm will always take. At m = 1.0 that drove the payout
+    share to zero, dominated the wind-down option (why accept 0.7 x equity now
+    when waiting pays 2 x equity?), and left the objective so dominated by
+    terminal equity that every other control's gradient was noise beside it.
+
+    Additive, retaining a unit yields exactly one unit at the horizon,
+    discounted -- so distributing wins on time value and has to be argued
+    against on the merits: capital funds investment the firm cannot otherwise
+    fund, and lowers the hazard. That is a real trade-off rather than a free
+    lunch.
+
+    The franchise is a going concern's value beyond its book, collected only by
+    the probability mass still trading at the horizon, so death destroys it.
+    Not proportional to equity, because the business is worth what the
+    opportunity is worth, not what cash the firm happens to be holding on the
+    last day.
     """
 
-    multiple: float = 0.0
+    franchise: float = 0.0
     recovery: float = 1.0
 
     def __call__(self, state: FirmState) -> torch.Tensor:
-        return self.recovery * (1.0 + self.multiple) * state.equity
+        return self.recovery * state.equity + self.franchise

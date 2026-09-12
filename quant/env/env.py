@@ -24,7 +24,7 @@ from typing import Callable, Protocol
 import torch
 
 from quant.env.actions import FirmAction
-from quant.env.reward import LiquidationValue, TerminalValue
+from quant.env.reward import LiquidationValue, PerpetuityValue, TerminalValue
 from quant.env.shocks import CommonRandomNumbers, Shock
 from quant.env.state import N_FAMILIES, FirmState, Trajectory
 from quant.numerics import DEFAULT_PROFILE, NumericsProfile
@@ -116,12 +116,30 @@ class EnvConfig:
             # enough below zero that survival there is already exactly zero, so
             # freezing the path costs no gradient; it exists only to stop the
             # unbounded financing premium from overflowing float64.
+            # The convex premium is retired here, not merely inert. It was the
+            # static model's stand-in for a funding friction and is now
+            # superseded by the hard capacity cap in the dynamics. Left on, its
+            # reference level K is calibrated to the old loss scale: raising
+            # 7.9 externally would cost 12.5 against a quarterly surplus of
+            # 0.70, so the firm never reaches its funding cap and the
+            # underinvestment channel silently dies.
+            financing_scale=0.0,
             equity_floor=-5.0 * firm.initial_equity,
             hazard=DEFAULTS.hazard,
             allow_abandonment=True,
             funding_constrained=True,
             allow_payout=True,
             cliff=DEFAULTS.cliff,
+            # A firm still trading at the horizon is worth more than its book.
+            # Without this the model liquidates it at equity, so there is
+            # nothing beyond T to protect and GRC spend collapses to zero from
+            # the third quarter onward -- a horizon artifact, not economics.
+            #
+            # 15 is roughly the present value of the operating surplus of ~0.70
+            # a quarter at the quarterly discount, net of the failure rate the
+            # firm actually runs. Additive rather than a multiple of equity --
+            # see PerpetuityValue for why that distinction matters.
+            terminal=PerpetuityValue(franchise=15.0),
         )
         settings.update(overrides)  # an explicit override wins over the derived rate
         return cls(**settings)

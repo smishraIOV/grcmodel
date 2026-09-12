@@ -56,27 +56,25 @@ def test_spend_peaks_at_intermediate_capitalization():
     assert spend[-1] < MATERIALITY, "a very safe firm should stop paying for a programme"
 
 
-def test_a_thin_franchise_is_wound_down_rather_than_protected():
-    """GRC is bought by the business it protects. With almost nothing at stake
-    the firm stops rather than buys a programme, which is the direction that
-    makes the survival story a claim rather than a slogan.
+def test_a_thin_franchise_does_not_justify_a_programme():
+    """GRC is bought by the business it protects, so removing the business has
+    to remove the programme. That direction is what makes the survival story a
+    claim rather than a slogan.
 
-    Asserted on the exit decision rather than on the budget, and the reason is
-    worth recording. Reported spend is conditional on still operating -- "if
-    you are running this business, spend this much" -- so a firm that winds
-    down immediately can still show a positive per-quarter budget for the
-    sliver of probability that carries on. The decision it is actually making
-    is to leave.
+    Swept through the going-concern value directly. An earlier version swept
+    productivity instead, which leaves the terminal franchise pinned, so the
+    firm always had something worth protecting and every row reported "worth
+    running".
     """
     rows = franchise_breakeven(
-        DEFAULTS.firm, crn(), [1.05, 3.0], quarters=QUARTERS, steps=STEPS
+        DEFAULTS.firm, crn(), [0.0, 15.0], quarters=QUARTERS, steps=STEPS
     )
-    thin, thick = rows[0][1], rows[1][1]
-    assert thin.orderly_exit_rate > 0.5, "a worthless franchise should be wound down"
-    assert thick.orderly_exit_rate < 0.05, "a going concern should be kept"
-    assert thick.value > 3.0 * thin.value
-    # A firm that wound down deliberately did not fail.
-    assert thin.annual_death_probability < 0.5
+    nothing, going_concern = rows[0][1], rows[1][1]
+    assert going_concern.total_grc > nothing.total_grc, (
+        "more at stake must buy more protection"
+    )
+    assert going_concern.annual_death_probability < nothing.annual_death_probability
+    assert going_concern.value > nothing.value
 
 
 def test_effectiveness_breakeven_is_far_below_the_risk_neutral_one():

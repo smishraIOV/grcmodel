@@ -70,7 +70,7 @@ def test_the_forward_pass_is_the_true_hard_indicator():
     would both be wrong -- which is the whole reason the event is not simply
     replaced by its expectation."""
     env = env_with()
-    for stock in (0.0, 5.18):
+    for stock in (0.0, 0.65):
         relaxed, _ = probe(env, stock)
         analytic, _ = exact(env, stock)
         assert relaxed == pytest.approx(analytic, rel=0.05), stock
@@ -83,7 +83,7 @@ def test_the_gradient_is_checked_against_an_exact_answer():
     over.
     """
     env = env_with()
-    for stock in (0.0, 5.18, 10.0):
+    for stock in (0.0, 0.65, 1.2):
         _, relaxed = probe(env, stock)
         _, analytic = exact(env, stock)
         assert relaxed / analytic == pytest.approx(1.0, abs=0.15), stock
@@ -94,8 +94,8 @@ def test_a_hot_relaxation_is_visibly_worse():
     gradient is several times too large, which would silently overstate what
     operational GRC buys."""
     hot = env_with(replace(DEFAULTS.cliff, relaxation_temperature=1.0))
-    _, biased = probe(hot, 5.18)
-    _, analytic = exact(hot, 5.18)
+    _, biased = probe(hot, 0.65)
+    _, analytic = exact(hot, 0.65)
     assert biased / analytic > 2.0
 
 
@@ -103,7 +103,7 @@ def test_the_gradient_always_points_the_right_way():
     """The property that actually matters for a descent direction. More
     operational GRC must lower expected cliff loss at every level tested."""
     env = env_with()
-    for stock in (0.0, 2.0, 5.18, 10.0):
+    for stock in (0.0, 0.3, 0.65, 1.2):
         _, gradient = probe(env, stock)
         assert gradient < 0.0, stock
 
@@ -118,7 +118,7 @@ def test_grc_reduces_frequency_and_not_severity():
     state = env.reset(50_000)
 
     rates, severities, errors = [], [], []
-    for stock_value in (0.0, 8.0):
+    for stock_value in (0.0, 1.2):
         stock = REFERENCE.full((50_000, 3), stock_value)
         loss = env.dynamics.cliff_loss(state, stock, shock)
         struck = loss > 0

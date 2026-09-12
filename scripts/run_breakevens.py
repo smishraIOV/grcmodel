@@ -15,7 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from quant.cli import print_header
-from quant.env.shocks import CommonRandomNumbers
+from quant.env.shocks import CommonRandomNumbers, MonteCarloSampler
+from quant.solvers.analytic import family_exposures
 from quant.numerics import DEFAULT_PROFILE, PROFILES, get_profile
 from quant.params import DEFAULTS
 from quant.studies.breakeven import (
@@ -28,7 +29,16 @@ from quant.studies.breakeven import (
     value_curvature,
 )
 
-EXPOSURES = {"credit": 4.0, "operational": 3.5, "compliance": 1.5}
+def exposures(profile):
+    """Base-probability-weighted expected loss per family, per quarter.
+
+    Computed rather than hardcoded. They were written in as 4.0 / 3.5 / 1.5,
+    which were the static model's magnitudes; after the recalibration the true
+    values are about twenty-five times smaller, so the risk-neutral break-even
+    1/X was being compared against the wrong denominator entirely.
+    """
+    crn = CommonRandomNumbers(0, 1, 1 << 16, profile)
+    return family_exposures(MonteCarloSampler(DEFAULTS.sampler)(crn.at(0), profile))
 
 
 def main() -> None:
@@ -62,10 +72,10 @@ def main() -> None:
     print("   worth buying down; thinly capitalized, there is too little franchise left to protect.")
 
     print("\n3. FRANCHISE BREAK-EVEN -- how much business must be at stake?")
-    print(f"   {'productivity A':>15} | {'spend/qtr':>10} | {'firm value':>11} | {'verdict':>18}")
-    for scale, r in franchise_breakeven(firm, crn, [1.05, 1.3, 2.0, 3.0], **kw):
+    print(f"   {'going concern':>14} | {'spend/qtr':>10} | {'firm value':>11} | {'verdict':>18}")
+    for franchise, r in franchise_breakeven(firm, crn, [0.0, 3.0, 8.0, 15.0], **kw):
         verdict = "worth running" if r.total_grc > MATERIALITY else "uneconomic"
-        print(f"   {scale:>15.2f} | {r.total_grc:>10.4f} | {r.value:>11.3f} | {verdict:>18}")
+        print(f"   {franchise:>14.1f} | {r.total_grc:>10.4f} | {r.value:>11.3f} | {verdict:>18}")
 
     print("\n4. VALUE CURVATURE -- the gambling-for-resurrection check")
     equities = [2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
@@ -87,9 +97,10 @@ def main() -> None:
     if args.alpha_sweep:
         print("\n5. EFFECTIVENESS BREAK-EVEN -- the original question, per family")
         print(f"   {'family':>12} | {'risk-neutral 1/X':>17} | {'with survival':>14} | {'ratio':>7}")
+        exposure = exposures(profile)
         for family in FAMILIES:
             alpha = alpha_breakeven(firm, crn, family, low=0.0005, iterations=8, **kw)
-            neutral = 1.0 / EXPOSURES[family]
+            neutral = 1.0 / exposure[family]
             cell = "none" if alpha is None else f"{alpha:.4f}"
             ratio = "-" if alpha is None else f"{neutral / alpha:.0f}x"
             print(f"   {family:>12} | {neutral:>17.3f} | {cell:>14} | {ratio:>7}")

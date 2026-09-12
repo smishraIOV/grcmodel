@@ -49,11 +49,16 @@ class ReducedSpec:
     n_stock: int = 14
     n_spend: int = 11
     n_investment: int = 11
+    # Ranges track the calibrated scale and are easy to get silently wrong: a
+    # grid whose action range does not cover the optimum reports a confident
+    # answer to a different problem. Before the recalibration these read 16.0,
+    # 3.0 and 18.0 -- a stock ceiling twenty times the steady state and an
+    # investment ceiling *below* what the firm wants to deploy.
     equity_max: float = 48.0
-    stock_max: float = 16.0
-    spend_max: float = 3.0
-    investment_max: float = 18.0
-    payout: float = 0.889  # the level the constant-policy solver settles on
+    stock_max: float = 3.0        # per family; the steady state is 0.65
+    spend_max: float = 0.6        # total per quarter; the optimum is ~0.25
+    investment_max: float = 30.0  # I* is 29.3, and the funding cap binds below it
+    payout: float = 0.0           # the level the constant-policy solver settles on
     # 48 was the first value tried and it is badly too few: the severity
     # distributions are heavy-tailed, so a small sample misses the tail and the
     # grid overstates value. Measured against an honest 4096-path rollout of

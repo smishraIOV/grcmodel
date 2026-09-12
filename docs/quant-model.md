@@ -243,6 +243,27 @@ assumption baked into a solver.
 
 ## 6. Results
 
+> **Recalibrated.** Every number below moved. The static model's magnitudes —
+> a quarterly operating surplus of 9.01 and a gross expected loss of 9.00, both
+> against equity of 16 — were one-shot quantities wearing quarterly clothing. A
+> firm earning more than half its equity every quarter has a franchise worth
+> about 473 against a book value of 16, and that single ratio is what left the
+> wind-down option permanently out of the money, the financing friction inert,
+> and the balance sheet decorative.
+>
+> Production is now `A = 1.05, S = 600`: deploying the ~23.5 it can fund, the
+> firm earns 0.70 a quarter on equity of 16, about **19% a year**. Gross
+> expected loss is 0.475 a quarter, roughly two thirds of that. `alpha` moved
+> from 0.3 to 1.5 because it carries units of 1/money and had to move with the
+> loss scale. The opening GRC stock was re-solved to its fixed point, 0.650 per
+> family.
+>
+> The four-state oracle is **not** recalibrated and never should be
+> (`quant/params.py`, `ORACLE`). It exists to be exactly solvable, not
+> plausible, and sharing parameters with the model it checks is how one change
+> to `production_scale` took out five regression tests and both closed-form
+> checks at once.
+
 Run `uv run python scripts/run_static_model.py`.
 
 ### The Froot-Stein premium
@@ -300,11 +321,9 @@ one period of protection.
 
 | GRC decay | solver | value | spend/qtr | end stock | survives |
 |---|---|---|---|---|---|
-| 1.000 | neural | 15.1140 | 0.7612 | 0.7177 | 11.4% |
-| 1.000 | PI bound | 29.2998 | 1.6945 | 1.0891 | 20.1% |
-| 0.069 | constant | 53.0721 | 0.8429 | 14.0555 | 76.6% |
-| 0.069 | neural | 55.5765 | 1.0114 | 13.4570 | 80.0% |
-| 0.069 | PI bound | 62.0605 | 0.8251 | 13.0716 | 88.2% |
+| 0.069 | constant | 25.3588 | 0.2446 | 2.6389 | 85.8% |
+| 0.069 | neural | 25.3616 | 0.2441 | 2.6349 | 85.8% |
+| 0.069 | PI bound | 26.4266 | 0.2126 | 2.1109 | 87.8% |
 
 (The $\delta = 1$ rows start from the same opening stock but cannot keep it, so
 they describe a firm whose control function evaporates each quarter.)
@@ -315,14 +334,21 @@ Both budgets scored in the *same* world — the one where GRC reduces failure
 intensity as well as expected loss. Comparing them in their own worlds would be
 meaningless, since a world without those channels is simply less dangerous.
 
-| budget set for | spend/qtr | annual death | value |
+| budget set for | spend/qtr | annual failure | value |
 |---|---|---|---|
-| expected loss only | 0.6619 | 13.03% | 52.9068 |
-| loss **and** survival | 0.8429 | 12.49% | 53.0721 |
+| expected loss only | 0.0035 | 12.55% | 24.1067 |
+| loss **and** survival | 0.2446 | 7.35% | 25.3588 |
 
-Budgeting as though GRC only bought smaller losses understates the right spend
-by 27%, costs 0.3% of firm value, and adds 0.54 percentage points to the annual
-failure probability.
+**This is now the sharpest result in the model.** Budgeting as though GRC only
+bought smaller losses gives a programme of essentially **zero** — seventy times
+smaller — because at the calibrated scale a unit of spend buys back far less
+than a unit of expected loss. The entire programme is paid for by survival. It
+costs 4.9% of firm value and 5.2 percentage points of annual failure
+probability to miss that.
+
+At the old magnitudes this gap was 27% of the budget and 0.3% of value. The
+recalibration did not create the effect; it removed a loss channel large enough
+to disguise it.
 
 ### What failure costs, and what GRC cannot do about it
 
@@ -336,15 +362,15 @@ once it has happened. Losing a licence costs what it costs. A model in which
 GRC reduced both would let one parameter buy the same protection twice, and the
 second purchase would be free.
 
-| recovery | spend/qtr | annual death | value | going-concern share |
+| recovery | spend/qtr | annual failure | value | going-concern share |
 |---|---|---|---|---|
-| 0.0 | 1.1094 | 6.92% | 49.012 | 1.000 |
-| 0.4 | 0.8820 | 7.58% | 50.414 | 0.873 |
-| 0.8 | 0.7466 | 7.91% | 51.997 | 0.754 |
+| 0.0 | 0.2976 | 6.79% | 24.527 | 1.000 |
+| 0.4 | 0.2446 | 7.35% | 25.359 | 0.748 |
+| 0.8 | 0.1759 | 8.29% | 26.269 | 0.513 |
 
 The comparative static is the cleanest the survival channel produces, and it is
 one an executive can argue with: **the less a failure would destroy, the less a
-programme to avoid it is worth.** Spend falls by a third across the range while
+programme to avoid it is worth.** Spend falls by 41% across the range while
 the firm becomes more willing to die. Every unit of that spend is bought by the
 franchise at risk — the going-concern share is exactly the part of firm value
 that failure would destroy, and when nothing is recovered it is 1.000 by
@@ -410,16 +436,29 @@ wind-down recovers, so the exit option is dominated and the balance sheet can
 be emptied in a quarter. Measured, the thin-franchise firm's exit rate fell
 from 1.000 to 0.0005 before this constraint was added.
 
-| payout | value | spend/qtr | underinvestment | annual death | end equity | dividend share |
+| payout | value | spend/qtr | underinvestment | annual failure | end equity | dividend share |
 |---|---|---|---|---|---|---|
-| retain all | 50.784 | 0.9025 | 0.011 | 7.17% | 66.26 | 0.000 |
-| optimized | 53.072 | 0.8429 | 0.026 | 12.49% | 21.52 | 0.719 |
+| retain all | 25.359 | 0.2446 | 0.989 | 7.35% | 18.44 | 0.000 |
+| optimized | 25.359 | 0.2446 | 0.989 | 7.35% | 18.44 | 0.000 |
 
-The firm distributes **89% of each quarter's profit**, holding capital roughly
-flat (16 → 21.5 rather than 16 → 66) and keeping the funding constraint binding
-throughout rather than letting it decay. It accepts a higher failure rate for
-it, which is the trade-off being made rather than a defect: capital held is
-capital not distributed.
+**At the recalibrated parameters the firm retains everything, and the two rows
+are identical.** That is a result rather than a broken control. The funding
+constraint now binds on 98.9% of probability mass, so every retained unit is
+deployed at a positive margin *and* lowers the hazard; at a 7% annual failure
+rate that beats distributing. A firm facing that much risk hoards.
+
+The control is live and responds to impatience — at a quarterly discount of
+0.90 the same firm distributes 14% of its profit, and
+`test_impatience_raises_the_payout` asserts the direction. It is the default
+firm that chooses not to use it.
+
+This replaces an earlier reading in which the firm distributed 89% of profit.
+That was an artifact of a mis-specified terminal value: writing the going
+concern as `(1 + m) · equity` made a unit retained to the horizon worth `(1+m)`
+against a unit distributed today worth 1 — a pure arbitrage, which also
+dominated the wind-down option and left the objective so driven by terminal
+equity that every other gradient was noise beside it. The franchise is now
+**added**, not multiplied (`quant/env/reward.py`).
 
 **This is where the discount rate starts to matter.** Every reward was zero
 until now — all value was terminal, so $\beta$ was a scalar multiplier that
@@ -455,8 +494,9 @@ The high end is the "never binds" trap of
 survival looks excellent and the model is silent on the only question it was
 built to answer.
 
-Persistence is worth **+268% of firm value** (15.11 → 55.58) and takes survival
-from 11% to 80%. The firm also spends **more** per quarter, not less
+Persistence is worth **+34% of firm value** (18.97 → 25.36) and takes survival
+from 64% to 86% — a far more modest claim than the +268% the old magnitudes
+produced, and a believable one. The firm also spends **more** per quarter, not less
 (0.56 → 2.52): a unit of spend now protects every later quarter, so more of it
 is worth buying. That is the intertemporal content the static model could not
 express — it is not the one-period answer repeated.
@@ -564,9 +604,9 @@ grid's discretization, the learner's optimization, and Monte Carlo noise.
 
 | policy | honest MC value | gap vs grid |
 |---|---|---|
-| grid's own (tabular) | 37.3483 | +0.28% |
-| optimized constant | 37.5000 | +0.28% |
-| neural (state feedback) | 37.7494 | −1.10% |
+| grid's own (tabular) | 27.6594 | −0.11% |
+| optimized constant | 27.8251 | −0.81% |
+| neural (state feedback) | 27.8289 | −0.81% |
 
 **The +0.28% rows are the result.** The constant-policy solver reaches its
 answer by Adam on a differentiable rollout and the grid reaches its by
@@ -607,31 +647,45 @@ bounds both sources at once.
 
 | quarters | solver | median | 95% CI | range over seeds |
 |---|---|---|---|---|
-| 8 | constant | 53.003 | ±0.192 | [52.605, 53.138] |
-| 8 | neural | 53.138 | ±1.017 | [52.792, 55.414] |
-| 32 | constant | 122.249 | ±0.493 | [121.308, 122.496] |
-| 32 | neural | 136.264 | ±0.303 | [135.533, 136.413] |
+| 8 | constant | 25.370 | ±0.040 | [25.295, 25.400] |
+| 8 | neural | 25.378 | ±0.041 | [25.298, 25.410] |
+| 32 | constant | 11.196 | ±0.000 | [11.196, 11.197] |
+| 32 | neural | 11.200 | ±0.000 | [11.200, 11.200] |
 
-**At eight quarters, state feedback is worth nothing.** The median edge is
-+0.25% and the neural interval covers the constant policy's — a single run
-reporting the network as better is reporting its seed. **At thirty-two it is
-worth +11.5%,** with intervals that do not overlap.
+**State feedback is worth +0.03% at both horizons — within seed noise.** At the
+old magnitudes it was worth nothing at eight quarters and +11.5% at
+thirty-two; the thirty-two-quarter advantage has gone with the recalibration.
 
-That is a real answer to a question this project should be willing to have
-answered against it. A learner is a means, not a deliverable, and at the
-horizon the staged path targets the simplest policy in the ladder is not
-measurably beaten. The advantage appears only when the firm lives long enough
-for reacting to circumstances to compound.
+> **The thirty-two-quarter rows are degenerate and should not be read as
+> economics.** 11.196 is exactly $0.7 \times 16$: the firm is **winding down in
+> the first quarter**, which is also why the variance across seeds is zero.
+>
+> The cause is a horizon inconsistency the recalibration exposed rather than
+> created. The funding constraint now binds on 98.9% of probability mass, so
+> retained capital is too valuable to distribute and the payout share is zero;
+> with no dividends, *all* value is terminal; and a fixed terminal franchise
+> collected at $T$ is discounted by $\beta^{T}$, so a longer horizon makes the
+> firm worth **less**. By thirty-two quarters, continuing is worth less than
+> winding down immediately, and the firm correctly stops.
+>
+> A going concern should not be worth less for living longer. The fix is for
+> the franchise to be realized as a flow rather than a lump at the horizon —
+> which is what a dividend would do if retention were not dominating it. This
+> is open, and it is the reason the horizon question in §5 cannot be settled
+> yet.
 
-**Truncated backpropagation is not needed, contrary to §5's original plan.**
-Full BPTT through the rollout is stable at thirty-two quarters — the neural
-edge grows with horizon rather than degrading, which is the opposite of the
-instability that would have justified a critic and K-step windows. That
-machinery is not built, and the measurement is the reason rather than the
-schedule.
+A learner is a means, not a deliverable, and at every horizon currently
+trustworthy the simplest policy in the ladder is not measurably beaten.
 
-Overfitting is small but real, and is now measured rather than assumed: 0.12%
-to 0.17% at eight quarters, 0.54% to 0.92% at thirty-two. Knowing its size is
+**Truncated backpropagation is still not built, and the evidence for that is
+now weaker than it was.** At the old magnitudes full BPTT was demonstrably
+stable to thirty-two quarters, with the neural edge growing rather than
+degrading. That measurement no longer stands: the thirty-two-quarter case is
+degenerate for the reason above, so it tests nothing about gradient stability.
+The honest position is that the question is currently unmeasurable and should
+be re-asked once the horizon inconsistency is resolved.
+
+Overfitting is small and is measured rather than assumed: 0.11% to 0.12%. Knowing its size is
 the only way to know it is small.
 
 ### Break-even analysis
@@ -649,8 +703,8 @@ failures, and the price of the D&O and cyber cover insuring the same risk.
 
 **1. Hazard break-even — the only one with no $\alpha$ in it.**
 
-> A programme costing **3.28 a year**, against a franchise of **46.90**, must
-> cut the annual probability of failure by at least **698 basis points** to pay
+> A programme costing **0.99 a year**, against a franchise of **19.07**, must
+> cut the annual probability of failure by at least **517 basis points** to pay
 > for itself.
 
 Both inputs are things a board already has a view on, so the whole claim can be
@@ -660,11 +714,11 @@ checked without touching an uncalibrated parameter.
 
 | equity | spend/qtr | annual failure | going-concern share | verdict |
 |---|---|---|---|---|
-| 4.0 | 0.5388 | 61.88% | 0.772 | worth running |
-| **8.0** | **1.3700** | 27.16% | 0.872 | worth running |
-| 16.0 | 0.8189 | 12.31% | 0.880 | worth running |
-| 32.0 | 0.0023 | 3.82% | 0.845 | uneconomic |
-| 64.0 | 0.0015 | 1.69% | 0.781 | uneconomic |
+| 4.0 | 0.0342 | 0.01% | 0.428 | uneconomic — winds down instead |
+| 8.0 | 0.1909 | 11.98% | 0.800 | worth running |
+| **16.0** | **0.2463** | 7.14% | 0.749 | worth running |
+| 32.0 | 0.1497 | 5.22% | 0.683 | worth running |
+| 64.0 | 0.0378 | 3.22% | 0.630 | uneconomic |
 
 **Optimal GRC spend is non-monotone in capitalization and peaks in the middle.**
 Well capitalized, the hazard is too small to be worth buying down; thinly
@@ -672,28 +726,52 @@ capitalized, there is too little franchise left to protect. A model that made
 GRC monotone in capital would be saying something false about both ends, and
 this is the most decision-useful shape the model produces.
 
+The bottom row is worth reading carefully: at equity 4 the annual *failure*
+probability is 0.01%, which looks like the safest firm on the page. It is not —
+it is the firm that **winds down**, and a deliberate exit is not a failure. The
+exercise boundary is between equity 4 and 8.
+
 **3. Franchise break-even — how much business must be at stake?**
 
-| productivity $A$ | spend/qtr | firm value | verdict |
-|---|---|---|---|
-| 1.05 | 0.0544 | 11.196 | uneconomic |
-| 1.30 | 0.0616 | 11.196 | uneconomic |
-| 2.00 | 0.3912 | 16.029 | worth running |
-| 3.00 | 0.8189 | 53.297 | worth running |
+| going concern | spend/qtr | annual failure | firm value | verdict |
+|---|---|---|---|---|
+| 0.0 | 0.0809 | 10.69% | 14.684 | uneconomic |
+| 3.0 | 0.1122 | 9.62% | 16.757 | worth running |
+| 8.0 | 0.1880 | 7.95% | 20.321 | worth running |
+| 15.0 | 0.2463 | 7.14% | 25.467 | worth running |
 
-Below the threshold the firm winds down rather than buying protection — GRC is
-bought by the business it protects.
+Swept through the going-concern value itself rather than through the
+productivity that generates it — sweeping productivity leaves the terminal
+franchise pinned, so the firm always has something worth protecting and every
+row reports "worth running", which is what it did before this was corrected.
+
+Read it as: *this programme pays if you believe the business is worth at least
+about 3 beyond its book value.* GRC is bought by the business it protects, and
+with nothing at stake it stops paying.
 
 **4. Value curvature — the gambling-for-resurrection check.** Second difference
 of firm value in opening equity. A convex region would mean the firm is
 risk-*loving* near failure, and a learner would find it and recommend cutting
 GRC in a crisis: correct inside the model and indefensible outside it.
 
-At these parameters **no convex region is detected**. The largest positive
-second difference is $3.7 \times 10^{-4}$ against concave values of $-3.7$,
-which is numerical noise. Recorded as a negative result with the diagnostic
-left running, because the regime that produces it is real and would arrive
-without announcing itself.
+**At the recalibrated parameters the convex region is now there**, and it was
+not before:
+
+| equity | 2.0 | 4.0 | 8.0 | 16.0 | 32.0 |
+|---|---|---|---|---|---|
+| firm value | 1.399 | 2.800 | 17.686 | 25.467 | 38.111 |
+| $d^2V/dE^2$ | — | **+1.007** | −0.458 | −0.015 | +0.0002 |
+
+The firm is **risk-loving at equity 4** and risk-averse everywhere above it.
+That is gambling for resurrection, and it is economically correct: with the
+franchise nearly gone there is little left to lose and volatility is worth
+buying. It was absent at the old magnitudes, where the largest positive second
+difference was $3.7 \times 10^{-4}$ — noise — because the franchise was so
+large relative to equity that nothing could bring the firm near the region.
+
+It is also the publication hazard the diagnostic exists to catch. A learner
+will find that region and recommend **cutting GRC in a crisis**, which is
+correct inside the model and indefensible outside it.
 
 **5. Effectiveness break-even, per family.** The original question, bisected on
 the *value* a programme adds rather than on the size of its budget — optimal
@@ -704,15 +782,23 @@ worthwhile, which is what it did here before being corrected.
 
 | family | risk-neutral $1/X$ | with survival | ratio |
 |---|---|---|---|
-| credit | 0.250 | 0.0044 | 57× |
-| operational | 0.286 | 0.0083 | 34× |
-| compliance | 0.667 | 0.0083 | 80× |
+| credit | 5.029 | 0.3714 | 14× |
+| operational | 5.694 | 0.0747 | 76× |
+| compliance | 9.924 | 0.1489 | 67× |
 
 Read the compliance row as: *this programme pays provided you believe a unit of
-spend removes at least 0.8% of exposure, where pure expected-loss reduction
-would demand 67%.* The gap is the Froot-Stein premium expressed as a threshold,
-and under the survival framing it is two orders of magnitude wide, because a
-unit of spend now buys franchise protection as well as a smaller loss.
+spend removes at least 15% of exposure, where pure expected-loss reduction
+would demand 992%* — which is to say, on expected-loss grounds alone it could
+never pay at all. The gap is the Froot-Stein premium expressed as a threshold.
+
+The exposures are computed rather than written in. They were hardcoded at the
+static model's 4.0 / 3.5 / 1.5 and are now about twenty-five times smaller, so
+the risk-neutral column was being compared against the wrong denominator
+entirely.
+
+Credit's ratio is the narrowest because it is the one family with **no hazard
+channel of its own** — it reaches survival only indirectly, by leaving more
+equity behind.
 
 ## 7. Superseded result
 

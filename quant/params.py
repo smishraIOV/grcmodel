@@ -25,9 +25,16 @@ class GrcAlphas:
     than trusting a point estimate.
     """
 
-    credit: float = 0.3
-    operational: float = 0.3
-    compliance: float = 0.3
+    # Units of 1/money, so this moves with the loss scale. It was 0.3 when a
+    # quarter's expected loss was 9 against equity of 16 -- a one-shot
+    # magnitude. At the recalibrated scale (SamplerParams below) the same
+    # effectiveness per unit of loss needs a larger alpha.
+    #
+    # 1.5 puts meaningful mitigation at a GRC stock near 1, which is where a
+    # programme costing 5-10% of revenue settles given quarterly depreciation.
+    credit: float = 1.5
+    operational: float = 1.5
+    compliance: float = 1.5
 
 
 @dataclass(frozen=True)
@@ -49,8 +56,21 @@ class FirmParams:
     initial_equity: float = 16.0
     financing_convexity: float = 2.0
     distress_reference: float = 5.0
-    production_scale: float = 3.0
-    production_curvature: float = 10.0
+    # A and S in F(I) = A*S*(1 - exp(-I/S)). These were 3.0 and 10.0, which put
+    # the per-quarter operating surplus at 9.01 against equity of 16 -- the firm
+    # earned more than half its equity every quarter, which is not a bank, and
+    # made its franchise worth roughly 473 against a book value of 16. That
+    # single ratio is what left the wind-down option permanently out of the
+    # money and the financing friction inert: nothing on the balance sheet
+    # could matter next to an unconditional earnings stream that size.
+    #
+    # A just above 1 makes the margin thin; a large S keeps the marginal return
+    # above 1 well past what the firm can fund, so the funding constraint keeps
+    # biting instead of being outgrown. Deploying the ~23.5 it can fund, the
+    # firm earns 0.70 a quarter on equity of 16 -- about 19% a year, which is
+    # a high-margin intermediary rather than a miracle.
+    production_scale: float = 1.05
+    production_curvature: float = 600.0
 
     # GRC capital the firm already has, per family, at the start of a run.
     # Zero describes a firm building a control function from nothing, which is
@@ -75,7 +95,11 @@ class FirmParams:
     # optimal spend collapses to ~0.002 per quarter and the model has nothing
     # to say about budgets at all -- a "never binds" regime of the kind
     # docs/static-model-debug-notes.md section 6 warns about, in a new place.
-    initial_grc_stock: float = 5.18
+    # Re-solved at the recalibrated loss and production scales: the fixed
+    # point moved from 5.18 to 0.650 when a quarter's expected loss went from
+    # 9.00 to 0.475. Same construction as before -- the level at which the
+    # firm's own optimal maintenance spend exactly replaces depreciation.
+    initial_grc_stock: float = 0.650
 
     # What creditors and shareholders recover when the firm fails, as a
     # fraction of whatever positive equity is left at that moment. Limited
@@ -173,11 +197,19 @@ class SamplerParams:
     carries a fixed severity, because losing a licence costs what it costs.
     """
 
-    credit_loss_mean: float = 4.0
+    # Scaled down roughly twentyfold from the static model's magnitudes, which
+    # were a single shock absorbed once rather than a rate. A gross expected
+    # loss of 9.00 a quarter against equity of 16 kills the firm inside two
+    # quarters; at 0.475 it is about two thirds of the operating surplus before
+    # any GRC, which is a risky business rather than a doomed one.
+    #
+    # The 4 : 3.5 : 1.5 weighting across families is preserved, so every
+    # exposure-relative result carries over.
+    credit_loss_mean: float = 0.20
     op_probability: float = 0.25
-    op_severity_mean: float = 14.0
+    op_severity_mean: float = 0.70
     compliance_probability: float = 0.05
-    compliance_severity: float = 30.0
+    compliance_severity: float = 2.0
 
 
 @dataclass(frozen=True)
@@ -271,5 +303,27 @@ class ModelParams:
 
 
 DEFAULTS = ModelParams()
+
+# Pinned, and deliberately not shared with DEFAULTS.
+#
+# The four-state world and the closed-form benchmark exist to be *exactly
+# solvable*, not to be plausible. They are the only thing in this project that
+# knows a right answer without solving anything, so every approximate solver is
+# ultimately measured against them.
+#
+# Sharing parameters with the dynamic model meant that recalibrating the
+# dynamic model for plausibility silently moved the oracle -- which is how a
+# single change to production_scale took out five regression tests and both
+# closed-form checks at once. An oracle that moves when the thing it is
+# checking moves is not an oracle.
+#
+# These are the static model's original values and they should stay put. Their
+# job is to keep ln(alpha * X) / alpha away from its degenerate corners, not to
+# describe a bank.
+ORACLE = ModelParams(
+    firm=FirmParams(production_scale=3.0, production_curvature=10.0),
+    alphas=GrcAlphas(credit=0.3, operational=0.3, compliance=0.3),
+    shock=ShockParams(),
+)
 SPREAD_SWEEP = [0.0, 0.5, 1.0, 1.5, 2.0]
 DEFAULT_SEEDS = (0, 1, 2, 3, 4)

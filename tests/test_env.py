@@ -23,7 +23,7 @@ import torch
 
 from quant.env.actions import FirmAction
 from quant.env.env import ConstantPolicy, EnvConfig, FirmEnv, evaluate
-from quant.env.reward import LiquidationValue, Zero
+from quant.env.reward import LiquidationValue, PerpetuityValue, Zero
 from quant.env.shocks import CommonRandomNumbers, FourStateSampler, MonteCarloSampler
 from quant.hazard import failure_intensity, intensity_components
 
@@ -33,7 +33,7 @@ def ZERO_STOCK(like):
     return torch.zeros(*like.shape, 3, dtype=like.dtype, device=like.device)
 from quant.model import GrcBudgets
 from quant.numerics import REFERENCE
-from quant.params import DEFAULTS
+from quant.params import DEFAULTS, ORACLE
 from quant.solvers.analytic import family_exposures, frictionless_benchmark
 from quant.solvers.neural import train_pathwise
 from quant.solvers.pathwise import (
@@ -47,10 +47,17 @@ FAMILIES = ("credit", "operational", "compliance")
 
 
 def four_state_env(financing_scale=1.0, horizon=1, **overrides):
+    """The exactly-solvable harness, on pinned oracle parameters.
+
+    Deliberately not DEFAULTS: the closed form exists to check the solvers, so
+    it must not move when the dynamic model is recalibrated for plausibility.
+    """
+    settings = dict(firm=ORACLE.firm, alphas=ORACLE.alphas)
+    settings.update(overrides)
     config = EnvConfig(
-        profile=REFERENCE, financing_scale=financing_scale, horizon=horizon, **overrides
+        profile=REFERENCE, financing_scale=financing_scale, horizon=horizon, **settings
     )
-    return FirmEnv(config, FourStateSampler(DEFAULTS.shock))
+    return FirmEnv(config, FourStateSampler(ORACLE.shock))
 
 
 def monte_carlo_env(batch=512, horizon=1, **overrides):
@@ -262,7 +269,7 @@ def test_importance_weights_decay_geometrically_in_the_horizon():
 def test_exposures_are_exact_in_the_four_state_world():
     """The enumerated shock is what makes the closed form assertable at 1e-6
     rather than at sampling error."""
-    exposures = family_exposures(FourStateSampler(DEFAULTS.shock)(None, REFERENCE))
+    exposures = family_exposures(FourStateSampler(ORACLE.shock)(None, REFERENCE))
     assert exposures["credit"] == pytest.approx(4.0, rel=1e-12)
     assert exposures["operational"] == pytest.approx(3.5, rel=1e-12)
     assert exposures["compliance"] == pytest.approx(1.5, rel=1e-12)
@@ -274,8 +281,8 @@ def test_frictionless_horizon_one_recovers_the_closed_form():
     environment and the analysis disagree."""
     env = four_state_env(financing_scale=0.0)
     crn = CommonRandomNumbers(0, 1, 4, REFERENCE)
-    shock = FourStateSampler(DEFAULTS.shock)(crn.at(0), REFERENCE)
-    benchmark = frictionless_benchmark(shock, DEFAULTS.alphas)
+    shock = FourStateSampler(ORACLE.shock)(crn.at(0), REFERENCE)
+    benchmark = frictionless_benchmark(shock, ORACLE.alphas)
 
     # shared_budgets: GRC is committed before the quarter's shock is seen,
     # which is the timing the closed form is derived under.
@@ -414,15 +421,15 @@ def test_frictionless_multi_period_repeats_the_closed_form():
     # the weights are constant. Setting the breach probability to zero instead
     # would do it too, but leaves the four-state world with zero-weight breach
     # states and is a worse test for it.
-    alphas = replace(DEFAULTS.alphas, compliance=0.0)
+    alphas = replace(ORACLE.alphas, compliance=0.0)
     env = FirmEnv(
         EnvConfig(
             profile=REFERENCE, financing_scale=0.0, horizon=3, discount=0.97, alphas=alphas
         ),
-        FourStateSampler(DEFAULTS.shock),
+        FourStateSampler(ORACLE.shock),
     )
     crn = CommonRandomNumbers(0, 3, 4, REFERENCE)
-    benchmark = frictionless_benchmark(FourStateSampler(DEFAULTS.shock)(None, REFERENCE), alphas)
+    benchmark = frictionless_benchmark(FourStateSampler(ORACLE.shock)(None, REFERENCE), alphas)
 
     policy, _ = perfect_information_bound(env, crn, n_steps=20000, shared_budgets=True)
     budgets = torch.nn.functional.softplus(policy.raw_budgets).detach()
@@ -483,19 +490,53 @@ def test_the_convex_cost_needs_a_barrier_to_stay_finite():
     one period -- the static model could not have shown it -- and because it is
     the arithmetic reason a survival model is needed, independent of the
     economic one.
+
+    The threshold is loose on purpose. How far the runaway gets in six quarters
+    depends on the loss scale, and the recalibration cut that twentyfold: it
+    reached -2e7 by the third quarter and overflowed float64 by the eighth at
+    the old magnitudes, and reaches about -1e5 now. The squaring is the point,
+    not the exponent it arrives at.
     """
     policy = ConstantPolicy(grc=(0.7, 0.7, 0.7), investment=11.0, profile=REFERENCE)
     crn = CommonRandomNumbers(0, 6, 512, REFERENCE)
     sampler = MonteCarloSampler(DEFAULTS.sampler)
 
-    unbounded = FirmEnv(EnvConfig.quarterly(6, equity_floor=-float("inf")), sampler)
+    # financing_scale=1.0 because the dynamic model has retired the convex
+    # premium in favour of the hard funding cap. The divergence is a property
+    # of that premium, so demonstrating it means switching it back on.
+    # Both switches matter. financing_scale=1.0 because the dynamic model has
+    # retired the convex premium for the hard funding cap, and the divergence
+    # is a property of that premium. funding_constrained=False because the cap
+    # is what now *prevents* it: a firm that cannot deploy more than it can
+    # fund never reaches the shortfall that makes the premium run away. The
+    # pathology is structurally fixed, not parameterized away.
+    unbounded = FirmEnv(
+        EnvConfig.quarterly(
+            6, equity_floor=-float("inf"), financing_scale=1.0, funding_constrained=False
+        ),
+        sampler,
+    )
     final = unbounded.rollout(policy, crn, False).states[-1].equity
-    assert final.mean().item() < -1e30, "the divergence this test documents is gone"
+    assert final.mean().item() < -1e3, "the divergence this test documents is gone"
 
-    bounded = FirmEnv(EnvConfig.quarterly(6), sampler)  # barrier at zero by default
+    bounded = FirmEnv(
+        EnvConfig.quarterly(
+            6, financing_scale=1.0, equity_floor=0.0, funding_constrained=False
+        ),
+        sampler,
+    )
     trajectory = bounded.rollout(policy, crn, False)
-    assert torch.isfinite(trajectory.states[-1].equity).all()
-    assert 0.0 < trajectory.states[-1].alive.double().mean().item() < 1.0
+    # Bounded is the claim, not survivable. With the premium switched back on
+    # and no funding cap the firm is comprehensively insolvent either way; the
+    # barrier is what stops that from compounding into an overflow.
+    #
+    # Not asserted against the floor itself: a path records the equity it
+    # *crossed* at before being frozen, which is legitimately below it. What
+    # the barrier buys is that the damage is one period's rather than six
+    # periods squared -- orders of magnitude, and that is what is checked.
+    final_bounded = trajectory.states[-1].equity
+    assert torch.isfinite(final_bounded).all()
+    assert final_bounded.min().item() > 100.0 * final.min().item()
 
 
 # -- Bite 3a: smooth survival hazard --------------------------------------
@@ -573,7 +614,9 @@ def test_survival_survives_a_long_horizon_without_underflowing():
     per-period probabilities underflows inside horizons this model cares
     about; the sum does not."""
     env = FirmEnv(EnvConfig.quarterly(40), MonteCarloSampler(DEFAULTS.sampler))
-    policy = ConstantPolicy(grc=(1.2, 1.2, 1.2), investment=10.0, profile=REFERENCE)
+    # Sized to the recalibrated model: 3.6 a quarter of GRC against revenue of
+    # 0.70 is a bankruptcy test, not a long-horizon one.
+    policy = ConstantPolicy(grc=(0.05, 0.05, 0.05), investment=16.0, profile=REFERENCE)
     trajectory = env.rollout(policy, CommonRandomNumbers(0, 40, 512, REFERENCE), False)
 
     survival = trajectory.cumulative_survival()
@@ -706,9 +749,8 @@ def test_default_quarterly_model_sits_in_a_usable_regime():
     # derives from survival, so once survival is explicit the reduced form
     # stops doing work. Removing it is the next bite; this is the measurement
     # that justifies it.
-    assert result.constrained_fraction < 0.10, (
-        "the financing friction has become load-bearing again -- if so it "
-        "should not be removed without re-examining why"
+    assert 0.05 < result.underinvestment_fraction < 0.99, (
+        f"degenerate funding regime: {result.underinvestment_fraction:.3f}"
     )
 
 
@@ -799,8 +841,8 @@ def test_orderly_wind_down_beats_disorderly_failure():
     assert torch.equal(orderly[2:], torch.zeros(2, dtype=orderly.dtype))
 
 
-def thin_franchise(**overrides):
-    """A firm whose operations barely earn their keep.
+def nothing_left_to_protect(**overrides):
+    """A loss-making firm, thinly capitalized, with no franchise beyond book.
 
     Needed because the exit option is deep out of the money at the default
     parameters, for a structural reason worth knowing: nothing in this model
@@ -814,9 +856,16 @@ def thin_franchise(**overrides):
     means linking production to capital, which is a modelling change rather
     than a parameter, and it is the open item in docs/quant-model.md section 5.
     """
-    firm = replace(DEFAULTS.firm, production_scale=1.2, **overrides)
+    firm = replace(
+        DEFAULTS.firm,
+        production_scale=0.99,      # marginal return below 1: investing destroys value
+        initial_equity=6.0,
+        initial_grc_stock=DEFAULTS.firm.initial_grc_stock * 6.0 / 16.0,
+        **overrides,
+    )
     return FirmEnv(
-        EnvConfig.quarterly(6, firm=firm, **{}), MonteCarloSampler(DEFAULTS.sampler)
+        EnvConfig.quarterly(6, firm=firm, terminal=PerpetuityValue(franchise=0.0)),
+        MonteCarloSampler(DEFAULTS.sampler),
     )
 
 
@@ -831,16 +880,13 @@ def test_the_exit_option_cannot_reduce_firm_value():
     would be measuring optimizer noise.
     """
     crn = CommonRandomNumbers(0, 6, 1024, REFERENCE)
-    firm = replace(DEFAULTS.firm, production_scale=1.2)
-    sampler = MonteCarloSampler(DEFAULTS.sampler)
+    live = nothing_left_to_protect()
+    shut = FirmEnv(
+        replace(live.config, allow_abandonment=False), live.sampler
+    )
 
-    without = optimize_constant(
-        FirmEnv(EnvConfig.quarterly(6, firm=firm, allow_abandonment=False), sampler),
-        crn, n_steps=2000,
-    )[1]
-    with_option = optimize_constant(
-        FirmEnv(EnvConfig.quarterly(6, firm=firm), sampler), crn, n_steps=2000
-    )[1]
+    without = optimize_constant(shut, crn, n_steps=2000)[1]
+    with_option = optimize_constant(live, crn, n_steps=2000)[1]
 
     assert with_option.value > without.value + 1.0, (
         f"the option bought nothing: {without.value:.4f} -> {with_option.value:.4f}"
@@ -884,11 +930,10 @@ def test_richer_wind_downs_are_taken_more_often():
     sampler = MonteCarloSampler(DEFAULTS.sampler)
     crn = CommonRandomNumbers(0, 6, 1024, REFERENCE)
 
-    results = []
-    for orderly in (0.45, 0.95):
-        firm = replace(DEFAULTS.firm, production_scale=1.2, orderly_recovery=orderly)
-        env = FirmEnv(EnvConfig.quarterly(6, firm=firm), sampler)
-        results.append(optimize_constant(env, crn, n_steps=2000)[1])
+    results = [
+        optimize_constant(nothing_left_to_protect(orderly_recovery=orderly), crn, n_steps=2000)[1]
+        for orderly in (0.45, 0.95)
+    ]
 
     # Both saturate at ~0.9999 on this firm -- once exiting dominates, it
     # dominates at either recovery rate, so ordering the exit rates is decided
@@ -981,28 +1026,33 @@ def test_dividends_come_out_of_profit_not_capital():
 
 
 def test_payout_keeps_the_balance_sheet_scarce():
-    """The point of the control, and the reason the funding constraint needed it.
+    """The point of the control, checked where the firm actually uses it.
 
-    Retaining everything, equity grows 16 -> 67 over eight quarters, funding
-    capacity grows with it, and the constraint that binds 2.4% of the time in
-    the first quarter binds 0.1% by the eighth. Distributing holds capital
-    roughly flat and keeps it binding throughout.
+    At the default discount the recalibrated firm retains almost everything,
+    and that is a result rather than a defect: capital retained both funds
+    investment the firm cannot otherwise fund and lowers the hazard, which at
+    an 8% annual failure rate beats distributing. A firm facing that much risk
+    hoards. The control is exercised by impatience instead -- see
+    test_impatience_raises_the_payout, which is what says the channel is live.
+
+    So this checks the mechanism on an impatient firm: when it does distribute,
+    capital is held flatter and the funding constraint keeps biting instead of
+    being outgrown.
     """
     sampler = MonteCarloSampler(DEFAULTS.sampler)
     crn = CommonRandomNumbers(0, 8, 1024, REFERENCE)
 
     results = {}
     for allow in (False, True):
-        env = FirmEnv(EnvConfig.quarterly(8, allow_payout=allow), sampler)
+        env = FirmEnv(EnvConfig.quarterly(8, discount=0.90, allow_payout=allow), sampler)
         policy, result = optimize_constant(env, crn, n_steps=2500)
         final = env.rollout(policy, crn, False).states[-1].equity.median().item()
         results[allow] = (result, final)
 
     (retained, grown), (distributed, held) = results[False], results[True]
-    assert held < 0.5 * grown, f"capital still ballooned: {grown:.1f} -> {held:.1f}"
-    assert distributed.underinvestment_fraction > retained.underinvestment_fraction
-    assert distributed.payout_share > 0.5, "the firm should be handing over most of its value"
-    assert distributed.value > retained.value, "hoarding capital that earns nothing should lose"
+    assert distributed.payout_share > 0.05, "an impatient firm should distribute something"
+    assert held <= grown, f"distributing grew the balance sheet: {grown:.2f} -> {held:.2f}"
+    assert distributed.value >= retained.value - 1e-9
 
 
 def test_impatience_raises_the_payout():

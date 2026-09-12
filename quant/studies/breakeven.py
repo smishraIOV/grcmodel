@@ -31,6 +31,7 @@ them:
 from dataclasses import dataclass, replace
 
 from quant.env.env import EnvConfig, FirmEnv, evaluate
+from quant.env.reward import PerpetuityValue
 from quant.env.shocks import CommonRandomNumbers, MonteCarloSampler
 from quant.numerics import DEFAULT_PROFILE, NumericsProfile
 from quant.params import DEFAULTS, FirmParams, GrcAlphas
@@ -110,16 +111,25 @@ def capitalization_band(firm, crn, equities, quarters=8, steps=2000):
     return rows
 
 
-def franchise_breakeven(firm, crn, scales, quarters=8, steps=2000):
-    """How large must the franchise be before the programme pays?
+def franchise_breakeven(firm, crn, franchises, quarters=8, steps=2000):
+    """How much business must be at stake before the programme pays?
 
-    Swept through the productivity of the investment opportunity, which is what
-    makes the going concern worth anything. Useful because franchise value is a
-    valuation question a firm already answers, and alpha is not.
+    Swept through the going-concern value itself rather than through the
+    productivity that generates it. Sweeping productivity leaves the terminal
+    franchise pinned, so the firm always has something worth protecting and
+    every row reports "worth running" -- which is what it did before this was
+    corrected.
+
+    Useful because this is a valuation question a firm already answers, and
+    alpha is not: *this programme pays if you believe the business is worth at
+    least X beyond its book value.*
     """
     rows = []
-    for scale in scales:
-        rows.append((scale, solve(replace(firm, production_scale=scale), crn, quarters, steps)))
+    for franchise in franchises:
+        rows.append((
+            franchise,
+            solve(firm, crn, quarters, steps, terminal=PerpetuityValue(franchise=franchise)),
+        ))
     return rows
 
 

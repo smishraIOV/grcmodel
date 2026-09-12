@@ -37,16 +37,18 @@ from quant.model import (
     optimize_policy,
 )
 from quant.numerics import DEFAULT_PROFILE, NumericsProfile
-from quant.params import DEFAULTS, SPREAD_SWEEP, FirmParams, GrcAlphas, ShockParams
+from quant.params import ORACLE, SPREAD_SWEEP, FirmParams, GrcAlphas, ShockParams
 
-ALPHAS: GrcAlphas = DEFAULTS.alphas
+# The oracle's parameters, pinned. This module is the exactly-solvable
+# harness, not the model (quant/params.py, ORACLE).
+ALPHAS: GrcAlphas = ORACLE.alphas
 
 
 def build_shock(
     credit_spread: float | None = None,
     compliance_severity: float | None = None,
     compliance_probability: float | None = None,
-    shock: ShockParams = DEFAULTS.shock,
+    shock: ShockParams = ORACLE.shock,
     profile: NumericsProfile = DEFAULT_PROFILE,
 ) -> RiskDraw:
     """Four states: (good, bad) business crossed with (no breach, breach).
@@ -83,7 +85,7 @@ def build_shock(
 
 
 def build_model(
-    financing_scale: float = 1.0, firm: FirmParams = DEFAULTS.firm, **overrides
+    financing_scale: float = 1.0, firm: FirmParams = ORACLE.firm, **overrides
 ) -> FirmValueModel:
     params = dict(
         initial_equity=firm.initial_equity,
@@ -153,7 +155,7 @@ def main(profile: NumericsProfile | None = None) -> None:
     print(f"  finance constraint binds on {frictional.constrained_fraction:.1%} of probability mass")
 
     print("\nMean-preserving spread of the credit shock (mean held at "
-          f"{DEFAULTS.shock.credit_mean}, convexity {DEFAULTS.firm.financing_convexity})")
+          f"{ORACLE.shock.credit_mean}, convexity {ORACLE.firm.financing_convexity})")
     print(f"{'spread':>8} | {'credit GRC':>10} | {'total GRC':>10} | {'firm value':>10}")
     for spread, result in run_spread_sweep(profile=profile):
         print(f"{spread:>8.2f} | {result.credit:>10.4f} | {result.total:>10.4f} | {result.value:>10.4f}")
