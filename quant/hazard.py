@@ -42,6 +42,17 @@ lets the caller accumulate their sum in log space:
     licence       a breach escalates to revocation. Compliance GRC reduces it
                   directly.
 
+**The operational channel is still a label, and now visibly so.** It is a
+constant annual rate that GRC bends, and it is *named* after depositors
+leaving -- but until the liability stage the model had no depositors, so
+nothing about the firm's funding could make a run likelier or costlier. There
+are deposits now (quant/params.py, FundingParams), and the channel still does
+not consult them: a firm funded five-to-one on demandable money faces exactly
+the same assumed run rate as one funded entirely by its owners, which is
+plainly wrong. The stage after next replaces this rate with withdrawals the
+firm actually has to meet, so that a run is something the balance sheet
+produces rather than something the parameters assert.
+
 That split is what makes GRC buy *survival* rather than only buying smaller
 losses, and it is the difference between a programme justified by expected-loss
 reduction and one justified by the franchise it protects. Credit has no hazard

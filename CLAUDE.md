@@ -9,7 +9,7 @@ structure; `docs/quant-model.md` is the model spec and the current results.
 Everything goes through `uv`:
 
 ```bash
-uv run pytest                                 # test suite
+uv run pytest                                 # test suite (see the note below)
 uv run python scripts/run_static_model.py     # Froot-Stein premium + spread sweep
 uv run python -m quant.simulate               # Monte Carlo, multi-seed
 uv run python -m quant.threshold              # break-even analysis
@@ -18,6 +18,9 @@ uv run python scripts/run_breakevens.py       # the decision-facing break-evens
 uv run python scripts/run_seed_study.py       # solver comparison across seeds, out of sample
 uv run python scripts/bench_profiles.py       # where the accelerator starts paying
 ```
+
+If `uv run pytest` fails to spawn, `./.venv/bin/python -m pytest` works; the
+suite takes about three and a half minutes.
 
 The rejected truncated-BPTT-with-a-critic experiment is not on this branch.
 It lives on `svg-critic` (`quant/solvers/svg.py`, `tests/test_svg.py`,
@@ -56,9 +59,21 @@ profile, torch version and commit it ran under.
   the currency the firm is denominated in. §4 of the same document.
 - **Check the regime before trusting a comparative static.** Every solver
   returns a diagnostic bundle — `annual_death_probability` (usable band roughly
-  0.2%–15%), `going_concern_share`, `underinvestment_fraction`. At 0 or 1 the
-  model is in a degenerate regime and its comparative statics are meaningless.
-  `docs/static-model-debug-notes.md` §6.
+  0.2%–15%), `going_concern_share`, `underinvestment_fraction`, `leverage`. At
+  0 or 1 the model is in a degenerate regime and its comparative statics are
+  meaningless. `docs/static-model-debug-notes.md` §6.
+- **`underinvestment_fraction` is the one that goes quiet.** It is the
+  Froot-Stein channel, and it switches off whenever the firm's balance sheet
+  outgrows its opportunity rather than when anything is broken. Adding the
+  deposit stock took it from 71% to 0.0% in one commit, with every other
+  diagnostic still in band and the tests still green, because the firm simply
+  stopped wanting what it could now fund. If you change what the firm can fund,
+  re-check what it wants to deploy (`AnnualRates.curvature_per_period`).
+- **`optimize_constant`'s step budget has to reach the answer.** The control
+  starts at `softplus(0)` and Adam moves the raw parameter by at most `lr` per
+  step, so 1500 steps at lr 0.05 cannot reach an investment level near 80 —
+  it converges to about 58 and looks like an economic finding. A sweep whose
+  conclusions move when you raise `n_steps` was measuring the optimizer.
 - **The grid solver only grades policies inside its own restriction.** It fixes
   payout and disables wind-down, so its value function assumes the firm reverts
   to that restriction after the current step. A policy using a control the grid

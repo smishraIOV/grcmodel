@@ -145,6 +145,11 @@ class FirmParams:
     # firm's capacity to invest, not merely its cash. The static model priced
     # that with a smooth convex premium; this states it as a constraint, which
     # is closer to how funding actually withdraws.
+    #
+    # Superseded by FundingParams below when the liability side is switched on,
+    # where the same role is played by a deposit stock that persists, costs
+    # interest and can run. Kept because it is what every pre-liability result
+    # in docs/quant-model.md was produced under.
     external_funding_multiple: float = 0.5
     # Market access degrades as the firm weakens, rather than vanishing at a
     # threshold: a sigmoid in internal wealth over opening equity. Smooth
@@ -211,6 +216,121 @@ class SamplerParams:
     op_severity_mean: float = 0.70
     compliance_probability: float = 0.05
     compliance_severity: float = 2.0
+
+
+@dataclass(frozen=True)
+class FundingParams:
+    """The liability side: what funds the book, what it costs, and what it does
+    when the firm weakens.
+
+    Until this existed the firm had no liabilities at all. It funded its book
+    out of equity plus a multiple of equity that cost nothing, was repaid
+    inside the period, and could not leave. That is not a bank, and it deleted
+    three of the risks a bank exists to manage: leverage, the cost of funding,
+    and the possibility that the funding walks out. A hazard channel named
+    "depositors leave" was a label on a constant, because there were no
+    depositors in the model to leave.
+
+    What this adds is a **stock**, not a flow. Deposits outstanding at the end
+    of one period are outstanding at the start of the next, which is the whole
+    difference: a liability that is repaid within the period cannot run, and a
+    run is the event the channel is named after.
+
+    The economics it buys, in the order they bite:
+
+    - **Leverage amplifies asset losses onto equity.** A 1% loss on a book
+      funded five-to-one against capital is a 5% loss of capital. That is the
+      textbook mechanism by which ordinary credit losses -- not exotic ones --
+      kill intermediaries, and the model could not express it.
+    - **Funding is not free.** Deposits pay interest whether or not the book
+      earns, so leverage is a decision with a price rather than something to
+      max out.
+    - **Funding withdraws as the firm weakens.** The deposit base the firm can
+      carry shrinks with its capital ratio, so a bad quarter cuts next
+      quarter's lending capacity. This is the Froot-Stein underinvestment
+      channel arriving through the liability side rather than being asserted
+      as a constraint on the asset side.
+
+    What is *not* here yet, and is the next stage: withdrawals as a shock, and
+    the fire-sale cost of meeting them out of a book that has not matured.
+    Deposits currently adjust smoothly toward capacity, which is a run in slow
+    motion -- enough to make leverage a real decision, not enough to make
+    liquidity one. The reserve the firm holds against withdrawals is already
+    here and already priced; what is missing is anything to hold it against.
+    """
+
+    # Deposits the firm can carry per unit of equity, at full market access.
+    # 4.0 is a five-to-one balance sheet: assets = (1 + 4) x equity. Banks run
+    # between 10x and 20x on risk-weighted measures and nearer 10x on a plain
+    # leverage ratio; a crypto intermediary funding itself on demandable
+    # deposits would not be granted that, and the point of the number is to put
+    # the firm somewhere leverage plainly matters rather than to match a
+    # jurisdiction.
+    deposit_capacity: float = 4.0
+
+    # What the deposits cost, per year. Below the asset yield, which is the
+    # entire reason an intermediary exists -- it is paid for maturity and
+    # credit transformation, and the spread is where that payment shows up.
+    annual_deposit_rate: float = 0.02
+
+    # What funding the firm has *not* lent earns while it sits there.
+    #
+    # Without this, deposits the firm cannot profitably deploy are a pure
+    # deadweight loss, and the model punishes a bank for having a franchise:
+    # measured at 2.5x leverage on the pre-liability opportunity, firm value
+    # fell 5% purely because the firm was made to carry funding it had no use
+    # for. Real intermediaries park surplus deposits in something liquid; they
+    # do not set fire to them.
+    #
+    # Below the deposit rate, so idle funding carries a small negative spread
+    # rather than being free. That half a point is doing real work later: it is
+    # what stops a liquidity buffer being free insurance once withdrawals
+    # exist, and a buffer that costs nothing would tell us nothing about how
+    # big one should be.
+    annual_reserve_rate: float = 0.015
+
+    # How fast the deposit base moves toward the capacity the firm's capital
+    # supports, per year. Not instantaneous, because a stock that re-solves
+    # itself every period is a flow again and cannot run.
+    #
+    # 2.0 a year is a half-life of about four months: a firm that loses capital
+    # sheds the corresponding deposits over two or three quarters rather than
+    # on the day. Faster than that and the liability side stops being a state
+    # variable in any meaningful sense; much slower and a firm that has lost
+    # its capital keeps funding a book it can no longer support, which is the
+    # opposite of the mechanism.
+    annual_adjustment_speed: float = 2.0
+
+    # Market access, as it applies to the deposit base rather than to a
+    # within-period borrowing. Same sigmoid and the same reasoning as
+    # FirmParams.market_access_*: funding dries up gradually before it dries up
+    # suddenly, and a step would be one more place the gradient dies.
+    #
+    # Applied to the *capacity*, so a weakened firm is not merely constrained
+    # in what it may deploy -- its existing funding is leaving.
+    access_ratio: float = 0.15
+    access_scale: float = 0.08
+
+    def period_deposit_rate(self, periods_per_year: int) -> float:
+        """Interest per period. A rate that compounds down, not one divided
+        down: at four periods a year the difference is immaterial, at
+        fifty-two it is not, and every other annual figure here converts the
+        same way."""
+        return (1.0 + self.annual_deposit_rate) ** (1.0 / periods_per_year) - 1.0
+
+    def period_reserve_rate(self, periods_per_year: int) -> float:
+        """What idle funding earns per period. Compounds down like the rest."""
+        return (1.0 + self.annual_reserve_rate) ** (1.0 / periods_per_year) - 1.0
+
+    def period_adjustment(self, periods_per_year: int) -> float:
+        """Fraction of the gap to capacity closed in one period.
+
+        A Poisson-style conversion, 1 - exp(-theta/ppy), for the same reason
+        the cliff rate uses one: it is a rate, it must land inside [0, 1) for
+        any rate at all, and the obvious 1 - (1 - theta)**(1/ppy) returns a
+        complex number for theta > 1 -- which this default is.
+        """
+        return 1.0 - math.exp(-self.annual_adjustment_speed / periods_per_year)
 
 
 @dataclass(frozen=True)
@@ -301,6 +421,7 @@ class ModelParams:
     sampler: SamplerParams = field(default_factory=SamplerParams)
     hazard: HazardParams = field(default_factory=HazardParams)
     cliff: CliffParams = field(default_factory=CliffParams)
+    funding: FundingParams = field(default_factory=FundingParams)
 
 
 @dataclass(frozen=True)
@@ -339,7 +460,24 @@ class AnnualRates:
     # scales *up* with frequency so that the unconstrained optimum
     # I* = S ln(A) is the same amount of capital however often it is re-decided.
     annual_return: float = 1.2155      # = 1.05 ** 4, the old quarterly figure
-    curvature_per_period: float = 150.0
+    # Sets how much capital the firm wants to deploy: I* = S ln A, with
+    # S = curvature_per_period x periods_per_year.
+    #
+    # 150 put I* at 29.3 against a balance sheet of 24, which was right for a
+    # firm funding itself out of equity plus a small costless multiple. Once
+    # the liability side arrived the balance sheet grew to about 80 and the
+    # firm's *opportunity* did not, so it stopped wanting what it could fund:
+    # measured, the share of quarters in which funding bound fell from 71% to
+    # 0.0%, which is the Froot-Stein underinvestment channel switching itself
+    # off. A bank that cannot use its deposits is not levered, it is merely
+    # paying for storage.
+    #
+    # 500 puts I* at 97.6 against a funding capacity near 80 -- the same 1.2:1
+    # ratio of wanted to fundable that the pre-liability calibration ran at, so
+    # the channel bites as hard as it did and for the same reason. Chosen by
+    # sweeping it: at 300 the firm is comfortable, at 750 it is permanently
+    # capital-starved and the comparative statics flatten out.
+    curvature_per_period: float = 500.0
 
 
 ANNUAL = AnnualRates()

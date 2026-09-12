@@ -21,18 +21,39 @@ N_FAMILIES = 3  # credit, operational, compliance -- docs/framework.md section 1
 
 @dataclass(frozen=True)
 class FirmState:
-    """(equity, GRC stock, alive) for a batch of paths at one point in time.
+    """(equity, deposits, GRC stock, alive) for a batch of paths at one point
+    in time.
 
     `grc_stock` is carried now but not yet depreciated or accumulated: at a
     one-period horizon a stock and a flow are the same thing. It becomes a
     real state variable in stage 2, which is what makes the dynamic problem
     more than the static one repeated.
+
+    `deposits` is `None` in every configuration without a liability side, which
+    is all of the reduced ones: the closed-form benchmark, the static
+    regression, and the grid solver's restriction. That is a sentinel rather
+    than a zero tensor on purpose. Zero deposits is a firm that *has* a
+    liability side and happens to be funding nothing through it, and the two
+    should not be spelled the same way -- the arithmetic agrees but the
+    accounting identity the tests assert does not, because a firm with no
+    liability side pays no interest and has no capacity beyond its own equity.
+    Same convention as `hazard: HazardParams | None` in the dynamics: a channel
+    that is off says so.
     """
 
     equity: torch.Tensor      # (B,)
     grc_stock: torch.Tensor   # (B, 3)
     alive: torch.Tensor       # (B,) bool
+    deposits: torch.Tensor | None = None  # (B,), None when there is no liability side
     t: int = 0
+
+    def assets(self) -> torch.Tensor:
+        """Equity plus deposits: what the firm has to deploy before it spends.
+
+        The balance-sheet identity, and the one place the liability side is
+        allowed to be implicit about being switched off.
+        """
+        return self.equity if self.deposits is None else self.equity + self.deposits
 
     def batch(self) -> int:
         return self.equity.shape[0]
@@ -53,6 +74,7 @@ class FirmState:
             equity=self.equity.detach(),
             grc_stock=self.grc_stock.detach(),
             alive=self.alive.detach(),
+            deposits=None if self.deposits is None else self.deposits.detach(),
         )
 
     def freeze_dead(self, previous: "FirmState") -> "FirmState":
@@ -68,6 +90,11 @@ class FirmState:
             equity=torch.where(alive, self.equity, previous.equity),
             grc_stock=torch.where(alive.unsqueeze(-1), self.grc_stock, previous.grc_stock),
             alive=self.alive & alive,
+            deposits=(
+                None
+                if self.deposits is None
+                else torch.where(alive, self.deposits, previous.deposits)
+            ),
         )
 
 

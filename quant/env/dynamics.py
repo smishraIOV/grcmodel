@@ -9,6 +9,7 @@ extend to a horizon: there was no per-path reward to carry forward.
 The identity every step must satisfy, checked in tests/test_env.py to 1e-10:
 
     equity' = equity - grc - loss - investment + production - premium
+                     - interest + reserve income
 
 `differentiable` is declared per dynamics rather than assumed. As cliff events
 and a survival barrier arrive, some channels stop being differentiable; making
@@ -27,7 +28,7 @@ from quant.env.state import FirmState, StepResult
 from quant.frictions import exponential_mitigation, financing_cost, production
 from quant.hazard import failure_intensity, intensity_components, log_survival
 from quant.numerics import NumericsProfile
-from quant.params import CliffParams, FirmParams, GrcAlphas, HazardParams
+from quant.params import CliffParams, FirmParams, FundingParams, GrcAlphas, HazardParams
 
 
 class FirmDynamics(Protocol):
@@ -79,6 +80,13 @@ class StandardDynamics:
     # (four states, no hazard, no funding constraint) and this is one more
     # restriction of the same kind.
     credit_scales_with_book: bool = False
+    # None leaves the firm with no liabilities: it funds its book out of equity
+    # plus a multiple of equity that costs nothing and is settled inside the
+    # period. That is what every result before the liability stage was produced
+    # under, and it is what the closed form and the static regression require.
+    # Set, the firm carries a deposit stock that persists between periods, pays
+    # for it, and finds it shrinking when its capital does.
+    funding: FundingParams | None = None
     differentiable: bool = True
 
     def cliff_loss(self, state: FirmState, stock: torch.Tensor, shock: Shock):
@@ -268,23 +276,108 @@ class StandardDynamics:
             shock.compliance_occurs > 0.5, p / safe_p0, (1.0 - p) / (1.0 - p0)
         )
 
-    def funding_capacity(self, wealth: torch.Tensor) -> torch.Tensor:
-        """The most the firm can deploy this quarter: what it has, plus what it
-        can raise against it.
+    def deposit_capacity(self, equity: torch.Tensor) -> torch.Tensor:
+        """The deposit base this much capital can carry.
 
-        Both terms collapse together in a bad quarter, which is the point. The
-        multiple is applied to internal wealth, and market access is a sigmoid
-        in wealth over opening equity -- so a firm that has just taken a large
-        loss finds both that it has less of its own money and that less of
-        anyone else's is available. Funding withdraws exactly when it is needed.
+        A leverage limit times a market-access sigmoid, both in the capital
+        ratio, so it is dimensionless in the same way the hazard is. The
+        product is what makes the liability side procyclical: a firm that has
+        lost capital can carry fewer deposits both because the limit is a
+        multiple of a smaller number and because the market is less willing to
+        leave money with it. The two collapse together, which is how funding
+        actually behaves.
+
+        Deposits do not jump to this level -- `deposit_flow` moves toward it.
+        The gap between where the base is and where it can be is the state that
+        makes the liability side more than a formula in equity.
+        """
+        ratio = equity / self.firm.initial_equity
+        access = torch.sigmoid(
+            (ratio - self.funding.access_ratio) / self.funding.access_scale
+        )
+        return self.funding.deposit_capacity * torch.clamp(equity, min=0.0) * access
+
+    def deposit_flow(
+        self, deposits: torch.Tensor, equity: torch.Tensor
+    ) -> torch.Tensor:
+        """D' = D + theta (capacity(E') - D): partial adjustment toward capacity.
+
+        Evaluated on *closing* equity, so a quarter's losses start the deposit
+        base moving the same quarter they land rather than a period later.
+
+        Partial rather than instant, and that is the whole reason deposits are
+        a state variable. At theta = 1 the base is a deterministic function of
+        equity, the liability side collapses back into the asset side, and
+        there is nothing outstanding that could run. The stock has to be able
+        to sit away from where the firm's capital says it belongs.
+        """
+        theta = self.funding.period_adjustment(self.firm.periods_per_year)
+        target = self.deposit_capacity(equity)
+        return torch.clamp(deposits + theta * (target - deposits), min=0.0)
+
+    def deposit_interest(self, deposits: torch.Tensor) -> torch.Tensor:
+        """What the funding costs for the period, on the base outstanding when
+        it opened.
+
+        Charged whether or not the book earns, which is the point: without a
+        price, leverage is free and the firm takes all of it, and 'how levered
+        should we be' stops being a question. It is also the channel that makes
+        a *liquid* balance sheet expensive -- deposits parked as reserves still
+        pay interest -- which is what the next stage needs in order for holding
+        a buffer to be a real decision rather than a free one.
+        """
+        rate = self.funding.period_deposit_rate(self.firm.periods_per_year)
+        return rate * torch.clamp(deposits, min=0.0)
+
+    def reserve_income(
+        self, capacity: torch.Tensor, investment: torch.Tensor
+    ) -> torch.Tensor:
+        """What the funding the firm did not lend earns while it sits there.
+
+        Reserves are the residual of the funding decision: everything the
+        balance sheet could have deployed and did not. Without this term,
+        deposits the firm cannot profitably lend are a pure deadweight loss and
+        the model punishes a bank for having a franchise -- measured at 2.5x
+        leverage on the pre-liability opportunity, firm value fell 5% purely
+        because the firm was carrying funding it had no use for.
+
+        Priced below the deposit rate, so idle funding carries a small negative
+        spread. That spread is the entire reason a liquidity buffer will be a
+        decision rather than a free good once withdrawals exist.
+        """
+        reserves = torch.clamp(capacity - investment, min=0.0)
+        rate = self.funding.period_reserve_rate(self.firm.periods_per_year)
+        return rate * reserves
+
+    def funding_capacity(
+        self, state: FirmState, wealth: torch.Tensor
+    ) -> torch.Tensor:
+        """The most the firm can deploy this quarter: what it has, plus what it
+        has raised against it.
+
+        With a liability side, that is simply equity plus the deposit stock --
+        a bank cannot lend money it has not been given, and the constraint
+        needs no free parameter because the balance sheet already states it.
+        The procyclicality lives in `deposit_capacity`, one period upstream:
+        this quarter's losses shrink the deposit base, which binds next
+        quarter's lending. That lag is the Froot-Stein channel in its proper
+        place -- the firm is not punished for a loss at the instant it takes
+        it, it is punished by having less to work with afterwards.
+
+        Without one, the pre-liability behaviour: a multiple of internal wealth
+        times a market-access sigmoid, settled inside the period and costing
+        nothing. Both terms collapse together in a bad quarter, which was that
+        version's way of saying the same thing in one step instead of two.
         """
         if not self.funding_constrained:
             return torch.full_like(wealth, float("inf"))
+        usable = torch.clamp(wealth, min=0.0)
+        if self.funding is not None:
+            return usable + torch.clamp(state.deposits, min=0.0)
         ratio = wealth / self.firm.initial_equity
         access = torch.sigmoid(
             (ratio - self.firm.market_access_ratio) / self.firm.market_access_scale
         )
-        usable = torch.clamp(wealth, min=0.0)
         return usable + self.firm.external_funding_multiple * usable * access
 
     def financing(self, wealth: torch.Tensor, investment: torch.Tensor):
@@ -300,6 +393,12 @@ class StandardDynamics:
     # -- the transition --------------------------------------------------
 
     def step(self, state: FirmState, action: FirmAction, shock: Shock) -> StepResult:
+        if self.funding is not None and state.deposits is None:
+            raise ValueError(
+                "funding parameters are set but the state carries no deposits; "
+                "build the opening state with FirmEnv.reset, which decides this "
+                "from the same config"
+            )
         spend = action.total_grc()
         stock = self.grc_stock(state, action)
 
@@ -314,7 +413,7 @@ class StandardDynamics:
         # quarter through lower equity, which is how the constraint actually
         # bites in a bank.
         fundable = state.equity - spend
-        capacity = self.funding_capacity(fundable)
+        capacity = self.funding_capacity(state, fundable)
         investment = torch.minimum(action.investment, capacity)
 
         loss = self.mitigated_loss(stock, shock, investment)
@@ -334,8 +433,21 @@ class StandardDynamics:
         produced = production(
             investment, self.firm.production_scale, self.firm.production_curvature
         )
+        # Paid on the base the firm opened with, not on what it chose to deploy.
+        # Deposits are a liability, not a drawdown facility: money left idle is
+        # still money someone is owed.
+        interest = (
+            self.deposit_interest(state.deposits)
+            if self.funding is not None
+            else torch.zeros_like(produced)
+        )
+        reserves = (
+            self.reserve_income(capacity, investment)
+            if self.funding is not None
+            else torch.zeros_like(produced)
+        )
 
-        gross = wealth - investment + produced - premium
+        gross = wealth - investment + produced - premium - interest + reserves
         # Distributed out of what the quarter actually left, and only if it
         # left something. This is where the model finally has a genuine
         # intertemporal trade-off: a dividend is worth its face value now,
@@ -372,7 +484,19 @@ class StandardDynamics:
             if self.hazard is not None
             else None
         )
-        moved = state.advance(equity=equity, grc_stock=stock, alive=state.alive & survives)
+        # Moved on closing equity, so a quarter's losses start the deposit base
+        # shrinking in the quarter they land.
+        deposits = (
+            self.deposit_flow(state.deposits, equity)
+            if self.funding is not None
+            else None
+        )
+        moved = state.advance(
+            equity=equity,
+            grc_stock=stock,
+            alive=state.alive & survives,
+            deposits=deposits,
+        )
         nxt = moved.freeze_dead(state)
 
         return StepResult(
@@ -409,5 +533,16 @@ class StandardDynamics:
                 "grc_flow": action.grc,
                 "grc_stock": stock,
                 "hazard": intensity,
+                "interest": interest,
+                "reserve_income": reserves,
+                # The opening balance sheet, so a diagnostic averaging these
+                # reports what the firm was funding the quarter with rather
+                # than what it closed on.
+                "deposits": (
+                    state.deposits
+                    if state.deposits is not None
+                    else torch.zeros_like(equity)
+                ),
+                "assets": state.assets(),
             },
         )

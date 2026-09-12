@@ -21,13 +21,24 @@ general, so it solves a restriction:
     state    equity, and a single GRC stock held equal across the three
              families -- 2 dimensions
     action   total spend (split equally) and investment -- 2 dimensions
-    fixed    payout held at a constant, wind-down switched off
+    fixed    payout held at a constant, wind-down switched off, and the deposit
+             base pinned to the capacity the node's equity supports
 
 The binding constraint on a grid solver here is the action space, not the
 state space: a 5-dimensional continuous action at ten points each would be
 100,000 evaluations per node. Restricting the action is what makes the rung
 affordable, and it is a restriction rather than an approximation -- the
 pathwise solvers are compared against it *on the same restriction*.
+
+**The deposit restriction is the one to watch.** Deposits adjust partially
+toward capacity in the real dynamics, so the base can sit away from where the
+firm's capital says it belongs -- which is the entire reason it is a state
+variable rather than a formula in equity. This solver pins it to capacity at
+every node, because carrying it properly would add a third grid dimension and
+the rung's job is to be right, not general. The cost is that the grid cannot
+see a firm that is over-levered relative to the capital it now has, which is
+exactly the state a run produces. Read a disagreement about a post-shock state
+as this restriction before reading it as a learner bug.
 """
 
 from dataclasses import dataclass, replace
@@ -154,6 +165,7 @@ class GridSolver:
             .expand(batch, N_FAMILIES)
             .contiguous(),
             alive=torch.ones(batch, dtype=torch.bool, device=self.profile.device),
+            deposits=self._deposits(equity.repeat_interleave(draws)),
             t=t,
         )
         wide = FirmAction(
@@ -172,6 +184,13 @@ class GridSolver:
         )
         weight = result.weight.reshape(points, draws)
         return (value.reshape(points, draws) * weight).sum(dim=1) / weight.sum(dim=1)
+
+    def _deposits(self, equity: torch.Tensor) -> torch.Tensor | None:
+        """The grid's deposit restriction: the base capacity supports, or None
+        when the environment has no liability side. See the module docstring."""
+        if self.env.config.funding is None:
+            return None
+        return self.env.dynamics.deposit_capacity(equity)
 
     def _tile(self, repeats: int):
         return replace(
@@ -203,6 +222,7 @@ class GridSolver:
             .expand(batch, N_FAMILIES)
             .contiguous(),
             alive=torch.ones(batch, dtype=torch.bool, device=self.profile.device),
+            deposits=self._deposits(self.node_equity.repeat_interleave(draws)),
             t=t,
         )
         tiled = self._tile(nodes)
@@ -226,6 +246,7 @@ class GridSolver:
             equity=self.node_equity,
             grc_stock=self.node_stock.unsqueeze(-1).expand(self.n_nodes(), N_FAMILIES),
             alive=torch.ones(self.n_nodes(), dtype=torch.bool, device=self.profile.device),
+            deposits=self._deposits(self.node_equity),
             t=horizon,
         )
         values = [self.env.terminal_value(terminal)]

@@ -13,14 +13,13 @@ and records what is actually built. It builds on the choices in
 | GRC capital stock, by family | $G_c, G_o, G_k$ | **yes** — `FirmState.grc_stock` |
 | Internal wealth after the risk draw | $w$ | **yes** — derived, `StandardDynamics.step` |
 | Alive / failed | — | **yes** — `FirmState.alive`, absorbing |
-| Deposit volume | $D$ | no |
+| Deposit volume | $D$ | **yes** — `FirmState.deposits`, a stock that persists, costs interest and shrinks with the capital ratio |
 | Portfolio composition / risk metrics | — | no |
-| Liquidity buffer | $L_{\text{buf}}$ | no |
+| Liquidity buffer | $L_{\text{buf}}$ | partial — reserves are the residual of the funding decision and earn a rate, but nothing yet forces the firm to hold them |
 | Operational-risk indicator | — | partial — enters as a risk-family exposure, not as evolving state |
 | Compliance-risk score | — | partial — enters as a breach probability, not as evolving state |
 
-The model is a two-period problem, so nothing here evolves over time yet. The
-unimplemented rows are the honest gap between this section and the code.
+The unimplemented rows are the honest gap between this section and the code.
 
 ## 2. Controls
 
@@ -30,26 +29,55 @@ unimplemented rows are the honest gap between this section and the code.
 | Orderly wind-down | — | **yes** — `FirmAction.abandon` |
 | Payout / retention | — | **yes** — `FirmAction.payout` |
 | Capital allocation to investment, state-contingent | $I$ | **yes** — per-path, chosen after the shock |
-| Target liquidity buffer | — | no |
-| Deposit pricing / redemption-term incentives | — | no |
+| Target liquidity buffer | — | partial — implied by how much of the balance sheet the firm chooses to deploy, not chosen directly |
+| Deposit pricing / redemption-term incentives | — | no — the firm takes the deposit base its capital supports at a fixed rate |
 
 ## 3. Frictions, costs and the investment channel
 
-**Funding constraint.** The firm cannot deploy more than it can fund:
+**The liability side.** The firm funds its book with its own capital plus a
+stock of deposits, and cannot deploy more than the two together:
 
 $$
-I_t = \min\!\big(I_t^{\text{desired}},\ w_t + \lambda\, w_t \cdot \varsigma\big),
-\qquad \varsigma = \text{sigmoid}\!\left(\frac{w_t/E_0 - \kappa_{\text{mkt}}}{s}\right)
+I_t = \min\!\big(I_t^{\text{desired}},\ w_t + D_t\big)
 $$
 
-Both terms collapse together in a bad quarter: the firm has less of its own
-money *and* less of anyone else's, because market access is itself falling in
-wealth. That is the Froot-Stein underinvestment channel in its hard form — a
-bad draw does not make investment expensive, it makes investment *unavailable*,
-so risk management protects the firm's capacity to invest rather than only its
-cash. Smooth in wealth rather than a threshold, because a step would be one
-more place the gradient dies and because funding does dry up gradually before
-it dries up suddenly.
+No free parameter is needed to state this, because the balance sheet already
+states it. The deposit stock is what carries the economics:
+
+$$
+\bar{D}(E) = \lambda\, E \cdot \varsigma(E),
+\qquad \varsigma(E) = \text{sigmoid}\!\left(\frac{E/E_0 - \kappa_{\text{mkt}}}{s}\right),
+\qquad D_{t+1} = D_t + \theta\,\big(\bar{D}(E_{t+1}) - D_t\big)
+$$
+
+Three things follow, and none of them were expressible before.
+
+**Leverage amplifies ordinary losses.** A one percent loss on a book funded
+five-to-one against capital is a five percent loss of capital. That is the
+textbook route by which *loan defaults* — not exotic risks — take an
+intermediary down, and with no liabilities the model had no way to carry it.
+
+**Funding has a price.** Deposits pay $r_D$ per period on the base outstanding,
+whether or not the book earns. Funding the firm has not lent earns $r_R < r_D$,
+so surplus deposits are parked rather than burned; without that term the model
+punishes a firm for having a franchise, and measured at 2.5× leverage it cost
+5% of firm value purely for carrying deposits it had no use for. The half-point
+spread between the two rates is what will make a liquidity buffer a decision
+rather than a free good once withdrawals exist.
+
+**Funding withdraws as the firm weakens, with a lag.** Capacity $\bar{D}$ falls
+in the capital ratio on both terms at once — a smaller multiple of a smaller
+number, times a market that is closing — and the stock moves toward it at speed
+$\theta$ rather than arriving. So this quarter's losses bind *next* quarter's
+lending. That lag is the Froot-Stein underinvestment channel arriving through
+the liability side: a bad draw does not make investment expensive, it makes
+investment unavailable, so risk management protects the firm's capacity to
+invest rather than only its cash.
+
+The partial adjustment is what makes $D$ a state variable rather than a formula
+in $E$. At $\theta = 1$ the liability side collapses back into the asset side
+and nothing is outstanding that could run — which is the property the next
+stage needs.
 
 **Convex cost of external finance.** With internal wealth $w$ and desired
 investment $I$, the firm raises $e = \max(0,\ I - w)$ externally at
@@ -79,6 +107,14 @@ intensities add:
 Credit has no hazard channel of its own, deliberately: bad underwriting erodes
 equity, and equity is already the capital channel's argument, so giving it one
 would count the same mechanism twice.
+
+**The operational channel is still a label, and now visibly so.** It is an
+assumed annual rate that GRC bends, and it is *named* after depositors leaving
+— but it does not consult the deposit stock that now exists. A firm funded
+five-to-one on demandable money faces exactly the same assumed run rate as one
+funded entirely by its owners, which is plainly wrong. Replacing it with
+withdrawals the firm has to meet, so that a run is something the balance sheet
+produces rather than something the parameters assert, is the next stage (§5).
 
 The two GRC-reducible channels are $\bar{h}_f e^{-\alpha_f G_f} / 4$, reusing
 each family's existing $\alpha$ rather than introducing a second effectiveness
@@ -169,8 +205,9 @@ depending on $g_k$ per §3.
 
 Constraints from the original formulation — solvency, a liquidity buffer against
 a modelled run, and regulatory limits — are **not** imposed as hard constraints.
-Distress enters through the convex financing cost instead. Adding them is future
-work, not something the current code approximates.
+The leverage limit in `FundingParams.deposit_capacity` is the first of them and
+it binds through the deposit base rather than as a penalty; a liquidity buffer
+the firm is *required* to hold, and a run to hold it against, are stage 6b.
 
 ## 5. Staged path
 
@@ -197,6 +234,23 @@ exactly the one-period problem that benchmark solves.
 | 4 | Grid value iteration on a reduced config, and the agreement metric | **built** — `quant/solvers/gridvi.py` |
 | 5 | The learner: horizon scaling, multi-seed, out-of-sample | **built** — `quant/studies/seeds.py`; verdict in §6 |
 | 5b | Truncated BPTT with a critic, and a head-to-head against full BPTT | **built, then rejected** — on branch `svg-critic`, not on `main`; verdict in §6 |
+| 6a | The liability side: deposits as a priced, persistent, procyclical stock | **built** — `quant/params.py` `FundingParams`, `FirmState.deposits` |
+| 6b | Withdrawals, a liquidity buffer that must be held, and the fire-sale cost of meeting a run out of an unmatured book | not built |
+| 6c | The run hazard derived from deposit flight rather than assumed as a rate | not built |
+
+**Why the liability side is a stage at all.** Until 6a the firm had no
+liabilities: it funded its book out of equity plus a costless multiple of
+equity, settled inside the period. That deleted three risks an intermediary
+exists to manage — leverage, the price of funding, and the funding leaving —
+and it made the hazard channel named "depositors leave" a label on a constant,
+because there were no depositors in the model to leave. Loan defaults were
+present but could not threaten the firm, because a loss on an unlevered book is
+a loss of the same size on capital rather than a multiple of it.
+
+6a is the stock; 6b is what can happen to it; 6c is the channel 6b lets us
+stop asserting. They are separated because 6a alone forces a recalibration —
+a bank-sized balance sheet needs a bank-sized opportunity, or the firm simply
+stops wanting what it can now fund.
 
 Survival moved ahead of the grid solver after stage 2: the hard insolvency
 barrier turned out to be required for the multi-period problem to be finite at

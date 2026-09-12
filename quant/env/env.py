@@ -33,6 +33,7 @@ from quant.params import (
     WEEKLY,
     CliffParams,
     FirmParams,
+    FundingParams,
     GrcAlphas,
     HazardParams,
     ModelParams,
@@ -92,6 +93,9 @@ class EnvConfig:
     allow_payout: bool = False
     cliff: CliffParams | None = None
     credit_scales_with_book: bool = True
+    # None is a firm with no liabilities, which is every reduced configuration:
+    # the closed form, the static regression, and the grid's restriction.
+    funding: FundingParams | None = None
     terminal: TerminalValue = field(default_factory=LiquidationValue)
 
     @classmethod
@@ -148,6 +152,7 @@ class EnvConfig:
             funding_constrained=True,
             allow_payout=True,
             cliff=params.cliff,
+            funding=params.funding,
             # A firm still trading at the horizon is worth more than its book.
             # Without this the model liquidates it at equity, so there is
             # nothing beyond T to protect and GRC spend collapses to zero from
@@ -199,29 +204,56 @@ class FirmEnv:
             funding_constrained=config.funding_constrained,
             allow_payout=config.allow_payout,
             cliff=config.cliff,
+            funding=config.funding,
         )
 
     def reset(self, batch: int) -> FirmState:
+        """The opening state, for a mature going concern.
+
+        Deposits open at the capacity the firm's own capital supports, for the
+        same reason `initial_grc_stock` opens at its self-consistent steady
+        state: a firm that starts away from where its own dynamics would put it
+        spends the first several periods travelling there, and every
+        comparative static then mixes the answer with a transient. Starting the
+        deposit base at zero would show a bank levering up, which is a
+        different problem from the one this model is about.
+        """
         profile = self.config.profile
+        equity = profile.full((batch,), self.config.firm.initial_equity)
+        deposits = (
+            self.dynamics.deposit_capacity(equity)
+            if self.config.funding is not None
+            else None
+        )
         return FirmState(
-            equity=profile.full((batch,), self.config.firm.initial_equity),
+            equity=equity,
             grc_stock=profile.full((batch, N_FAMILIES), self.config.firm.initial_grc_stock),
             alive=torch.ones(batch, dtype=torch.bool, device=profile.device),
+            deposits=deposits,
             t=0,
         )
 
     def observe(self, state: FirmState) -> torch.Tensor:
-        """Normalized features, (B, 4). The only place state is rescaled.
+        """Normalized features: (B, 4), or (B, 5) with a liability side. The
+        only place state is rescaled.
 
         Divided by initial equity so a learner sees O(1) inputs and so the
         observation is invariant to the currency the firm is denominated in --
         the same requirement the cost functions carry
         (docs/static-model-debug-notes.md section 4).
+
+        The deposit base is a feature only when there is one. A constant column
+        would be worse than harmless: it is a bias term the network pays
+        parameters to learn around, and it would make the pre-liability and
+        post-liability policies different objects for no reason. Solvers read
+        the width from this function rather than assuming it
+        (quant/solvers/neural.py).
         """
         scale = self.config.firm.initial_equity
-        return torch.cat(
-            [(state.equity / scale).unsqueeze(-1), state.grc_stock / scale], dim=-1
-        )
+        features = [(state.equity / scale).unsqueeze(-1), state.grc_stock / scale]
+        if state.deposits is not None:
+            features.append((state.deposits / scale).unsqueeze(-1))
+        return torch.cat(features, dim=-1)
 
     def terminal_value(self, state: FirmState) -> torch.Tensor:
         """What a surviving firm is worth at the horizon.
@@ -336,6 +368,13 @@ class EvalResult:
     # Credit exposure is a rate on this, so anything comparing a GRC budget
     # against credit risk needs it.
     book: float
+    # Average deposit base, and average assets per unit of equity. Leverage is
+    # the number that says how hard an ordinary credit loss lands: a 1% loss on
+    # a book funded five-to-one is a 5% loss of capital, and without the
+    # liability side this model had no way to express that at all. Both read
+    # zero and one respectively when there is no liability side.
+    deposits: float
+    leverage: float
     # Total discounted dividends per unit of firm value: how much of what the
     # firm is worth is cash it actually hands over, rather than capital it is
     # still holding when the horizon arrives.
@@ -417,6 +456,36 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
             profile.sum(info["investment"] * mask * weights)
             for info, mask in zip(trajectory.infos, live)
         ) / live_mass
+        # Opening balance sheet, averaged over the periods the firm actually
+        # operated -- same weighting as every other flow here, and for the same
+        # reason: a dead path's frozen deposits are not a funding decision.
+        funding = sum(
+            profile.sum(info["deposits"] * mask * weights)
+            for info, mask in zip(trajectory.infos, live)
+        ) / live_mass
+        # Averaged as a ratio per path-period rather than as a ratio of the two
+        # averages. Those differ whenever leverage and size are correlated,
+        # which they are by construction here -- the deposit base is a multiple
+        # of equity -- and the ratio of averages would understate how levered
+        # the firm is in exactly the thin-capital states the model is about.
+        #
+        # The denominator is floored at a thousandth of opening equity. A firm
+        # whose capital has gone to zero while deposits are still outstanding
+        # is infinitely levered, which is true and useless: unfloored, a
+        # handful of near-dead paths set the reported average for the whole
+        # run. Those paths carry almost no survival weight in the value, so
+        # letting them dominate a diagnostic would be reporting the tail as
+        # though it were the firm.
+        floor = env.config.firm.initial_equity * 1e-3
+        levered = sum(
+            profile.sum(
+                info["assets"]
+                / torch.clamp(info["assets"] - info["deposits"], min=floor)
+                * mask
+                * weights
+            )
+            for info, mask in zip(trajectory.infos, live)
+        ) / live_mass
         # Survival-weighted, for the same reason the flow is: a failed path's
         # state is frozen and the policy is still evaluated on it, so its
         # action is whatever the network happens to emit in a region it is
@@ -462,6 +531,8 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         constrained_fraction=constrained.item(),
         underinvestment_fraction=underinvested.item(),
         book=deployed.item(),
+        deposits=funding.item(),
+        leverage=levered.item(),
         payout_share=(dividends / value).item(),
         survival_rate=survives.item(),
         cliff_rate=cliffs.item(),
