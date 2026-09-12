@@ -138,7 +138,7 @@ class FirmEnv:
         profile = self.config.profile
         return FirmState(
             equity=profile.full((batch,), self.config.firm.initial_equity),
-            grc_stock=profile.full((batch, N_FAMILIES), 0.0),
+            grc_stock=profile.full((batch, N_FAMILIES), self.config.firm.initial_grc_stock),
             alive=torch.ones(batch, dtype=torch.bool, device=profile.device),
             t=0,
         )

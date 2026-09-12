@@ -9,6 +9,7 @@ and records what is actually built. It builds on the choices in
 | state | symbol | implemented? |
 |---|---|---|
 | Capital / equity | $E$ | **yes** — `FirmState.equity`, evolving |
+| Opening GRC capital | $G_{f,0}$ | **yes** — `FirmParams.initial_grc_stock`, set to the steady state |
 | GRC capital stock, by family | $G_c, G_o, G_k$ | **yes** — `FirmState.grc_stock` |
 | Internal wealth after the risk draw | $w$ | **yes** — derived, `StandardDynamics.step` |
 | Alive / failed | — | **yes** — `FirmState.alive`, absorbing |
@@ -279,11 +280,14 @@ one period of protection.
 | GRC decay | solver | value | spend/qtr | end stock | survives |
 |---|---|---|---|---|---|
 | 1.000 | constant | 8.9347 | 0.5508 | 0.5508 | 24.1% |
-| 1.000 | neural | 9.6172 | 1.2132 | 1.7679 | 28.0% |
+| 1.000 | neural | 9.6099 | 1.2374 | 1.7650 | 28.1% |
 | 1.000 | PI bound | 16.9279 | 1.2262 | 1.8413 | 36.6% |
-| 0.069 | constant | 20.9330 | 3.3080 | 20.8553 | 52.2% |
-| 0.069 | neural | 31.2698 | 2.9864 | 14.1424 | 68.6% |
-| 0.069 | PI bound | 36.2385 | 2.5711 | 13.0239 | 69.9% |
+| 0.069 | constant | 49.0118 | 1.1094 | 15.7355 | 86.6% |
+| 0.069 | neural | 52.4263 | 1.4355 | 15.7231 | 90.5% |
+| 0.069 | PI bound | 57.1049 | 1.0603 | 14.1154 | 90.8% |
+
+(The $\delta = 1$ rows start from the same opening stock but cannot keep it, so
+they describe a firm whose control function evaporates each quarter.)
 
 ### What the survival channel is worth
 
@@ -293,26 +297,39 @@ meaningless, since a world without those channels is simply less dangerous.
 
 | budget set for | spend/qtr | annual death | value |
 |---|---|---|---|
-| expected loss only | 2.5778 | 30.84% | 20.1470 |
-| loss **and** survival | 3.3080 | 27.76% | 20.9330 |
+| expected loss only | 0.5863 | 8.59% | 48.2525 |
+| loss **and** survival | 1.1094 | 6.92% | 49.0118 |
 
-Budgeting as though GRC only bought smaller losses understates the right spend
-by 28%, costs 3.8% of firm value, and adds 3.1 percentage points to the annual
-failure probability. That gap is the dynamic analogue of the Froot-Stein
+Budgeting as though GRC only bought smaller losses **halves** the right spend,
+costs 1.5% of firm value, and adds 1.7 percentage points to the annual failure
+probability. That gap is the dynamic analogue of the Froot-Stein
 premium: spend that pays for itself only because the firm has a franchise worth
 surviving to keep.
 
-> **Regime warning.** At these parameters the annual failure probability at the
-> optimum is **27.5%**, far outside the 0.2–15% band that makes the survival
-> comparative statics trustworthy. The median firm is healthy — equity rises
-> from 16 to 30 over eight quarters — so the deaths are entirely tail events,
-> driven by the firm starting with a GRC stock of zero and facing the
-> un-mitigated base hazards while it builds one. Read the directions below;
-> do not read the magnitudes. Re-parameterizing into a non-degenerate regime is
-> the next piece of work, and it will move every number on this page.
+The firm starts with a GRC stock of 5.18 per family rather than zero. That is
+not a tuned number: it is the self-consistent steady state, the level at which
+the firm's own optimal maintenance spend exactly replaces depreciation, found
+by bisection on $G_0 = g^{\star}(G_0)/\delta$. A firm starting there neither
+builds nor runs down its control function, which is what "mature going concern"
+should mean.
 
-Persistence is worth **+225% of firm value** (9.62 → 31.27) and takes survival
-from 28% to 69%. The firm also spends **more** per quarter, not less
+It matters because both neighbouring regimes are degenerate, in opposite ways:
+
+| opening stock | annual death | spend/qtr | regime |
+|---|---|---|---|
+| 0 | 27.5% | 3.33 | rebuilding from nothing; dies from tail events while it does |
+| 3 | 11.7% | 1.99 | usable |
+| **5.18** | **7.1%** | **1.07** | **self-consistent steady state** |
+| 9 | 3.8% | 0.11 | inherited so much capital that spend collapses |
+| 12 | 2.1% | 0.002 | model has nothing to say about budgets |
+
+The high end is the "never binds" trap of
+[`static-model-debug-notes.md`](static-model-debug-notes.md) §6 in a new place:
+survival looks excellent and the model is silent on the only question it was
+built to answer.
+
+Persistence is worth **+446% of firm value** (9.61 → 52.43) and takes survival
+from 28% to 91%. The firm also spends **more** per quarter, not less
 (0.56 → 2.52): a unit of spend now protects every later quarter, so more of it
 is worth buying. That is the intertemporal content the static model could not
 express — it is not the one-period answer repeated.
@@ -322,6 +339,19 @@ and the floor a learner must clear; `neural` is state feedback trained by
 backpropagation through the rollout; `PI bound` chooses every control per path
 with the future known and is therefore not implementable. The sandwich
 $V(\text{constant}) \le V(\text{neural}) \le V_{PI}$ is asserted on every run.
+
+**The convex financing cost has gone nearly inert.** At this parameterization
+the finance constraint binds on 1.9% of probability mass, against 52% in the
+static model. A well-capitalized going concern funds its investment internally
+almost always, and the binding channel is the hazard instead.
+
+That is this project's own thesis appearing as a measurement rather than an
+assertion. The convex financing premium was a *static reduced form* of a
+curvature in the value function; a two-period model has to assume that
+curvature, while a dynamic model with death derives it, because death destroys
+continuation value. Once survival is explicit the reduced form stops doing
+work. Removing it is §5's bite 3c, and this is the evidence for it rather than
+a plan item taken on faith.
 
 Two things found by building this, both invisible at one period:
 

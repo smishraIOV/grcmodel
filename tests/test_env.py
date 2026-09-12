@@ -194,9 +194,19 @@ def test_observation_is_invariant_to_the_currency_unit():
     leaves the learner's inputs unchanged (docs/static-model-debug-notes.md
     section 4, one axis over)."""
     base = monte_carlo_env()
+    # Every money-valued opening quantity scales together, which is what
+    # redenominating the firm means. Scaling equity alone is not a change of
+    # unit, it is a differently capitalized firm -- and this test caught
+    # exactly that when the opening GRC stock was added.
+    firm = DEFAULTS.firm
     scaled = FirmEnv(
         replace(
-            base.config, firm=replace(DEFAULTS.firm, initial_equity=DEFAULTS.firm.initial_equity * 100)
+            base.config,
+            firm=replace(
+                firm,
+                initial_equity=firm.initial_equity * 100,
+                initial_grc_stock=firm.initial_grc_stock * 100,
+            ),
         ),
         base.sampler,
     )
@@ -360,7 +370,7 @@ def test_grc_stock_follows_its_law_of_motion():
     policy = ConstantPolicy(grc=(spend, spend, spend), investment=6.0, profile=REFERENCE)
     trajectory = env.rollout(policy, CommonRandomNumbers(0, 4, 64, REFERENCE), False)
 
-    expected = 0.0
+    expected = DEFAULTS.firm.initial_grc_stock
     for state in trajectory.states[1:]:
         expected = (1.0 - delta) * expected + spend
         assert state.grc_stock[:, 0].max().item() == pytest.approx(expected, rel=1e-12)
@@ -656,3 +666,43 @@ def test_grc_spend_rises_when_it_buys_survival():
     )
     assert aware_result.survival_rate > naive_result.survival_rate
     assert aware_result.value > naive_result.value
+
+
+def test_default_quarterly_model_sits_in_a_usable_regime():
+    """The project's standing requirement, one axis over: check the regime
+    before trusting a comparative static (docs/static-model-debug-notes.md
+    section 6).
+
+    Two degenerate regimes flank the useful one and both look like working
+    models. A firm that almost never fails makes GRC pure cost and every
+    survival comparative static vanishes; one that almost always fails makes it
+    futile. Between them, spend also has to stay material -- if the firm
+    inherits enough control capital that optimal spend collapses toward zero,
+    the model has nothing to say about budgets even though survival looks fine.
+
+    The opening GRC stock is set to the self-consistent steady state for
+    exactly this reason; starting from zero put annual failure at 27.5%.
+    """
+    env = FirmEnv(EnvConfig.quarterly(8), MonteCarloSampler(DEFAULTS.sampler))
+    result = optimize_constant(env, CommonRandomNumbers(0, 8, 1024, REFERENCE), n_steps=2500)[1]
+
+    annual_death = 1.0 - result.survival_rate ** 0.5
+    assert 0.002 < annual_death < 0.15, f"degenerate survival regime: {annual_death:.2%}"
+    assert result.total_grc > 0.10, f"spend is immaterial: {result.total_grc:.4f}"
+
+    # constrained_fraction is deliberately NOT asserted, and that is a finding
+    # rather than an omission. It was the static model's regime check because
+    # costly external finance was the only friction there. In this
+    # configuration it sits at about 0.02: a well-capitalized going concern
+    # funds its investment internally almost always, and the binding channel is
+    # the hazard instead.
+    #
+    # That is the project's own thesis showing up as evidence. The convex
+    # financing cost was a static reduced form of a curvature the dynamic model
+    # derives from survival, so once survival is explicit the reduced form
+    # stops doing work. Removing it is the next bite; this is the measurement
+    # that justifies it.
+    assert result.constrained_fraction < 0.10, (
+        "the financing friction has become load-bearing again -- if so it "
+        "should not be removed without re-examining why"
+    )

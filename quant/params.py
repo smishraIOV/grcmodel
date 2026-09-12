@@ -52,6 +52,31 @@ class FirmParams:
     production_scale: float = 3.0
     production_curvature: float = 10.0
 
+    # GRC capital the firm already has, per family, at the start of a run.
+    # Zero describes a firm building a control function from nothing, which is
+    # a real case -- it is close to the pre-revenue variant of the maturity
+    # fork in docs/quant-model.md section 5 -- but it is not the mature going
+    # concern the current stages are about. Starting from zero left the firm
+    # facing un-mitigated base hazards for several quarters while it built a
+    # stock, which put the annual failure probability at 27.5%, outside the
+    # band where survival comparative statics mean anything.
+    #
+    # The value is not tuned to taste: it is the self-consistent steady state,
+    # the level at which the firm's own optimal maintenance spend exactly
+    # replaces depreciation, so G_0 = g*(G_0) / delta. Found by bisection at
+    # 5.18; a firm starting here neither builds nor runs down its control
+    # function, which is what "mature going concern" should mean. It puts the
+    # annual failure probability at 7.2%, inside the band, with a material
+    # 1.07 per quarter of spend.
+    #
+    # Both neighbouring regimes are degenerate and it is worth knowing why.
+    # Below about 3 the firm is rebuilding from a hole and dies from tail
+    # events while it does. Above about 9 it has inherited so much capital that
+    # optimal spend collapses to ~0.002 per quarter and the model has nothing
+    # to say about budgets at all -- a "never binds" regime of the kind
+    # docs/static-model-debug-notes.md section 6 warns about, in a new place.
+    initial_grc_stock: float = 5.18
+
     periods_per_year: int = 4  # quarterly
     annual_discount_rate: float = 0.08
     # A control installed today still works in a year's time, but not forever:
