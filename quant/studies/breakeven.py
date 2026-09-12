@@ -1,0 +1,187 @@
+"""Break-evens: what the model says when it refuses to quote a number.
+
+Nothing in this repo can calibrate alpha -- how much of a risk family's
+exposure a unit of GRC spend removes -- and no amount of downstream machinery
+fixes that. Reporting an optimal budget computed from an invented alpha implies
+a precision that does not exist, so the question is inverted: not "spend this
+much" but "this programme is worth running provided you believe X", where X is
+something the reader can agree or disagree with.
+
+The survival framing improves the question rather than answering it. Alpha is
+still uncalibrated, but the quantity a programme has to move is now the annual
+probability of failure, and *that* has external anchors alpha never had -- bank
+failure rates, rating-agency default rates, observed crypto-lender failures,
+and the price of the D&O and cyber cover that insures the same risk. The model
+can be checked against something.
+
+Four break-evens, in descending order of how directly a board can argue with
+them:
+
+1. `hazard_breakeven`     by how many basis points must this cut annual
+                          failure probability to pay for itself? No alpha in
+                          the answer at all.
+2. `capitalization_band`  over what range of capitalization is a programme
+                          worth running? Below it, wind down instead.
+3. `franchise_breakeven`  how large must the franchise be before the programme
+                          pays? A valuation question a firm already answers.
+4. `alpha_breakeven`      the original question, per family, now including the
+                          survival term.
+"""
+
+from dataclasses import dataclass, replace
+
+from quant.env.env import EnvConfig, FirmEnv, evaluate
+from quant.env.shocks import CommonRandomNumbers, MonteCarloSampler
+from quant.numerics import DEFAULT_PROFILE, NumericsProfile
+from quant.params import DEFAULTS, FirmParams, GrcAlphas
+from quant.solvers.pathwise import optimize_constant
+
+FAMILIES = ("credit", "operational", "compliance")
+# Below this much spend a programme is not a programme -- it is a rounding
+# error on someone's budget line, so treat it as "not worth running".
+MATERIALITY = 0.10
+# A programme has to add at least this share of firm value to count as worth
+# running, which is the value-side counterpart of the spend threshold above.
+MATERIALITY_VALUE = 0.01
+
+
+def solve(firm: FirmParams, crn, quarters: int, steps: int, alphas=None, **config):
+    """One constant-policy solve. The right policy class for a budget question:
+    it answers "how much should we spend", not "how should we react"."""
+    settings = dict(firm=firm, **config)
+    if alphas is not None:
+        settings["alphas"] = alphas
+    env = FirmEnv(
+        EnvConfig.quarterly(quarters, **settings), MonteCarloSampler(DEFAULTS.sampler)
+    )
+    return optimize_constant(env, crn, n_steps=steps)[1]
+
+
+@dataclass
+class HazardBreakeven:
+    annual_cost: float
+    franchise: float
+    basis_points: float
+
+    def sentence(self) -> str:
+        return (
+            f"a programme costing {self.annual_cost:.2f} a year, against a franchise of "
+            f"{self.franchise:.2f}, must cut the annual probability of failure by at least "
+            f"{self.basis_points:.0f} basis points to pay for itself"
+        )
+
+
+def hazard_breakeven(firm, crn, quarters=8, steps=2500) -> HazardBreakeven:
+    """The headline, and the only one with no alpha in it.
+
+        delta_h* = annual cost / franchise value
+
+    A programme is worth its cost if it removes at least that much expected
+    annual destruction of the going concern. Both inputs are things a board
+    already has a view on -- what the programme costs, and what the business is
+    worth -- so the whole claim can be argued with without touching the model's
+    uncalibrated parameters.
+    """
+    result = solve(firm, crn, quarters, steps)
+    annual_cost = result.total_grc * firm.periods_per_year
+    franchise = result.value * result.going_concern_share
+    return HazardBreakeven(annual_cost, franchise, 1e4 * annual_cost / franchise)
+
+
+def capitalization_band(firm, crn, equities, quarters=8, steps=2000):
+    """Over what range of capitalization does a programme earn its keep?
+
+    Non-monotone by construction, and that is the useful part. A firm with
+    little capital left has little franchise to protect and should be winding
+    down rather than spending; a firm with plenty faces so little hazard that
+    the programme is uneconomic. The band between them is where GRC is a
+    decision rather than a formality.
+    """
+    rows = []
+    for equity in equities:
+        scaled = replace(
+            firm,
+            initial_equity=equity,
+            # The control function scales with the firm; holding it fixed would
+            # confound capitalization with how much GRC is already in place.
+            initial_grc_stock=firm.initial_grc_stock * equity / firm.initial_equity,
+        )
+        rows.append((equity, solve(scaled, crn, quarters, steps)))
+    return rows
+
+
+def franchise_breakeven(firm, crn, scales, quarters=8, steps=2000):
+    """How large must the franchise be before the programme pays?
+
+    Swept through the productivity of the investment opportunity, which is what
+    makes the going concern worth anything. Useful because franchise value is a
+    valuation question a firm already answers, and alpha is not.
+    """
+    rows = []
+    for scale in scales:
+        rows.append((scale, solve(replace(firm, production_scale=scale), crn, quarters, steps)))
+    return rows
+
+
+def alpha_breakeven(
+    firm, crn, family: str, low=0.02, high=1.0, iterations=8, quarters=8, steps=1500
+) -> float | None:
+    """Smallest effectiveness at which this family's programme earns its keep.
+
+    Measured as the *value* the programme adds over not having it -- the same
+    firm solved with this family's alpha set to zero, so spend buys nothing and
+    the optimizer drives that budget to zero on its own.
+
+    Deliberately not "the smallest alpha at which the budget is material",
+    which was the static model's test and is the wrong question here. Optimal
+    spend is non-monotone in effectiveness: the closed form ln(alpha X)/alpha
+    rises and then falls, because a very effective programme needs very little
+    spending on. Testing budget materiality therefore reports "no alpha works"
+    for a family whose programme is enormously worthwhile -- which is what it
+    did here before this was corrected.
+
+    Value added is monotone in alpha, which is what a bisection needs.
+    """
+    baseline = solve(
+        firm, crn, quarters, steps, alphas=replace(DEFAULTS.alphas, **{family: 0.0})
+    ).value
+    threshold = MATERIALITY_VALUE * baseline
+
+    def gain(alpha: float) -> float:
+        alphas = replace(DEFAULTS.alphas, **{family: alpha})
+        return solve(firm, crn, quarters, steps, alphas=alphas).value - baseline
+
+    if gain(high) < threshold:
+        return None
+    if gain(low) >= threshold:
+        return low
+    for _ in range(iterations):
+        middle = (low + high) / 2
+        if gain(middle) >= threshold:
+            high = middle
+        else:
+            low = middle
+    return high
+
+
+def value_curvature(firm, crn, equities, quarters=8, steps=2000):
+    """Second difference of firm value in opening equity.
+
+    The diagnostic to run before quoting any comparative static. A survival
+    barrier makes the value function convex where failure is close and concave
+    where it is not, so the firm is risk-averse when comfortably capitalized
+    and risk-*loving* near failure -- gambling for resurrection, which is
+    economically real and produces "cut GRC in a crisis" recommendations that
+    are correct within the model and indefensible out of it.
+
+    Positive entries mark the convex region.
+    """
+    values = [solve(replace(firm, initial_equity=e), crn, quarters, steps).value for e in equities]
+    curvature = []
+    for index in range(1, len(equities) - 1):
+        left, middle, right = equities[index - 1], equities[index], equities[index + 1]
+        # Non-uniform-spacing second difference.
+        slope_low = (values[index] - values[index - 1]) / (middle - left)
+        slope_high = (values[index + 1] - values[index]) / (right - middle)
+        curvature.append((middle, 2.0 * (slope_high - slope_low) / (right - left)))
+    return values, curvature

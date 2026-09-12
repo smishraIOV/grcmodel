@@ -14,6 +14,7 @@ uv run python scripts/run_static_model.py     # Froot-Stein premium + spread swe
 uv run python -m quant.simulate               # Monte Carlo, multi-seed
 uv run python -m quant.threshold              # break-even analysis
 uv run python scripts/run_dynamic_model.py    # multi-period, GRC as a stock
+uv run python scripts/run_breakevens.py       # the decision-facing break-evens
 uv run python scripts/bench_profiles.py       # where the accelerator starts paying
 ```
 

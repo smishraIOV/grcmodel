@@ -190,7 +190,7 @@ exactly the one-period problem that benchmark solves.
 | 3b | GRC acting on the hazard, not only on losses | **built** — `quant/hazard.py` |
 | 3c | What failure costs, and what GRC cannot do about it | **built** — `FirmParams.failure_recovery` |
 | 3d | Abandonment / orderly wind-down option | **built** — out of the money, see below |
-| 3e | Diagnostic bundle and the break-even outputs | not started |
+| 3e | Diagnostic bundle and the break-even outputs | **built** — `quant/studies/breakeven.py` |
 | — | Funding constraint: the balance sheet gates investment | **built** — live but weak, see §6 |
 | — | Payout control: dividends out of profit, keeping capital scarce | **built** — `FirmAction.payout` |
 | 4 | Grid / fitted value iteration on a reduced config | not started |
@@ -506,23 +506,83 @@ single-seed answer quoted to four decimals overstates what the sample supports.
 
 ### Break-even analysis
 
-`uv run python -m quant.threshold`. Nothing here can calibrate $\alpha$, so the
-decision-useful output is a threshold rather than a point estimate:
+`uv run python scripts/run_breakevens.py [--alpha-sweep]`. Nothing here can
+calibrate $\alpha$, so an optimal budget computed from an invented one implies
+a precision that does not exist. The question is inverted into claims a reader
+can argue with.
 
-| family | exposure $X_f$ | risk-neutral break-even $\alpha$ | break-even with friction |
+The survival framing improves the question rather than answering it. $\alpha$
+is still uncalibrated, but the quantity a programme has to move is now the
+annual probability of failure — and that has external anchors $\alpha$ never
+had: bank failure rates, rating-agency default rates, observed crypto-lender
+failures, and the price of the D&O and cyber cover insuring the same risk.
+
+**1. Hazard break-even — the only one with no $\alpha$ in it.**
+
+> A programme costing **3.28 a year**, against a franchise of **46.90**, must
+> cut the annual probability of failure by at least **698 basis points** to pay
+> for itself.
+
+Both inputs are things a board already has a view on, so the whole claim can be
+checked without touching an uncalibrated parameter.
+
+**2. Capitalization band — over what range is a programme a decision?**
+
+| equity | spend/qtr | annual failure | going-concern share | verdict |
+|---|---|---|---|---|
+| 4.0 | 0.5388 | 61.88% | 0.772 | worth running |
+| **8.0** | **1.3700** | 27.16% | 0.872 | worth running |
+| 16.0 | 0.8189 | 12.31% | 0.880 | worth running |
+| 32.0 | 0.0023 | 3.82% | 0.845 | uneconomic |
+| 64.0 | 0.0015 | 1.69% | 0.781 | uneconomic |
+
+**Optimal GRC spend is non-monotone in capitalization and peaks in the middle.**
+Well capitalized, the hazard is too small to be worth buying down; thinly
+capitalized, there is too little franchise left to protect. A model that made
+GRC monotone in capital would be saying something false about both ends, and
+this is the most decision-useful shape the model produces.
+
+**3. Franchise break-even — how much business must be at stake?**
+
+| productivity $A$ | spend/qtr | firm value | verdict |
 |---|---|---|---|
-| credit | 4.00 | 0.250 | 0.227 |
-| operational | 3.50 | 0.286 | 0.231 |
-| compliance | 1.50 | 0.667 | 0.265 |
+| 1.05 | 0.0544 | 11.196 | uneconomic |
+| 1.30 | 0.0616 | 11.196 | uneconomic |
+| 2.00 | 0.3912 | 16.029 | worth running |
+| 3.00 | 0.8189 | 53.297 | worth running |
 
-The risk-neutral column is $\alpha = 1 / X_f$, the point below which a unit of
-spend buys back less than a unit of expected loss.
+Below the threshold the firm winds down rather than buying protection — GRC is
+bought by the business it protects.
+
+**4. Value curvature — the gambling-for-resurrection check.** Second difference
+of firm value in opening equity. A convex region would mean the firm is
+risk-*loving* near failure, and a learner would find it and recommend cutting
+GRC in a crisis: correct inside the model and indefensible outside it.
+
+At these parameters **no convex region is detected**. The largest positive
+second difference is $3.7 \times 10^{-4}$ against concave values of $-3.7$,
+which is numerical noise. Recorded as a negative result with the diagnostic
+left running, because the regime that produces it is real and would arrive
+without announcing itself.
+
+**5. Effectiveness break-even, per family.** The original question, bisected on
+the *value* a programme adds rather than on the size of its budget — optimal
+spend is non-monotone in $\alpha$, since $\ln(\alpha X)/\alpha$ rises then
+falls and a very effective programme needs little spending on. Testing budget
+materiality reports "no $\alpha$ works" for a programme that is enormously
+worthwhile, which is what it did here before being corrected.
+
+| family | risk-neutral $1/X$ | with survival | ratio |
+|---|---|---|---|
+| credit | 0.250 | 0.0044 | 57× |
+| operational | 0.286 | 0.0083 | 34× |
+| compliance | 0.667 | 0.0083 | 80× |
 
 Read the compliance row as: *this programme pays provided you believe a unit of
-spend removes at least 26.5% of exposure, even though pure expected-loss
-reduction would demand 66.7%.* The 0.401 gap is the Froot-Stein premium expressed
-as a threshold, and it is largest for compliance because that is where the tail
-sits.
+spend removes at least 0.8% of exposure, where pure expected-loss reduction
+would demand 67%.* The gap is the Froot-Stein premium expressed as a threshold,
+and under the survival framing it is two orders of magnitude wide, because a
+unit of spend now buys franchise protection as well as a smaller loss.
 
 ## 7. Superseded result
 

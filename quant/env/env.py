@@ -249,6 +249,15 @@ class EvalResult:
     # still holding when the horizon arrives.
     payout_share: float
     survival_rate: float
+    # Probability of *failing*, per year -- not of stopping. A firm that wound
+    # down deliberately did not fail, and counting it as a failure reported
+    # "100% annual death" for a firm whose only decision was to close tidily.
+    # This is the unit every external anchor for the quantity comes in (bank
+    # failure rates, rating-agency default rates, insurance pricing) and the
+    # primary regime check: outside roughly 0.2% to 15% the survival
+    # comparative statics stop meaning anything
+    # (docs/static-model-debug-notes.md section 6).
+    annual_death_probability: float
     # Probability the firm chooses to wind down at some point over the horizon,
     # as opposed to failing or reaching the end still operating.
     orderly_exit_rate: float
@@ -287,7 +296,15 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         # whatever the policy happens to output in a region it is never graded
         # on.
         survival = trajectory.cumulative_survival()
-        live = [survival[step] for step in range(len(trajectory.infos))]
+        # The mass that actually operated this quarter: still active at the
+        # start of it, and did not wind down before it began. A firm that exits
+        # never spends the budget it would have spent, and counting its
+        # intended spend reports a programme that was never run -- which read
+        # as 0.23 per quarter for a firm whose exit rate was 0.9998.
+        live = [
+            survival[step] * (1.0 - trajectory.abandon_probs[step])
+            for step in range(len(trajectory.infos))
+        ]
         live_mass = sum(profile.sum(mask * weights) for mask in live)
 
         constrained = sum(
@@ -318,6 +335,15 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
             profile.sum(survival[step] * trajectory.abandon_probs[step] * weights)
             for step in range(len(trajectory.infos))
         )
+        # Mass that operated and then failed, as distinct from mass that chose
+        # to stop before operating.
+        failed = sum(
+            profile.sum(
+                (survival[step] * (1.0 - trajectory.abandon_probs[step]) - survival[step + 1])
+                * weights
+            )
+            for step in range(len(trajectory.infos))
+        )
         opening = trajectory.states[0]
         liquidation = env.config.firm.failure_recovery * torch.clamp(opening.equity, min=0.0)
         liquidation_value = profile.sum(liquidation * weights)
@@ -332,6 +358,9 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         underinvestment_fraction=underinvested.item(),
         payout_share=(dividends / value).item(),
         survival_rate=survives.item(),
+        annual_death_probability=1.0
+        - (1.0 - failed.item())
+        ** (env.config.firm.periods_per_year / env.config.horizon),
         orderly_exit_rate=exited.item(),
         effective_sample_size=trajectory.effective_sample_size(),
         going_concern_share=(1.0 - liquidation_value / value).item(),
