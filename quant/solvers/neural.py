@@ -27,7 +27,7 @@ from dataclasses import dataclass
 
 import torch
 
-from quant.env.actions import ABANDON_INIT, N_RAW, PAYOUT_INIT, ActionSpec, FirmAction
+from quant.env.actions import N_RAW, PAYOUT_INIT, ActionSpec, FirmAction, abandon_init
 from quant.env.env import EvalResult, FirmEnv, evaluate
 from quant.env.shocks import CommonRandomNumbers
 from quant.env.state import FirmState
@@ -58,7 +58,9 @@ class NeuralPolicy(torch.nn.Module):
         # first gradients are informative rather than saturated.
         torch.nn.init.zeros_(final.bias)
         with torch.no_grad():
-            final.bias[-2] = ABANDON_INIT  # start out intending to stay in business
+            # Scaled to the horizon: a per-quarter figure that is negligible over
+            # eight quarters is halfway out the door over thirty-two.
+            final.bias[-2] = abandon_init(env.config.horizon)
             final.bias[-1] = PAYOUT_INIT   # ...and retaining most of what it earns
         torch.nn.init.normal_(final.weight, std=1e-2)
         layers.append(final)

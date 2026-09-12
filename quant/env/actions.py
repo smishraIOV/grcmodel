@@ -12,6 +12,7 @@ level -- never receives a signal to move off it
 (docs/static-model-debug-notes.md section 1).
 """
 
+import math
 from dataclasses import dataclass
 
 import torch
@@ -20,12 +21,35 @@ from quant.env.state import N_FAMILIES
 
 N_RAW = N_FAMILIES + 3  # GRC budgets, investment, the exit decision, the payout
 
-# Raw initialization for the exit decision. Zero would mean sigmoid(0) = 0.5 --
-# a firm that starts out planning to wind down with even odds every quarter,
-# which is a terrible place to begin a search and slow to climb out of. -4
-# gives about 1.8%: the option is present and has a gradient, but the firm
-# starts out intending to stay in business.
-ABANDON_INIT = -4.0
+# Raw initialization for the exit decision, as a *cumulative* probability of
+# winding down at some point over the horizon rather than a per-quarter one.
+#
+# This was a flat -4.0, about 1.8% a quarter. That is 13% cumulative over eight
+# quarters and 44% over thirty-two, so at longer horizons the firm began its
+# search already halfway out the door -- and exit is absorbing, so once the
+# mass has left there is no continuing business to generate a gradient for
+# staying. Measured, a firm allowed to exit converged to 11.20 at
+# twenty-four quarters while the same firm forbidden to exit reached 19.68:
+# not an economic judgement, an optimizer trapped in an absorbing action.
+#
+# Holding the *cumulative* figure fixed instead makes the initialization mean
+# the same thing at every horizon.
+# 0.1%, not 2%. Measured at thirty-two quarters, a 2% cumulative start still
+# collapsed into the absorbing exit (value 11.20 against a no-exit reference of
+# 17.90) and more training did not rescue it -- 4000 steps landed in the same
+# place, so it is a basin of attraction rather than a budget. At 0.1% the same
+# firm converges to 17.90 with an exit rate of exactly zero.
+#
+# The option remains discoverable: a firm with nothing left to protect still
+# finds and takes it (tests/test_env.py). Starting nearly out of the door is
+# what prevents the search, not starting nearly in it.
+ABANDON_INIT_CUMULATIVE = 0.001
+
+
+def abandon_init(horizon: int, cumulative: float = ABANDON_INIT_CUMULATIVE) -> float:
+    """Raw value whose sigmoid gives `cumulative` exit probability over `horizon`."""
+    per_period = 1.0 - (1.0 - cumulative) ** (1.0 / max(horizon, 1))
+    return math.log(per_period / (1.0 - per_period))
 
 # Payout starts low for the same reason: sigmoid(-2) is about 12%, so the firm
 # begins retaining most of what it earns and has to discover that distributing

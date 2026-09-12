@@ -661,19 +661,24 @@ thirty-two; the thirty-two-quarter advantage has gone with the recalibration.
 > economics.** 11.196 is exactly $0.7 \times 16$: the firm is **winding down in
 > the first quarter**, which is also why the variance across seeds is zero.
 >
-> The cause is a horizon inconsistency the recalibration exposed rather than
-> created. The funding constraint now binds on 98.9% of probability mass, so
-> retained capital is too valuable to distribute and the payout share is zero;
-> with no dividends, *all* value is terminal; and a fixed terminal franchise
-> collected at $T$ is discounted by $\beta^{T}$, so a longer horizon makes the
-> firm worth **less**. By thirty-two quarters, continuing is worth less than
-> winding down immediately, and the firm correctly stops.
+> **Since resolved, and it was not what it looked like.** The collapse was an
+> *optimizer trap*, not economics: the exit action is absorbing, and it was
+> initialized at a flat 1.8% per quarter, which is 13% cumulative over eight
+> quarters but 44% over thirty-two. The firm began its search halfway out of
+> the door and could not climb back, because once the mass has left there is
+> nothing still operating to generate a gradient for staying. Forbidding the
+> action outright was worth 76% more at twenty-four quarters. Holding the
+> *cumulative* probability fixed instead removes it —
+> [debug notes §8](static-model-debug-notes.md).
 >
-> A going concern should not be worth less for living longer. The fix is for
-> the franchise to be realized as a flow rather than a lump at the horizon —
-> which is what a dividend would do if retention were not dominating it. This
-> is open, and it is the reason the horizon question in §5 cannot be settled
-> yet.
+> A milder version of the horizon effect is real and remains: with the funding
+> constraint binding on 98.9% of mass, retained capital is too valuable to
+> distribute, so the payout share is zero, all value is terminal, and a fixed
+> terminal franchise is discounted by $\beta^{T}$. Firm value therefore declines
+> gently with horizon — 25.5, 22.1, 19.7, 17.9 at 8, 16, 24 and 32 quarters —
+> where a going concern should not be worth less for living longer. The fix is
+> for the franchise to be realized as a flow rather than a lump. Still open,
+> but it no longer blocks the horizon question.
 
 A learner is a means, not a deliverable, and at every horizon currently
 trustworthy the simplest policy in the ladder is not measurably beaten.

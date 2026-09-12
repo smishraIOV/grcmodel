@@ -258,3 +258,74 @@ no gradient signal about how to behave *after* one. The limbo state is the
 hardest decision in the model and the least trained. Stratifying the proposal
 during training, and correcting by weight, is the obvious remedy and is not
 built.
+
+## 8. An absorbing action is a trap, and its initialization is horizon-dependent
+
+The firm may wind down. That action is absorbing: the probability mass which
+takes it leaves the continuing business and never comes back. Absorbing actions
+have a property that is obvious once stated and invisible until measured --
+**once the mass has left, there is nothing still operating to generate a
+gradient for not leaving.** The policy cannot learn its way back out, because
+there is no longer anything to learn from.
+
+That makes the *initial* exit probability decisive in a way an ordinary control's
+is not.
+
+### The bug
+
+The raw exit decision was initialized at a flat −4.0, about 1.8% a quarter. Read
+as a per-quarter figure that is clearly negligible. Read cumulatively it is not:
+
+| horizon | 1.8%/quarter, cumulative |
+|---|---|
+| 8 quarters | 13% |
+| 16 quarters | 25% |
+| 32 quarters | **44%** |
+
+At thirty-two quarters the firm began its search already halfway out of the
+door, and the absorbing property did the rest. Measured with a constant policy:
+
+| quarters | exit allowed | exit forbidden | |
+|---|---|---|---|
+| 8 | 25.5172 | 25.5180 | fine |
+| 16 | 22.0998 | 22.1028 | fine |
+| 24 | **11.1965** | 19.6754 | trapped |
+| 32 | **11.1972** | 17.8980 | trapped |
+
+11.1965 is $0.7 \times 16$: the firm winding down in the first quarter. Not an
+economic judgement — forbidding the action outright is worth 76% more — but an
+optimizer that fell into an absorbing state and could not climb out. More
+training does not help: at thirty-two quarters, 4000 steps lands in the same
+place as 1500. It is a basin of attraction, not a budget.
+
+### The fix
+
+Hold the **cumulative** exit probability fixed rather than the per-period one,
+so the initialization means the same thing at every horizon:
+
+$$
+p_{\text{period}} = 1 - (1 - p_{\text{cumulative}})^{1/T}
+$$
+
+at 0.1%. The option stays discoverable — a firm with nothing left to protect
+still finds and takes it — because what prevents the search is starting nearly
+*outside* the business, not starting nearly inside it.
+
+### The family this belongs to
+
+This is the third appearance of the same shape in this project, and worth
+recognising on sight:
+
+- **The perfect-information bound's gradient desert.** Limited liability makes
+  a failed firm worth a constant, so a dead path's gradient is exactly zero. The
+  bound had to be warm-started because a cold start drove most paths into it.
+- **The hard insolvency barrier**, replaced by a smooth hazard for the same
+  reason: the gradient flows through the *probability* of crossing rather than
+  dying at the crossing.
+- **The exit action**, here.
+
+In each case a pathwise gradient meets an absorbing outcome and stops carrying
+information. Smoothing the transition helps where the outcome is involuntary; an
+action the policy *chooses* cannot be smoothed the same way, so the remedy is to
+start far enough from the absorbing region that the search never enters it
+before it knows better.
