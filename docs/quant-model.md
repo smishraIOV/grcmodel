@@ -521,12 +521,36 @@ grid solver here is the action space, not the state space — five continuous
 controls at ten points each would be 100,000 evaluations per node. The rung's
 job is to be right, not general.
 
-**Agreement, and what it is worth.** Comparing $V^{\text{grid}}$ with a
-rollout value conflates three errors: the grid's discretization, the learner's
-optimization, and Monte Carlo noise. The metric used instead is the one-step
-policy-improvement gap $Q^{\text{grid}}(s, a_\pi(s)) - V^{\text{grid}}(s)$,
-evaluated at states the policy actually visits, so both terms come from the
-same value function and the discretization largely cancels.
+**Agreement, and what it is worth.** Three policies, each an answer to "what
+should the firm do each quarter?" found a different way:
+
+- **tabular** — the grid's own policy: discretize the state, back up a value
+  function, take the highest-scoring action at each node. No gradients.
+- **optimized constant** — one fixed action used in every state and every
+  quarter, found by Adam on the differentiable rollout. Ignores the state.
+- **neural** — a small network mapping observed state to action, trained by
+  backpropagation through the rollout. The only one that reacts.
+
+The two columns answer different questions, and conflating them is the easiest
+way to misread the table.
+
+*Honest MC value* is what a policy is actually worth: run it through the real
+simulator over 2048 sampled paths and take the expected discounted firm value,
+using the same `evaluate` and the same draws for all three. "Honest" is in
+contrast to the grid's own internal value estimate, which is computed on a
+coarse grid with a finite shock sample — convenient, but not ground truth. This
+column is the performance ranking, and no solver grades its own homework.
+
+*Gap* is not a performance measure at all. It asks whether an independent
+solver agrees with what a policy is doing: score the policy's chosen action
+using the **grid's** value function, and compare against the action the grid
+would have taken. Negative means the policy leaves value on the table by the
+grid's reckoning; zero means they agree. Formally the one-step
+policy-improvement gap $Q^{\text{grid}}(s, a_\pi(s)) - V^{\text{grid}}(s)$
+at states the policy actually visits — both terms from the same value function,
+so the grid's discretization largely cancels. Comparing $V^{\text{grid}}$
+against a rollout value instead would conflate three separate errors: the
+grid's discretization, the learner's optimization, and Monte Carlo noise.
 
 | policy | honest MC value | gap vs grid |
 |---|---|---|
@@ -534,16 +558,25 @@ same value function and the discretization largely cancels.
 | optimized constant | 37.5000 | +0.28% |
 | neural (state feedback) | 37.7494 | −1.10% |
 
-The constant-policy solver reaches its answer by Adam on a differentiable
-rollout and the grid reaches its by enumeration; they agree to **0.3%**. That
-is the evidence this rung exists to produce.
+**The +0.28% rows are the result.** The constant-policy solver reaches its
+answer by Adam on a differentiable rollout and the grid reaches its by
+enumeration and backward induction; they share only the dynamics and agree to a
+third of a percent. That is the evidence this rung exists to produce. That both
+entries are *identical* is itself a clue to what the residual is: the opening
+state is not exactly a grid node, and bilinear interpolation of a concave value
+function reads low, so $Q - V$ comes out slightly positive for any policy.
 
-The neural row is the interesting one and it is not a failure. It scores
-*worst* on the grid's metric while winning on honest evaluation, because it
-chooses a payout the grid's restriction holds fixed. Agreement with this rung
-is only meaningful inside the restriction — which is worth stating plainly,
-since a metric that quietly penalizes a policy for using a control the referee
-cannot see would look like a learner bug for a long time.
+**The −1.10% row is the metric failing, not the policy.** The neural policy
+scores worst here while winning on honest evaluation, because it chooses a
+payout the grid's restriction holds fixed. When the grid scores that action, it
+charges it against a continuation the neural policy will not actually follow —
+it assumes the firm reverts to the restricted policy next quarter, and so
+understates it.
+
+Agreement with this rung is therefore only meaningful *inside* the restriction.
+Worth stating plainly rather than discovering later: a metric that silently
+penalizes a policy for using a control the referee cannot see would read as a
+learner bug for a long time.
 
 Direct value agreement converges with the grid's shock sample — 7.7% at 48
 draws, 3.6% at 768, 2.0% at 3072, monotone — which is what identifies the
