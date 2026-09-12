@@ -671,19 +671,52 @@ thirty-two; the thirty-two-quarter advantage has gone with the recalibration.
 > *cumulative* probability fixed instead removes it —
 > [debug notes §8](static-model-debug-notes.md).
 >
-> A milder version of the horizon effect is real and remains: with the funding
-> constraint binding on 98.9% of mass, retained capital is too valuable to
-> distribute, so the payout share is zero, all value is terminal, and a fixed
-> terminal franchise is discounted by $\beta^{T}$. Firm value therefore declines
-> gently with horizon — 25.5, 22.1, 19.7, 17.9 at 8, 16, 24 and 32 quarters —
-> where a going concern should not be worth less for living longer. The fix is
-> for the franchise to be realized as a flow rather than a lump. Still open,
-> but it no longer blocks the horizon question.
+> A milder version of the horizon effect is real and remains — see below. It no
+> longer blocks the horizon question, but it does mean values are not
+> comparable across horizons.
 
 A learner is a means, not a deliverable, and at every horizon currently
 trustworthy the simplest policy in the ladder is not measurably beaten.
 
 Overfitting is small and is measured rather than assumed: 0.11% to 0.12%.
+
+### Open: firm value is not comparable across horizons
+
+With the exit trap removed, value still declines gently with the horizon —
+25.5, 22.1, 19.7, 17.9 at 8, 16, 24 and 32 quarters. A going concern should not
+be worth less for living longer, so this is worth understanding before any
+result is quoted across horizons.
+
+The mechanics are clean. The funding constraint binds on 98.9% of probability
+mass, so retained capital is too valuable to distribute and the payout share is
+zero; with no dividends, *all* value is terminal, $V(T) = \beta^{T}(E_T + F)$.
+Decomposing that:
+
+| $T$ | $\beta^{T}$ | $E_T$ | $\beta^{T} E_T$ | $\beta^{T} F$ |
+|---|---|---|---|---|
+| 8 | 0.857 | 18.4 | 15.78 | 12.86 |
+| 16 | 0.735 | 21.0 | 15.44 | 11.03 |
+| 24 | 0.630 | 24.0 | 15.12 | 9.45 |
+| 32 | 0.540 | 26.5 | 14.32 | 8.10 |
+
+$\beta^{T} E_T$ is nearly flat. **The whole decline is $\beta^{T} F$** — a
+*fixed* terminal franchise discounted harder the longer the firm waits to
+collect it.
+
+The obvious repair is to choose $F$ so that $V(T) = V(T+k)$, the same
+fixed-point construction used for the opening GRC stock. It does not work here,
+and the reason is the finding rather than the failure: the firm's equity grows
+at **1.53% a quarter against a discount rate of 1.94%**. After losses and
+failure risk it barely fails to out-earn its cost of capital, so no choice of
+$F$ makes value horizon-invariant — solving for one gives $F \approx 0.5$,
+which is small enough to bring back the end effect the franchise was introduced
+to remove.
+
+So this is a calibration question, not a parameter to tune: either the firm
+should out-earn its cost of capital by a clearer margin, or the discount rate
+is too high for a business of this risk, or value genuinely is horizon-specific
+and results should never be compared across $T$. Deliberately left open rather
+than guessed at.
 
 ### Truncated BPTT with a critic, measured against full BPTT
 
@@ -718,26 +751,32 @@ continuing mass left to generate a gradient for not exiting. The critic then
 learns to predict the wind-down value very accurately — its loss falls to
 0.0003 — which is a self-fulfilling bootstrap rather than convergence.
 
-**And it does not rescue the long horizon, which was the whole case for it:**
+**And it does not rescue the long horizon, which was the whole case for it.**
+Re-run after the exit trap of [debug notes §8](static-model-debug-notes.md) was
+fixed, so full BPTT is no longer handicapped:
 
-| quarters | constant | full BPTT | SVG(K=4) | SVG(K=8) |
+| quarters | constant | full BPTT | SVG(K=8) | SVG(K=4) |
 |---|---|---|---|---|
-| 16 | **22.03** | 11.20 | 11.20 | 11.20 |
-| 24 | 11.20 | 11.20 | 11.21 | 11.20 |
+| 24 | 19.5568 | **19.5927** | 17.8677 | 14.0259 |
+| 32 | 17.6940 | **17.8697** | 11.1995 | 11.1996 |
 
-At sixteen quarters both learners fall into the wind-down attractor while a
-plain constant policy, which cannot exit selectively, gets twice the value.
-That is not gradient explosion — truncation would help with that — it is an
-absorbing-action trap sitting on top of the horizon-accounting degeneracy
-above. The same pathology as the gradient desert in the perfect-information
-bound: once all the mass has left through an absorbing action, nothing remains
-to carry a gradient back toward not taking it.
+Monotone in K at every horizon tested: the shorter the window, the worse. Full
+backpropagation wins everywhere.
+
+The thirty-two-quarter row carries the sharpest finding. Both truncated
+variants sit at 11.1995 — the wind-down value — while full BPTT reaches 17.87
+*on the same initialization*. Fixing the absorbing-action trap cured full BPTT
+and did not cure SVG, because **a critic makes that trap worse**: early in
+training it underestimates continuation, which is exactly the input the policy
+uses to decide whether to continue, and once the mass has exited the critic
+learns to predict the wind-down value accurately and the bootstrap closes on
+itself.
 
 So the verdict stands, for a better reason than before. Truncation was declined
-on the grounds that full BPTT was stable; it is now declined on the grounds
-that it was built, measured, and made things worse. The binding problems are
-the horizon accounting and the exit trap, and neither is a gradient-length
-problem. Knowing its size is
+on the grounds that full BPTT looked stable; it is now declined on the grounds
+that it was built, measured at four horizons, and made things worse at all of
+them — and that its one distinguishing component actively deepens the failure
+mode that mattered most. Knowing its size is
 the only way to know it is small.
 
 ### Break-even analysis
