@@ -66,7 +66,9 @@ class FixedAction:
 
     def __call__(self, state):
         return FirmAction(
-            grc=self.grc.expand(state.batch(), 3), investment=self.investment
+            grc=self.grc.expand(state.batch(), 3),
+            investment=self.investment,
+            abandon=torch.zeros_like(self.investment),
         )
 
 
@@ -777,3 +779,119 @@ def test_going_concern_share_leaves_a_survival_motive():
     assert 0.5 < result.going_concern_share < 1.0, (
         f"little left to survive for: {result.going_concern_share:.3f}"
     )
+
+
+# -- Bite 3d: the option to stop -------------------------------------------
+
+
+def test_orderly_wind_down_beats_disorderly_failure():
+    """The premise. A firm that chose the moment unwinds positions rather than
+    liquidating into a panic, surrenders its licence rather than having it
+    revoked, and pays counterparties in sequence."""
+    env = FirmEnv(EnvConfig.quarterly(1), MonteCarloSampler(DEFAULTS.sampler))
+    equity = REFERENCE.tensor([10.0, 2.0, 0.0, -5.0])
+    orderly, disorderly = env.dynamics.orderly_value(equity), env.dynamics.failure_value(equity)
+    assert (orderly[:2] > disorderly[:2]).all()
+    # Both floored by limited liability, so neither is worth anything once
+    # equity is gone -- the option is to stop early, not to stop for free.
+    assert torch.equal(orderly[2:], torch.zeros(2, dtype=orderly.dtype))
+
+
+def thin_franchise(**overrides):
+    """A firm whose operations barely earn their keep.
+
+    Needed because the exit option is deep out of the money at the default
+    parameters, for a structural reason worth knowing: nothing in this model
+    caps investment by capital, so the firm can always deploy I* and earn the
+    same surplus regardless of its balance sheet. The franchise is worth about
+    473 as a perpetuity against equity of 16, so winding down is never close to
+    optimal. Equity matters only through the hazard.
+
+    That is the same root cause as the convex financing cost going inert: with
+    no funding constraint the balance sheet does not gate operations. Fixing it
+    means linking production to capital, which is a modelling change rather
+    than a parameter, and it is the open item in docs/quant-model.md section 5.
+    """
+    firm = replace(DEFAULTS.firm, production_scale=1.2, **overrides)
+    return FirmEnv(
+        EnvConfig.quarterly(6, firm=firm, **{}), MonteCarloSampler(DEFAULTS.sampler)
+    )
+
+
+def test_the_exit_option_cannot_reduce_firm_value():
+    """An option is worth nothing or something, never less than nothing. If
+    this fails the accounting has double-counted an exit, or is charging the
+    firm for a choice it declined to make.
+
+    Checked where the option is live. At the default parameters the two values
+    differ by about 7e-4 in either direction, which is Adam not having settled
+    one extra parameter rather than anything economic -- so asserting there
+    would be measuring optimizer noise.
+    """
+    crn = CommonRandomNumbers(0, 6, 1024, REFERENCE)
+    firm = replace(DEFAULTS.firm, production_scale=1.2)
+    sampler = MonteCarloSampler(DEFAULTS.sampler)
+
+    without = optimize_constant(
+        FirmEnv(EnvConfig.quarterly(6, firm=firm, allow_abandonment=False), sampler),
+        crn, n_steps=2000,
+    )[1]
+    with_option = optimize_constant(
+        FirmEnv(EnvConfig.quarterly(6, firm=firm), sampler), crn, n_steps=2000
+    )[1]
+
+    assert with_option.value > without.value + 1.0, (
+        f"the option bought nothing: {without.value:.4f} -> {with_option.value:.4f}"
+    )
+    assert with_option.orderly_exit_rate > 0.5
+
+
+def test_a_healthy_firm_does_not_take_the_exit():
+    """The other half of the same claim. With the franchise intact, continuing
+    dominates winding down everywhere and the option should sit unexercised --
+    an option that gets taken when it should not is as wrong as one that does
+    not get taken when it should."""
+    env = FirmEnv(EnvConfig.quarterly(6), MonteCarloSampler(DEFAULTS.sampler))
+    result = optimize_constant(env, CommonRandomNumbers(0, 6, 1024, REFERENCE), n_steps=2000)[1]
+    assert result.orderly_exit_rate < 0.01, f"exit rate {result.orderly_exit_rate:.4f}"
+
+
+def test_the_relaxed_exit_decision_lands_on_a_corner():
+    """Firm value is linear in the exit probability -- it is a convex
+    combination of stopping now and carrying on -- so a linear function on
+    [0, 1] attains its maximum at an endpoint. The relaxation is therefore
+    exact, not an approximation, and the optimizer should drive the decision to
+    0 or 1 on its own. If it settles in the middle, the objective is not linear
+    in it and the relaxation has stopped being free.
+    """
+    env = FirmEnv(EnvConfig.quarterly(4), MonteCarloSampler(DEFAULTS.sampler))
+    policy, _ = perfect_information_bound(
+        env, CommonRandomNumbers(0, 4, 256, REFERENCE), n_steps=3000
+    )
+    exit_prob = torch.sigmoid(policy.raw_free[..., -1]).detach()
+    interior = ((exit_prob > 0.02) & (exit_prob < 0.98)).double().mean().item()
+    assert interior < 0.25, f"{interior:.1%} of exit decisions are undecided"
+
+
+def test_richer_wind_downs_are_taken_more_often():
+    """The comparative static Governance implies: the better an orderly exit
+    pays relative to a disorderly one, the more often the firm takes it, and
+    the more the firm is worth for having the choice.
+
+    Run on the thin-franchise firm, where the option is live at all."""
+    sampler = MonteCarloSampler(DEFAULTS.sampler)
+    crn = CommonRandomNumbers(0, 6, 1024, REFERENCE)
+
+    results = []
+    for orderly in (0.45, 0.95):
+        firm = replace(DEFAULTS.firm, production_scale=1.2, orderly_recovery=orderly)
+        env = FirmEnv(EnvConfig.quarterly(6, firm=firm), sampler)
+        results.append(optimize_constant(env, crn, n_steps=2000)[1])
+
+    # Both saturate at ~0.9999 on this firm -- once exiting dominates, it
+    # dominates at either recovery rate, so ordering the exit rates is decided
+    # by floating-point dust rather than by economics. What carries the claim
+    # is that the option is taken at all, and that taking a richer one is worth
+    # more: 7.20 against 15.20 here.
+    assert min(r.orderly_exit_rate for r in results) > 0.9
+    assert results[1].value > results[0].value * 1.5

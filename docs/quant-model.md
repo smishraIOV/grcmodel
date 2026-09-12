@@ -26,7 +26,8 @@ unimplemented rows are the honest gap between this section and the code.
 
 | control | symbol | implemented? |
 |---|---|---|
-| GRC investment, split by risk family | $g_c,\ g_o,\ g_k$ | **yes** — `GrcBudgets` |
+| GRC investment, split by risk family | $g_c,\ g_o,\ g_k$ | **yes** — `FirmAction.grc` |
+| Orderly wind-down | — | **yes** — `FirmAction.abandon` |
 | Capital allocation to investment, state-contingent | $I$ | **yes** — per-path, chosen after the shock |
 | Target liquidity buffer | — | no |
 | Deposit pricing / redemption-term incentives | — | no |
@@ -171,8 +172,9 @@ exactly the one-period problem that benchmark solves.
 | 3a | Smooth survival hazard replacing the hard barrier | **built** — `quant/hazard.py` |
 | 3b | GRC acting on the hazard, not only on losses | **built** — `quant/hazard.py` |
 | 3c | What failure costs, and what GRC cannot do about it | **built** — `FirmParams.failure_recovery` |
-| 3d | Abandonment / orderly wind-down option | not started |
+| 3d | Abandonment / orderly wind-down option | **built** — out of the money, see below |
 | 3e | Diagnostic bundle and the break-even outputs | not started |
+| — | **Link production to capital** (see §6) — nothing currently caps investment by the balance sheet, which leaves both the financing friction and the exit option inert | open, and now the most consequential |
 | 4 | Grid / fitted value iteration on a reduced config | not started |
 | 5 | The learner (truncated-BPTT actor-critic) | not started |
 
@@ -333,7 +335,50 @@ construction.
 That share is also a regime diagnostic. If liquidation were worth nearly as
 much as continuing, death would be cheap, the survival motive would vanish, and
 the objective would quietly revert to expected-loss minimisation — which
-[`framework.md`](framework.md) §3 rejects. That gap is the dynamic analogue of the Froot-Stein
+[`framework.md`](framework.md) §3 rejects.
+
+### The option to stop, and why it is currently worthless
+
+The firm may wind down deliberately at the start of any quarter, recovering
+$0.7 E$ rather than the $0.4 E$ a disorderly failure leaves. This is where
+[`framework.md`](framework.md) §1's **Governance** pillar — "a named authority
+who can halt activity" — finally does work. Risk and Compliance both act by
+making bad outcomes rarer or smaller; Governance acts by converting one kind of
+ending into another, and until now that had no representation here.
+
+The decision is relaxed to a probability in $[0,1]$ rather than a hard choice.
+That costs nothing: firm value is **linear** in it — a convex combination of
+stopping now and carrying on — and a linear function on $[0,1]$ attains its
+maximum at an endpoint, so the optimizer drives it to a corner on its own and
+the relaxed optimum equals the discrete one. What it buys is a gradient in
+between, which an argmax would not have. Asserted: fewer than 25% of exit
+decisions settle in the interior.
+
+**And at the default parameters the firm never takes it.** The exit rate is
+$3.5 \times 10^{-5}$ and the option is worth $-0.0007$, which is Adam not
+settling one extra parameter rather than anything economic. That holds all the
+way down to opening equity of 2.0, where annual failure is 36%:
+
+| franchise $A$ | surplus/qtr | exit rate | option value |
+|---|---|---|---|
+| 3.00 (default) | 9.01 | 0.000 | −0.0007 |
+| 1.60 | 1.30 | 1.000 | 2.9931 |
+| 1.20 | 0.18 | 1.000 | 7.0747 |
+| 1.05 | 0.01 | 1.000 | 7.5778 |
+
+The mechanism is correct — thin the franchise and the firm exits immediately —
+but it is structurally out of the money, and the reason matters more than the
+result. **Nothing in this model caps investment by capital.** The firm can
+always deploy $I^{\star}$ and earn the same 9.01 per quarter whatever its
+balance sheet, so the franchise is worth about 473 as a perpetuity against
+equity of 16. Winding down is never close.
+
+That is the same root cause as the convex financing cost going inert: with no
+funding constraint, the balance sheet does not gate operations, and equity
+matters only through the hazard. A bank that cannot lend more than it funds
+would behave very differently. Linking production to capital is a modelling
+change rather than a parameter, and it is now the most consequential open item
+in §5. That gap is the dynamic analogue of the Froot-Stein
 premium: spend that pays for itself only because the firm has a franchise worth
 surviving to keep.
 

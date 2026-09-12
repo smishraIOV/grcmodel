@@ -74,6 +74,8 @@ class StepResult:
     weight: torch.Tensor        # (B,)
     log_survival: torch.Tensor  # (B,) log P(survive this period), <= 0
     failure_value: torch.Tensor # (B,) what is recovered if it fails this period
+    abandon_prob: torch.Tensor  # (B,) P(wind down voluntarily, before operating)
+    orderly_value: torch.Tensor # (B,) what an orderly wind-down recovers
     terminated: torch.Tensor    # (B,) bool, crossed the hard barrier THIS step
     info: dict
 
@@ -87,22 +89,34 @@ class Trajectory:
     weights: list[torch.Tensor]
     log_survivals: list[torch.Tensor]
     failure_values: list[torch.Tensor]
+    abandon_probs: list[torch.Tensor]
+    orderly_values: list[torch.Tensor]
     terminal_value: torch.Tensor
     infos: list[dict]
 
     def cumulative_survival(self) -> list[torch.Tensor]:
-        """[S_0 = 1, S_1, ..., S_T], the probability a path is still alive.
+        """[A_0 = 1, A_1, ..., A_T]: the probability a path is still operating.
 
-        Summed in logs and exponentiated once. A product of per-period
-        probabilities underflows float32 well inside a horizon this model
-        cares about, and the sum does not.
+        Two ways to stop, and they are different events. The firm may wind down
+        voluntarily at the start of a period, before it operates, and collect
+        the orderly recovery; or it may operate and fail, and collect the
+        disorderly one. Both remove mass from the continuing business:
+
+            A_{t+1} = A_t * (1 - p_t) * s_t
+
+        Accumulated in logs and exponentiated once. A product of per-period
+        probabilities underflows float32 well inside a horizon this model cares
+        about, and the sum does not.
         """
         running = torch.zeros_like(self.log_survivals[0])
-        survival = [torch.exp(running)]
-        for step in self.log_survivals:
-            running = running + step
-            survival.append(torch.exp(running))
-        return survival
+        active = [torch.exp(running)]
+        for survived, abandon in zip(self.log_survivals, self.abandon_probs):
+            # clamped off 1.0 so a path that has certainly exited gives -inf
+            # rather than nan
+            stays = torch.log1p(-abandon.clamp(max=1.0 - 1e-12))
+            running = running + stays + survived
+            active.append(torch.exp(running))
+        return active
 
     def path_weights(self) -> torch.Tensor:
         """Normalized probability weight per path, compounded over the horizon."""
@@ -124,16 +138,22 @@ class Trajectory:
         drives the hazard. A sampled death is a step function of equity and
         carries no gradient; a survival probability carries one everywhere.
         """
-        survival = self.cumulative_survival()
+        active = self.cumulative_survival()
         total = torch.zeros_like(self.terminal_value)
         for step, reward in enumerate(self.rewards):
-            total = total + (discount**step) * survival[step + 1] * reward
-            # The probability mass that failed during this period collects its
-            # recovery at this date, not at the horizon -- a failure in quarter
-            # one and a failure in quarter eight are not worth the same.
-            died = survival[step] - survival[step + 1]
-            total = total + (discount ** (step + 1)) * died * self.failure_values[step]
-        return total + (discount ** len(self.rewards)) * survival[-1] * self.terminal_value
+            entering = active[step]
+            abandon = self.abandon_probs[step]
+            operating = entering * (1.0 - abandon)
+
+            # Exits are collected at the date they happen, not at the horizon:
+            # winding down in quarter one and failing in quarter eight are not
+            # worth the same thing.
+            total = total + (discount**step) * entering * abandon * self.orderly_values[step]
+            total = total + (discount**step) * operating * reward
+
+            failed = operating - active[step + 1]
+            total = total + (discount ** (step + 1)) * failed * self.failure_values[step]
+        return total + (discount ** len(self.rewards)) * active[-1] * self.terminal_value
 
     def effective_sample_size(self) -> float:
         """Kish ESS of the compounded weights, as a fraction of the batch.

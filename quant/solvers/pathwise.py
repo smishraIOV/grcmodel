@@ -25,7 +25,7 @@ already knows the batch. An honest policy takes a state and returns an action.
 
 import torch
 
-from quant.env.actions import N_RAW, ActionSpec, FirmAction
+from quant.env.actions import ABANDON_INIT, N_RAW, ActionSpec, FirmAction
 from quant.env.env import EvalResult, FirmEnv, evaluate
 from quant.env.shocks import CommonRandomNumbers
 from quant.env.state import N_FAMILIES, FirmState
@@ -61,25 +61,30 @@ class PerPathPolicy:
             *( (horizon, N_FAMILIES) if shared_budgets else (horizon, batch, N_FAMILIES) ),
             requires_grad=True,
         )
-        self.raw_investment = profile.zeros(horizon, batch, requires_grad=True)
+        # Investment and the exit decision: both free per path, since both are
+        # what the clairvoyance is being measured on.
+        free = profile.zeros(horizon, batch, N_RAW - N_FAMILIES)
+        free[..., -1] = ABANDON_INIT
+        self.raw_free = free.requires_grad_(True)
 
     def parameters(self) -> list[torch.Tensor]:
-        return [self.raw_budgets, self.raw_investment]
+        return [self.raw_budgets, self.raw_free]
 
     def fill_from_constant(self, raw: torch.Tensor, horizon: int, batch: int) -> None:
         """Place a constant policy's parameters into this parameterization."""
-        budgets = raw[:N_FAMILIES]
         shape = (horizon, N_FAMILIES) if self.shared_budgets else (horizon, batch, N_FAMILIES)
         with torch.no_grad():
-            self.raw_budgets.copy_(budgets.expand(shape))
-            self.raw_investment.copy_(raw[N_FAMILIES].expand(horizon, batch))
+            self.raw_budgets.copy_(raw[:N_FAMILIES].expand(shape))
+            self.raw_free.copy_(
+                raw[N_FAMILIES:].expand(horizon, batch, N_RAW - N_FAMILIES)
+            )
 
     def __call__(self, state: FirmState) -> FirmAction:
         batch = state.batch()
         budgets = self.raw_budgets[state.t]
         if self.shared_budgets:
             budgets = budgets.expand(batch, N_FAMILIES)
-        raw = torch.cat([budgets, self.raw_investment[state.t].unsqueeze(-1)], dim=-1)
+        raw = torch.cat([budgets, self.raw_free[state.t]], dim=-1)
         return ActionSpec.from_raw(raw)
 
 
@@ -96,7 +101,9 @@ class RawConstantPolicy:
     """
 
     def __init__(self, profile):
-        self.raw = profile.zeros(N_RAW, requires_grad=True)
+        raw = profile.zeros(N_RAW)
+        raw[-1] = ABANDON_INIT
+        self.raw = raw.requires_grad_(True)
 
     def parameters(self) -> list[torch.Tensor]:
         return [self.raw]

@@ -50,6 +50,7 @@ class ConstantPolicy:
 
     grc: tuple[float, float, float]
     investment: float
+    abandon: float = 0.0
     profile: NumericsProfile = DEFAULT_PROFILE
 
     def __call__(self, state: FirmState) -> FirmAction:
@@ -57,6 +58,7 @@ class ConstantPolicy:
         return FirmAction(
             grc=self.profile.tensor(list(self.grc)).expand(batch, N_FAMILIES),
             investment=self.profile.full((batch,), self.investment),
+            abandon=self.profile.full((batch,), self.abandon),
         )
 
 
@@ -75,6 +77,7 @@ class EnvConfig:
     financing_scale: float = 1.0
     equity_floor: float = -float("inf")
     hazard: HazardParams | None = None
+    allow_abandonment: bool = False
     terminal: TerminalValue = field(default_factory=LiquidationValue)
 
     @classmethod
@@ -110,6 +113,7 @@ class EnvConfig:
             # unbounded financing premium from overflowing float64.
             equity_floor=-5.0 * firm.initial_equity,
             hazard=DEFAULTS.hazard,
+            allow_abandonment=True,
         )
         settings.update(overrides)  # an explicit override wins over the derived rate
         return cls(**settings)
@@ -129,6 +133,7 @@ class FirmEnv:
             equity_floor=config.equity_floor,
             grc_depreciation=config.grc_depreciation,
             hazard=config.hazard,
+            allow_abandonment=config.allow_abandonment,
         )
 
     def reset(self, batch: int) -> FirmState:
@@ -170,7 +175,8 @@ class FirmEnv:
         self, policy: Policy, crn: CommonRandomNumbers, differentiable: bool = True
     ) -> Trajectory:
         state = self.reset(crn.batch)
-        states, rewards, weights, survivals, recoveries, infos = [state], [], [], [], [], []
+        states, rewards, weights, infos = [state], [], [], []
+        survivals, recoveries, abandons, orderlies = [], [], [], []
 
         context = contextlib.nullcontext() if differentiable else torch.no_grad()
         with context:
@@ -184,6 +190,8 @@ class FirmEnv:
                 weights.append(result.weight)
                 survivals.append(result.log_survival)
                 recoveries.append(result.failure_value)
+                abandons.append(result.abandon_prob)
+                orderlies.append(result.orderly_value)
                 infos.append(result.info)
 
             terminal = self.terminal_value(state)
@@ -194,6 +202,8 @@ class FirmEnv:
             weights=weights,
             log_survivals=survivals,
             failure_values=recoveries,
+            abandon_probs=abandons,
+            orderly_values=orderlies,
             terminal_value=terminal,
             infos=infos,
         )
@@ -221,6 +231,9 @@ class EvalResult:
     grc_stock: tuple[float, float, float]
     constrained_fraction: float
     survival_rate: float
+    # Probability the firm chooses to wind down at some point over the horizon,
+    # as opposed to failing or reaching the end still operating.
+    orderly_exit_rate: float
     effective_sample_size: float
     # (V - Lambda) / V at the opening state: the share of firm value that is
     # going-concern rather than liquidation. If this is near zero, death is
@@ -273,6 +286,10 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         # never graded on. Unweighted, that read as an end stock of 9.8 in a
         # configuration where the stock cannot exceed one quarter's spend.
         survives = profile.sum(survival[-1] * weights)
+        exited = sum(
+            profile.sum(survival[step] * trajectory.abandon_probs[step] * weights)
+            for step in range(len(trajectory.infos))
+        )
         opening = trajectory.states[0]
         liquidation = env.config.firm.failure_recovery * torch.clamp(opening.equity, min=0.0)
         liquidation_value = profile.sum(liquidation * weights)
@@ -285,6 +302,7 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         grc_stock=(stock[0].item(), stock[1].item(), stock[2].item()),
         constrained_fraction=constrained.item(),
         survival_rate=survives.item(),
+        orderly_exit_rate=exited.item(),
         effective_sample_size=trajectory.effective_sample_size(),
         going_concern_share=(1.0 - liquidation_value / value).item(),
     )

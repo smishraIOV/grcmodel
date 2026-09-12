@@ -27,7 +27,7 @@ from dataclasses import dataclass
 
 import torch
 
-from quant.env.actions import N_RAW, ActionSpec, FirmAction
+from quant.env.actions import ABANDON_INIT, N_RAW, ActionSpec, FirmAction
 from quant.env.env import EvalResult, FirmEnv, evaluate
 from quant.env.shocks import CommonRandomNumbers
 from quant.env.state import FirmState
@@ -57,6 +57,8 @@ class NeuralPolicy(torch.nn.Module):
         # Start near softplus(0): a small positive spend and investment, so the
         # first gradients are informative rather than saturated.
         torch.nn.init.zeros_(final.bias)
+        with torch.no_grad():
+            final.bias[-1] = ABANDON_INIT  # start out intending to stay in business
         torch.nn.init.normal_(final.weight, std=1e-2)
         layers.append(final)
 

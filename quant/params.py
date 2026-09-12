@@ -92,6 +92,18 @@ class FirmParams:
     # failure, and crypto bankruptcy recoveries in the 30-70c range.
     failure_recovery: float = 0.4
 
+    # What an *orderly* wind-down recovers, as the same kind of fraction.
+    # Higher than a disorderly failure because the firm chose the moment:
+    # positions are unwound rather than liquidated into a panic, the licence is
+    # surrendered rather than revoked, and counterparties are paid in sequence.
+    #
+    # This is where docs/framework.md section 1's Governance pillar -- "a named
+    # authority who can halt activity" -- finally does work in the model.
+    # Risk and Compliance both act by making bad outcomes rarer or smaller.
+    # Governance acts by converting one kind of ending into another, which is a
+    # different thing and had no representation here until now.
+    orderly_recovery: float = 0.7
+
     periods_per_year: int = 4  # quarterly
     annual_discount_rate: float = 0.08
     # A control installed today still works in a year's time, but not forever:

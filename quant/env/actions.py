@@ -18,7 +18,14 @@ import torch
 
 from quant.env.state import N_FAMILIES
 
-N_RAW = N_FAMILIES + 1  # three GRC budgets plus investment
+N_RAW = N_FAMILIES + 2  # three GRC budgets, investment, and the exit decision
+
+# Raw initialization for the exit decision. Zero would mean sigmoid(0) = 0.5 --
+# a firm that starts out planning to wind down with even odds every quarter,
+# which is a terrible place to begin a search and slow to climb out of. -4
+# gives about 1.8%: the option is present and has a gradient, but the firm
+# starts out intending to stay in business.
+ABANDON_INIT = -4.0
 
 
 @dataclass(frozen=True)
@@ -33,6 +40,7 @@ class FirmAction:
 
     grc: torch.Tensor         # (B, 3) spend by family
     investment: torch.Tensor  # (B,)
+    abandon: torch.Tensor     # (B,) in [0, 1], the probability of exiting now
 
     def total_grc(self) -> torch.Tensor:
         return self.grc.sum(dim=-1)
@@ -45,6 +53,23 @@ class ActionSpec:
 
     @staticmethod
     def from_raw(raw: torch.Tensor) -> FirmAction:
-        """`raw` is (B, 4): three budgets then investment."""
-        positive = torch.nn.functional.softplus(raw)
-        return FirmAction(grc=positive[..., :N_FAMILIES], investment=positive[..., N_FAMILIES])
+        """`raw` is (B, 5): three budgets, investment, then the exit decision.
+
+        Spend and investment go through softplus, as everywhere. The exit
+        decision goes through a sigmoid and is treated as a *probability* of
+        winding down rather than a hard choice.
+
+        That relaxation costs nothing, which is worth stating because relaxing
+        a binary decision usually does. Firm value is **linear** in this
+        probability -- it is a convex combination of exiting now and carrying
+        on -- and a linear function on [0, 1] attains its maximum at an
+        endpoint. So the optimizer drives it to 0 or 1 on its own and the
+        relaxed optimum equals the discrete one. What it buys is a gradient
+        everywhere in between, which an argmax would not have.
+        """
+        positive = torch.nn.functional.softplus(raw[..., : N_FAMILIES + 1])
+        return FirmAction(
+            grc=positive[..., :N_FAMILIES],
+            investment=positive[..., N_FAMILIES],
+            abandon=torch.sigmoid(raw[..., N_FAMILIES + 1]),
+        )

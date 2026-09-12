@@ -60,7 +60,16 @@ class StandardDynamics:
     # death channel. That is the configuration the closed-form and static
     # regression tests run against, not the intended model.
     hazard: HazardParams | None = None
+    # Off by default: the reduction config has no exit option, which is what
+    # the static model assumed and what its closed form is derived under.
+    allow_abandonment: bool = False
     differentiable: bool = True
+
+    def orderly_value(self, equity: torch.Tensor) -> torch.Tensor:
+        """What winding down deliberately recovers, evaluated on the equity the
+        firm still has when it decides -- before it operates for another
+        quarter and risks losing more."""
+        return self.firm.orderly_recovery * torch.clamp(equity, min=0.0)
 
     def failure_value(self, equity: torch.Tensor) -> torch.Tensor:
         """What is recovered if the firm fails this period.
@@ -226,6 +235,15 @@ class StandardDynamics:
             weight=self.path_weight(stock, shock),
             log_survival=self.log_survival(state, equity, stock),
             failure_value=self.failure_value(equity),
+            # Decided at the start of the period, on what the firm knows then:
+            # you wind down on the basis of the balance sheet you have, not the
+            # quarter you are about to have.
+            abandon_prob=(
+                action.abandon * state.alive
+                if self.allow_abandonment
+                else torch.zeros_like(equity)
+            ),
+            orderly_value=self.orderly_value(state.equity),
             terminated=state.alive & ~survives,
             info={
                 "loss": loss,
