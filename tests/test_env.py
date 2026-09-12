@@ -505,13 +505,23 @@ def test_the_convex_cost_needs_a_barrier_to_stay_finite():
     the arithmetic reason a survival model is needed, independent of the
     economic one.
 
-    The threshold is loose on purpose. How far the runaway gets in six quarters
-    depends on the loss scale, and the recalibration cut that twentyfold: it
-    reached -2e7 by the third quarter and overflowed float64 by the eighth at
-    the old magnitudes, and reaches about -1e5 now. The squaring is the point,
-    not the exponent it arrives at.
+    The threshold is loose on purpose, and the assertion admits overflow as
+    well. How far the runaway gets in six quarters depends on the balance-sheet
+    scale, which has now moved twice: -2e7 by the third quarter at the original
+    magnitudes, about -1e5 after the loss recalibration cut them twentyfold,
+    and back to a float64 overflow once the liability side tripled the book.
+    Asserting a finite bound would make this test fail whenever the firm got
+    *bigger*, which is the opposite of what it is for -- so what it checks is
+    that equity is not merely falling but compounding away, and `-inf` is that
+    claim in its strongest form. The squaring is the point, not the exponent it
+    arrives at.
     """
-    policy = ConstantPolicy(grc=(0.7, 0.7, 0.7), investment=11.0, profile=REFERENCE)
+    # Investment has to exceed what the firm holds, or there is no shortfall
+    # for the premium to price and nothing to run away. 11.0 did that when the
+    # opening GRC stock was 0.650 and losses were heavier; at the larger opening
+    # stock the firm simply funds 11 out of its own equity and the test measures
+    # nothing. 40 against equity of 16 is a shortfall on every path.
+    policy = ConstantPolicy(grc=(0.7, 0.7, 0.7), investment=40.0, profile=REFERENCE)
     crn = CommonRandomNumbers(0, 6, 512, REFERENCE)
     sampler = MonteCarloSampler(DEFAULTS.sampler)
 
@@ -524,18 +534,26 @@ def test_the_convex_cost_needs_a_barrier_to_stay_finite():
     # is what now *prevents* it: a firm that cannot deploy more than it can
     # fund never reaches the shortfall that makes the premium run away. The
     # pathology is structurally fixed, not parameterized away.
+    # funding=None as well: the runaway is a property of the convex premium on
+    # a firm financing itself, and a deposit-funded firm holding 69 of idle
+    # reserves earns enough on them to arrest it on some paths. That would make
+    # this test assert something about the reserve rate, which is not what it
+    # is for.
     unbounded = FirmEnv(
         EnvConfig.quarterly(
-            6, equity_floor=-float("inf"), financing_scale=1.0, funding_constrained=False
+            6, equity_floor=-float("inf"), financing_scale=1.0,
+            funding_constrained=False, funding=None,
         ),
         sampler,
     )
     final = unbounded.rollout(policy, crn, False).states[-1].equity
-    assert final.mean().item() < -1e3, "the divergence this test documents is gone"
+    diverged = ~torch.isfinite(final) | (final < -1e3)
+    assert diverged.all(), "the divergence this test documents is gone"
 
     bounded = FirmEnv(
         EnvConfig.quarterly(
-            6, financing_scale=1.0, equity_floor=0.0, funding_constrained=False
+            6, financing_scale=1.0, equity_floor=0.0,
+            funding_constrained=False, funding=None,
         ),
         sampler,
     )
@@ -965,29 +983,41 @@ def test_unconstrained_config_places_no_cap():
     """The reduction. The static model let the firm fund anything at a convex
     price, which is what its closed form is derived under."""
     env = FirmEnv(EnvConfig(profile=REFERENCE), FourStateSampler(DEFAULTS.shock))
-    capacity = env.dynamics.funding_capacity(REFERENCE.tensor([10.0, -5.0]))
+    wealth = REFERENCE.tensor([10.0, -5.0])
+    state = replace(env.reset(2), equity=wealth)
+    capacity = env.dynamics.funding_capacity(state, wealth)
     assert torch.isinf(capacity).all()
 
 
 def test_funding_capacity_collapses_faster_than_wealth():
     """Funding withdraws exactly when it is needed.
 
-    Capacity is internal wealth plus a multiple of it, scaled by market access
-    — and access is itself falling in wealth. So the ratio of capacity to
-    wealth shrinks as the firm weakens: it has less of its own money *and* less
-    of anyone else's, which is the mechanism that turns a bad quarter into
-    forgone investment rather than merely expensive investment.
+    Stated on the *pre-liability* dynamics, where capacity is internal wealth
+    plus a costless multiple of it scaled by market access, and access is
+    itself falling in wealth — so the ratio of capacity to wealth shrinks as the
+    firm weakens. That is the mechanism which turns a bad quarter into forgone
+    investment rather than merely expensive investment.
+
+    With a liability side the same procyclicality is there but it lives one
+    period upstream, in the deposit base rather than in the cap
+    (tests/test_funding.py). This test is kept on the old configuration because
+    it is what the pre-liability published numbers were produced under, and
+    because the two mechanisms are worth being able to tell apart.
     """
-    env = FirmEnv(EnvConfig.quarterly(1), MonteCarloSampler(DEFAULTS.sampler))
+    env = FirmEnv(
+        EnvConfig.quarterly(1, funding=None), MonteCarloSampler(DEFAULTS.sampler)
+    )
     wealth = REFERENCE.tensor([14.0, 8.0, 4.0, 2.0, 1.0])
-    capacity = env.dynamics.funding_capacity(wealth)
+    state = replace(env.reset(5), equity=wealth)
+    capacity = env.dynamics.funding_capacity(state, wealth)
 
     assert (capacity[1:] < capacity[:-1]).all(), "capacity must fall with wealth"
     leverage = capacity / wealth
     assert (leverage[1:] <= leverage[:-1] + 1e-12).all(), (
         "access must not improve as the firm weakens"
     )
-    assert env.dynamics.funding_capacity(REFERENCE.tensor([-3.0])).item() == 0.0
+    thin = replace(env.reset(1), equity=REFERENCE.tensor([-3.0]))
+    assert env.dynamics.funding_capacity(thin, thin.equity).item() == 0.0
 
 
 def test_investment_never_exceeds_what_can_be_funded():

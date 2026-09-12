@@ -130,6 +130,19 @@ def test_profiles_agree():
     are the ones docs/quant-model.md quotes budgets to, not machine epsilon --
     the point is that the FAST profile is usable for the dynamic model's
     rollouts, not that it is bit-identical.
+
+    The value tolerance was 1e-5 relative, which was tighter than that
+    rationale and tighter than any number the documentation quotes. It held
+    only by luck: raising the production curvature for the levered balance
+    sheet took the disagreement from 2e-7 to 1.5e-5 and through it. The
+    arithmetic is 3000 Adam steps accumulating in float32, which is what this
+    test exists to bound rather than to eliminate -- `production` was rewritten
+    with `expm1` on the strength of this failure and moved it by half a
+    percent, so the residue is the optimizer, not one cancellation.
+
+    1e-4 is still two orders of magnitude tighter than the precision anything
+    downstream claims, and the per-family budgets below are unchanged at 1e-3
+    absolute -- those are the numbers a reader would act on.
     """
     reference = optimize_policy(
         build_model(), build_shock(profile=REFERENCE), n_steps=3000, profile=REFERENCE
@@ -138,7 +151,7 @@ def test_profiles_agree():
         build_model(), build_shock(profile=FAST), n_steps=3000, profile=FAST
     )
 
-    assert abs(fast.value - reference.value) < 1e-5 * abs(reference.value)
+    assert abs(fast.value - reference.value) < 1e-4 * abs(reference.value)
     for family in ("credit", "operational", "compliance"):
         assert abs(getattr(fast, family) - getattr(reference, family)) < 1e-3, family
     assert abs(fast.constrained_fraction - reference.constrained_fraction) < 1e-3

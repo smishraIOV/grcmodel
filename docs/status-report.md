@@ -215,6 +215,15 @@ underflowed to zero and produced a meaningless answer.
 
 ## 5. What the model currently says
 
+> **These figures predate the liability side and have not been re-run.** Every
+> number below this section was produced by a firm with no deposits, funding a book of
+> about 25 out of its own capital. The firm now runs a book near 80 against the
+> same equity, pays for its funding, and was recalibrated to stay in a usable
+> regime — so the levels have all moved and some of the *shapes* may have too.
+> Re-running them is the next piece of work; until then read this section as a
+> record of what the pre-liability model said.
+
+
 Because none of the parameters are calibrated to real data, the model
 deliberately **refuses to quote a budget**. It inverts the question into claims a
 reader can agree or disagree with.

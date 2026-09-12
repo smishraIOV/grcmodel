@@ -67,9 +67,14 @@ class FirmParams:
     #
     # A just above 1 makes the margin thin; a large S keeps the marginal return
     # above 1 well past what the firm can fund, so the funding constraint keeps
-    # biting instead of being outgrown. Deploying the ~23.5 it can fund, the
-    # firm earns 0.70 a quarter on equity of 16 -- about 19% a year, which is
-    # a high-margin intermediary rather than a miracle.
+    # biting instead of being outgrown.
+    #
+    # These defaults are the *pre-liability* pair and are superseded whenever
+    # `model_at` builds the parameters from AnnualRates, which is every real
+    # configuration. They deployed the ~23.5 the firm could then fund and
+    # earned 0.70 a quarter on equity of 16, about 19% a year. Once deposits
+    # arrived the same margin applied to a book of 80 would have been a 33%
+    # return on equity, so both moved -- see AnnualRates.annual_return.
     production_scale: float = 1.05
     production_curvature: float = 600.0
 
@@ -100,7 +105,16 @@ class FirmParams:
     # point moved from 5.18 to 0.650 when a quarter's expected loss went from
     # 9.00 to 0.475. Same construction as before -- the level at which the
     # firm's own optimal maintenance spend exactly replaces depreciation.
-    initial_grc_stock: float = 0.650
+    #
+    # Re-solved again when the liability side arrived: 1.17. The firm's losses
+    # in money terms roughly tripled with the book, so the programme that
+    # maintains itself is correspondingly larger. The iteration oscillates
+    # rather than converging monotonically (1.83, 0.77, 1.33 on successive
+    # passes) because a larger opening stock buys survival, which raises the
+    # value of the franchise, which buys more spend; the value quoted is the
+    # damped average and is accurate to about +/- 15%. That is well inside the
+    # precision anything downstream of it claims.
+    initial_grc_stock: float = 1.17
 
     # What creditors and shareholders recover when the firm fails, as a
     # fraction of whatever positive equity is left at that moment. Limited
@@ -459,7 +473,18 @@ class AnnualRates:
     # Production. The gross return is annual and compounds down; the curvature
     # scales *up* with frequency so that the unconstrained optimum
     # I* = S ln(A) is the same amount of capital however often it is re-decided.
-    annual_return: float = 1.2155      # = 1.05 ** 4, the old quarterly figure
+    # Gross return on deployed capital. 1.2155 (= 1.05 per quarter) was right
+    # for a firm funding a book of 24 out of its own capital: a 12%/yr margin on
+    # assets, which is a specialty lender rather than a bank.
+    #
+    # Levered five times that same margin is a 33% return on equity, which is
+    # not an intermediary -- real firms lever precisely *because* their asset
+    # margins are thin. 1.15 puts the return on equity at 17.6%, next to the
+    # 19% the pre-liability calibration ran at, with the annual failure
+    # probability at 6.2% against 7.1%. Chosen by sweeping it against those two
+    # targets at a fixed opportunity: 1.2155 leaves the firm too profitable to
+    # be plausible, 1.10 leaves it earning 5% on equity and not worth running.
+    annual_return: float = 1.15
     # Sets how much capital the firm wants to deploy: I* = S ln A, with
     # S = curvature_per_period x periods_per_year.
     #
@@ -472,12 +497,18 @@ class AnnualRates:
     # off. A bank that cannot use its deposits is not levered, it is merely
     # paying for storage.
     #
-    # 500 puts I* at 97.6 against a funding capacity near 80 -- the same 1.2:1
+    # 698 puts I* at 97.6 against a funding capacity near 80 -- the same 1.2:1
     # ratio of wanted to fundable that the pre-liability calibration ran at, so
-    # the channel bites as hard as it did and for the same reason. Chosen by
-    # sweeping it: at 300 the firm is comfortable, at 750 it is permanently
-    # capital-starved and the comparative statics flatten out.
-    curvature_per_period: float = 500.0
+    # the channel bites for the same reason it did. Chosen by sweeping it: at
+    # 300 the firm is comfortable, at 750 it is permanently capital-starved and
+    # the comparative statics flatten out.
+    #
+    # It is tied to `annual_return` and must move with it: I* = S ln A, so
+    # lowering the margin and holding the opportunity fixed means raising the
+    # curvature in step. Changing one alone changes both how profitable the
+    # firm is and how badly it wants capital, and the two land on different
+    # diagnostics.
+    curvature_per_period: float = 698.0
 
 
 ANNUAL = AnnualRates()

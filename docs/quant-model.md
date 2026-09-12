@@ -298,6 +298,15 @@ assumption baked into a solver.
 
 ## 6. Results
 
+> **These figures predate the liability side and have not been re-run.** Every
+> number below §6 was produced by a firm with no deposits, funding a book of
+> about 25 out of its own capital. The firm now runs a book near 80 against the
+> same equity, pays for its funding, and was recalibrated to stay in a usable
+> regime — so the levels have all moved and some of the *shapes* may have too.
+> Re-running them is the next piece of work; until then read this section as a
+> record of what the pre-liability model said.
+
+
 > **Recalibrated.** Every number below moved. The static model's magnitudes —
 > a quarterly operating surplus of 9.01 and a gross expected loss of 9.00, both
 > against equity of 16 — were one-shot quantities wearing quarterly clothing. A

@@ -36,8 +36,22 @@ def production(investment: torch.Tensor, scale: float, curvature: float) -> torc
     management value-adding rather than merely loss-avoiding: when a bad draw
     leaves internal wealth below I*, the firm must either underinvest or pay
     the convex financing premium above.
+
+    Written with `expm1` rather than as `1 - exp(-x)`, and that is not a
+    micro-optimization. The whole payoff is the *difference* between F(I) and I,
+    which at the calibrated curvature is about 1.7 out of 80 -- so the quantity
+    that matters is a two-percent residue of two numbers that nearly cancel.
+    `1 - exp(-x)` for small x computes that residue by subtracting two float32
+    numbers close to 1 and throws away most of its significant digits;
+    `-expm1(-x)` computes it directly.
+
+    Caught when the curvature rose from 600 to 2792 for the levered balance
+    sheet: `tests/test_numerics.py::test_profiles_agree` went from a float32
+    versus float64 disagreement of 2e-7 to 1.5e-5, straight through a tolerance
+    the documentation quotes budgets to. The bug was always there -- a smaller
+    curvature simply kept x large enough to hide it.
     """
-    return scale * curvature * (1.0 - torch.exp(-investment / curvature))
+    return scale * curvature * (-torch.expm1(-investment / curvature))
 
 
 def exponential_mitigation(quantity: torch.Tensor, g: torch.Tensor, alpha: float) -> torch.Tensor:

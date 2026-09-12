@@ -161,8 +161,19 @@ def test_a_struck_firm_cannot_fund_its_opportunity():
     reason a moderate-or-fatal model has nothing to say about it.
     """
     env = env_with(quarters=6)
-    crn = CommonRandomNumbers(0, 6, 8192, REFERENCE)
-    policy = ConstantPolicy(grc=(0.3, 0.4, 0.3), investment=11.0, profile=REFERENCE)
+    # Four times the paths the pre-liability version needed. Strikes got rarer
+    # when the opening GRC stock rose from 0.650 to 1.17 -- mitigation is
+    # exponential in the stock, so the rate fell from about 0.8% of paths to
+    # 0.2% and 8192 draws no longer produced enough struck firms to compare
+    # against.
+    crn = CommonRandomNumbers(0, 6, 32768, REFERENCE)
+    # Just below what the balance sheet can fund, so that impairing it shows up
+    # as a binding cap while an unimpaired firm is comfortable. 11.0 was the
+    # level the pre-liability firm operated at; against a deposit-funded book
+    # near 80, nothing binds for anyone at that figure and the test compares
+    # zero against zero. Above about 85 the opposite happens and the cap binds
+    # for everyone, struck or not.
+    policy = ConstantPolicy(grc=(0.3, 0.4, 0.3), investment=70.0, profile=REFERENCE)
     trajectory = env.rollout(policy, crn, False)
 
     struck = trajectory.infos[1]["cliff_loss"] > 0

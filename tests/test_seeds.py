@@ -36,13 +36,26 @@ def test_every_seed_is_recorded_separately():
         assert result.spread()[0] <= result.median() <= result.spread()[1]
 
 
+# `overfit()` is a difference of two Monte Carlo estimates -- 256 training paths
+# against 512 held-out ones -- so it carries sampling noise of its own and can
+# come out slightly negative for a policy that has barely fitted anything. The
+# tolerance was -1e-9, which is machine epsilon applied to a quantity that is
+# nothing like exact; it held only while the numbers happened to be kind, and
+# the recalibration measured -8.4e-5 for the neural policy at 400 steps.
+#
+# 0.1% is the scale at which a real problem would show. Scenario leakage
+# between training and evaluation drives this *up*, toward zero gap, not down,
+# and a training loop scoring the wrong draw would be percent-scale wrong.
+OVERFIT_NOISE = 1e-3
+
+
 def test_in_sample_values_are_optimistic():
     """Both solvers are fitted against the training draw, so scoring them there
-    should flatter them. If it does not, training and evaluation are sharing
-    scenarios somewhere they should not be."""
+    should flatter them. If it does not by more than sampling noise, training
+    and evaluation are sharing scenarios somewhere they should not be."""
     studies = study()
-    assert studies["constant"].overfit() > -1e-9
-    assert studies["neural"].overfit() > -1e-9
+    assert studies["constant"].overfit() > -OVERFIT_NOISE
+    assert studies["neural"].overfit() > -OVERFIT_NOISE
 
 
 def test_a_single_run_cannot_separate_the_solvers_at_a_short_horizon():

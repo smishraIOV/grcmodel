@@ -23,6 +23,8 @@ parameter indexed by path, so it can only be constructed by something that
 already knows the batch. An honest policy takes a state and returns an action.
 """
 
+import math
+
 import torch
 
 from quant.env.actions import N_RAW, PAYOUT_INIT, ActionSpec, FirmAction, abandon_init
@@ -100,8 +102,9 @@ class RawConstantPolicy:
     result.
     """
 
-    def __init__(self, profile, horizon: int = 1):
+    def __init__(self, profile, horizon: int = 1, investment: float = 0.0):
         raw = profile.zeros(N_RAW)
+        raw[N_FAMILIES] = _inverse_softplus(investment)
         raw[-2], raw[-1] = abandon_init(horizon), PAYOUT_INIT
         self.raw = raw.requires_grad_(True)
 
@@ -112,10 +115,42 @@ class RawConstantPolicy:
         return ActionSpec.from_raw(self.raw.expand(state.batch(), N_RAW))
 
 
+def _inverse_softplus(x: float) -> float:
+    """Raw value whose softplus is `x`. Zero maps to zero, not to -inf."""
+    if x <= 0.0:
+        return 0.0
+    return x + math.log(-math.expm1(-x)) if x < 20.0 else x
+
+
+def opening_scale(env: FirmEnv) -> float:
+    """How much capital the firm could deploy in its first period.
+
+    Used to start the investment control somewhere the firm might plausibly
+    operate, rather than at `softplus(0)` -- which is 0.69, and is a silent
+    step-budget trap. Adam moves a raw parameter by at most `lr` per step, so
+    reaching a book near 80 from 0.69 takes 1600 steps before the search has
+    begun; measured, a 1500-step run converged to a book of 58 and reported it
+    as though the firm had chosen it. Nothing errors, the diagnostics stay in
+    band, and the answer is the optimizer's rather than the model's.
+
+    This bit at the pre-liability scale too -- it was simply small enough there
+    (a book near 25) that the default budget covered it.
+    """
+    with torch.no_grad():
+        state = env.reset(1)
+        capacity = env.dynamics.funding_capacity(state, state.equity)
+        wanted = env.config.firm.production_curvature * math.log(
+            env.config.firm.production_scale
+        )
+        return float(min(capacity.min().item(), wanted))
+
+
 def optimize_constant(
     env: FirmEnv, crn: CommonRandomNumbers, n_steps: int = 6000, lr: float = 0.05
 ) -> tuple[RawConstantPolicy, EvalResult]:
-    policy = RawConstantPolicy(env.config.profile, env.config.horizon)
+    policy = RawConstantPolicy(
+        env.config.profile, env.config.horizon, investment=opening_scale(env)
+    )
     optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
     for _ in range(n_steps):
         optimizer.zero_grad()

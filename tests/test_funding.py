@@ -109,6 +109,18 @@ def test_idle_funding_earns_rather_than_evaporates():
     assert torch.all(idle.info["reserve_income"] < idle.info["interest"])
 
 
+def test_reserve_income_stays_finite_without_a_funding_cap():
+    """Capacity is a limit on what may be deployed; reserves are what actually
+    sits there. Conflating them made reserves `+inf` whenever the cap was
+    switched off, and the NaN that followed propagated through every path --
+    caught by the barrier test in tests/test_env.py, several files away."""
+    env = funded_env(funding_constrained=False)
+    _, result = one_step(env, Deploy(grc=0.1, investment=10.0))
+    assert torch.isinf(result.info["funding_capacity"]).all()
+    assert torch.isfinite(result.info["reserve_income"]).all()
+    assert torch.isfinite(result.state.equity).all()
+
+
 def test_no_liability_side_leaves_the_old_dynamics_untouched():
     """`funding=None` is not "deposits of zero" -- it is a firm without a
     liability side at all, and it must cost nothing.

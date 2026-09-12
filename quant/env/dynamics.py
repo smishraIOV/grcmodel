@@ -330,22 +330,35 @@ class StandardDynamics:
         return rate * torch.clamp(deposits, min=0.0)
 
     def reserve_income(
-        self, capacity: torch.Tensor, investment: torch.Tensor
+        self, state: FirmState, fundable: torch.Tensor, investment: torch.Tensor
     ) -> torch.Tensor:
         """What the funding the firm did not lend earns while it sits there.
 
-        Reserves are the residual of the funding decision: everything the
-        balance sheet could have deployed and did not. Without this term,
-        deposits the firm cannot profitably lend are a pure deadweight loss and
-        the model punishes a bank for having a franchise -- measured at 2.5x
-        leverage on the pre-liability opportunity, firm value fell 5% purely
-        because the firm was carrying funding it had no use for.
+        Reserves are the residual of the funding decision: what is on the
+        balance sheet and not deployed. Without this term, deposits the firm
+        cannot profitably lend are a pure deadweight loss and the model punishes
+        a bank for having a franchise -- measured at 2.5x leverage on the
+        pre-liability opportunity, firm value fell 5% purely because the firm
+        was carrying funding it had no use for.
 
         Priced below the deposit rate, so idle funding carries a small negative
         spread. That spread is the entire reason a liquidity buffer will be a
         decision rather than a free good once withdrawals exist.
+
+        Computed from the **balance sheet**, not from the funding capacity, and
+        the difference is not cosmetic. With `funding_constrained=False` the
+        capacity is `+inf`, so reserves were infinite, the period's income was
+        infinite, and the next subtraction turned it into a NaN that propagated
+        through every path. Capacity is a *limit* on what may be deployed;
+        reserves are what actually sits there, and only the second is a
+        quantity the firm can earn on.
         """
-        reserves = torch.clamp(capacity - investment, min=0.0)
+        reserves = torch.clamp(
+            torch.clamp(fundable, min=0.0)
+            + torch.clamp(state.deposits, min=0.0)
+            - investment,
+            min=0.0,
+        )
         rate = self.funding.period_reserve_rate(self.firm.periods_per_year)
         return rate * reserves
 
@@ -442,7 +455,7 @@ class StandardDynamics:
             else torch.zeros_like(produced)
         )
         reserves = (
-            self.reserve_income(capacity, investment)
+            self.reserve_income(state, fundable, investment)
             if self.funding is not None
             else torch.zeros_like(produced)
         )

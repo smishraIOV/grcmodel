@@ -158,11 +158,26 @@ class EnvConfig:
             # nothing beyond T to protect and GRC spend collapses to zero from
             # the third quarter onward -- a horizon artifact, not economics.
             #
-            # 15 is roughly the present value of the operating surplus of ~0.70
+            # 20 is roughly the present value of the operating surplus of ~0.70
             # a quarter at the quarterly discount, net of the failure rate the
             # firm actually runs. Additive rather than a multiple of equity --
             # see PerpetuityValue for why that distinction matters.
-            terminal=PerpetuityValue(franchise=15.0),
+            #
+            # Computed **once** from a measured surplus, not iterated to a fixed
+            # point, and that is deliberate. Iterating diverges: a larger
+            # franchise makes survival worth more, so the firm buys more GRC,
+            # so the hazard falls, so the franchise grows again. Successive
+            # passes ran 15 -> 40 -> 58 -> 54 with the annual failure
+            # probability falling 5.5% -> 3.5% -> 3.1%, which is a model
+            # talking itself into being safe rather than a calibration.
+            #
+            # That circularity is the same problem section 6 of
+            # docs/quant-model.md already names: this constant carries too much
+            # weight and the model should be computing its own continuation
+            # value instead of being told one. The liability side made it worse,
+            # not better -- a bigger firm has a bigger franchise, so the share
+            # of value sitting in this number went up.
+            terminal=PerpetuityValue(franchise=20.0),
         )
         settings.update(overrides)  # an explicit override wins over the derived rate
         return cls(**settings)

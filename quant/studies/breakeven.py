@@ -46,6 +46,11 @@ MATERIALITY = 0.10
 MATERIALITY_VALUE = 0.01
 
 
+# The franchise EnvConfig.at_frequency installs by default. Named here
+# because the capitalization sweep has to scale it with the firm.
+DEFAULT_FRANCHISE = 20.0
+
+
 def solve(firm: FirmParams, crn, quarters: int, steps: int, alphas=None, **config):
     """One constant-policy solve. The right policy class for a budget question:
     it answers "how much should we spend", not "how should we react"."""
@@ -100,14 +105,26 @@ def capitalization_band(firm, crn, equities, quarters=8, steps=2000):
     """
     rows = []
     for equity in equities:
+        ratio = equity / firm.initial_equity
         scaled = replace(
             firm,
             initial_equity=equity,
             # The control function scales with the firm; holding it fixed would
             # confound capitalization with how much GRC is already in place.
-            initial_grc_stock=firm.initial_grc_stock * equity / firm.initial_equity,
+            initial_grc_stock=firm.initial_grc_stock * ratio,
         )
-        rows.append((equity, solve(scaled, crn, quarters, steps)))
+        # The franchise scales for exactly the same reason, and it did not
+        # before. Held fixed at 20 against an equity of 4, the going concern is
+        # worth five times its own book, so a barely-capitalized firm reads as
+        # having everything to protect and the band comes out monotone --
+        # reporting the constant rather than the capitalization. Once the
+        # liability side made the balance sheet scale with equity this stopped
+        # being a second-order confound.
+        rows.append((
+            equity,
+            solve(scaled, crn, quarters, steps,
+                  terminal=PerpetuityValue(franchise=DEFAULT_FRANCHISE * ratio)),
+        ))
     return rows
 
 
