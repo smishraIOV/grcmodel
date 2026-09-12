@@ -798,6 +798,37 @@ actually lives. This is the measurement of that claim: it is also the only
 state in this model where having a policy rather than a budget is worth
 anything.
 
+### The two-year horizon systematically undervalues loss reduction
+
+Credit GRC spend at the default two-year horizon is 0.0012 a quarter — half a
+percent of the budget. The model appears to say that managing loan defaults, the
+largest single loss channel, is not worth doing.
+
+It is a horizon artifact. GRC is a *stock* that depreciates, so a flow of
+spending reaches only about 4.3 times itself over eight quarters against a
+steady-state 14.5 times. A control bought to reduce losses has not finished
+accumulating before the model stops, while a control bought to reduce the
+failure rate pays from the first period through the hazard. Lengthening the
+horizon and re-solving:
+
+| horizon | credit GRC/qtr | credit share of budget |
+|---|---|---|
+| 2 years | 0.0012 | 0.5% |
+| 5 years | 0.0281 | 9.2% |
+| 10 years | 0.0494 | 16.6% |
+
+**Credit GRC spend rises fortyfold between two years and ten.**
+
+This qualifies the headline above. "The programme is paid for almost entirely by
+survival" is substantially a statement about a two-year horizon, not about GRC.
+Over a horizon long enough for a control function to be built, loss reduction
+recovers a sixth of the budget. The survival channel still dominates, but by
+nothing like the margin a short horizon suggests.
+
+(A twenty-year solve was also run and is not reported: every budget collapses to
+near zero, which is the long-horizon degeneracy recorded above rather than a
+result.)
+
 ### Truncated BPTT with a critic, measured against full BPTT
 
 `uv run python scripts/compare_learners.py`. Stage 5 declined to build SVG(K)

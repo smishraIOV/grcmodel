@@ -252,6 +252,16 @@ full problem rather than a restricted one.
 declines gently as the horizon lengthens, because the firm retains all its
 earnings and a fixed terminal number is discounted harder the longer it waits.
 
+**The default horizon undervalues traditional risk management.** GRC is a stock
+that takes time to build, so at the two-year default a control bought to reduce
+*losses* has not finished accumulating when the model stops, while one bought to
+reduce the *failure rate* pays from the first period. Measured, credit GRC spend
+rises fortyfold between a two-year and a ten-year horizon — from half a percent
+of the budget to a sixth of it. The claim in section 5 that the programme is
+paid for almost entirely by survival is therefore substantially a statement
+about the horizon rather than about GRC. The horizon is being lengthened to ten
+years for this reason among others.
+
 **The liability side of the balance sheet is not modelled.** This is the largest
 known gap. The firm's assets and the losses against them are represented in
 detail, but its *funding* is not: deposits are not tracked, there is no liquidity
