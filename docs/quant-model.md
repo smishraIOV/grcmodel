@@ -189,6 +189,7 @@ exactly the one-period problem that benchmark solves.
 | 3a | Smooth survival hazard replacing the hard barrier | **built** — `quant/hazard.py` |
 | 3b | GRC acting on the hazard, not only on losses | **built** — `quant/hazard.py` |
 | 3c | What failure costs, and what GRC cannot do about it | **built** — `FirmParams.failure_recovery` |
+| — | Discrete cliff events as a *loss* channel | **not built, by decision** — [debug notes §7](static-model-debug-notes.md) |
 | 3d | Abandonment / orderly wind-down option | **built** — out of the money, see below |
 | 3e | Diagnostic bundle and the break-even outputs | **built** — `quant/studies/breakeven.py` |
 | — | Funding constraint: the balance sheet gates investment | **built** — live but weak, see §6 |
@@ -724,6 +725,12 @@ is regime-dependent and is no longer claimed.
 ## 8. Not done
 
 - Calibrating any distribution or $\alpha$ to real data. Every parameter is illustrative.
+- A discrete cliff-event *loss* channel — severe, survivable, frequency reduced
+  by GRC. Not deferred but **declined**: for a firm of this shape an event is
+  either severe enough to be fatal, in which case it is already a hazard
+  channel, or moderate, in which case it is a heavier tail on an existing loss
+  channel. There is no limping. Reasoning and the estimator analysis, should it
+  ever be reopened, in [debug notes §7](static-model-debug-notes.md).
 - The unimplemented state variables and controls in §1–§2.
 - Hard solvency / liquidity / regulatory constraints (§4).
 - §5.3, the MDP.
