@@ -28,7 +28,15 @@ from quant.env.reward import LiquidationValue, PerpetuityValue, TerminalValue
 from quant.env.shocks import CommonRandomNumbers, Shock
 from quant.env.state import N_FAMILIES, FirmState, Trajectory
 from quant.numerics import DEFAULT_PROFILE, NumericsProfile
-from quant.params import DEFAULTS, CliffParams, FirmParams, GrcAlphas, HazardParams
+from quant.params import (
+    DEFAULTS,
+    WEEKLY,
+    CliffParams,
+    FirmParams,
+    GrcAlphas,
+    HazardParams,
+    ModelParams,
+)
 
 Sampler = Callable[[dict[str, torch.Tensor], NumericsProfile], Shock]
 
@@ -86,11 +94,20 @@ class EnvConfig:
     terminal: TerminalValue = field(default_factory=LiquidationValue)
 
     @classmethod
-    def quarterly(cls, horizon: int, firm: FirmParams | None = None, **overrides) -> "EnvConfig":
-        """The dynamic model: quarterly periods, discounted, GRC accumulating.
+    def at_frequency(
+        cls,
+        params: ModelParams,
+        horizon: int,
+        firm: FirmParams | None = None,
+        **overrides,
+    ) -> "EnvConfig":
+        """The dynamic model at whatever decision frequency `params` describes.
 
-        Discount and depreciation come from the annual rates in FirmParams, so
-        they stay consistent with each other and with `periods_per_year`.
+        Discount, depreciation and every hazard rate come from annual figures
+        and divide down by `periods_per_year`, so they stay consistent with
+        each other and with the frequency. `quant/params.model_at` does the
+        same for the loss rates, the cliff rate and production, which were
+        per-period and would otherwise not have moved at all.
 
         The insolvency barrier is on by default here, and it is not decoration.
         The convex financing cost is unbounded below: the premium is
@@ -106,7 +123,7 @@ class EnvConfig:
         an argument for the stage 4 framing that arrived from the arithmetic
         rather than from the economics.
         """
-        firm = firm or DEFAULTS.firm
+        firm = firm or params.firm
         settings = dict(
             firm=firm,
             horizon=horizon,
@@ -125,11 +142,11 @@ class EnvConfig:
             # underinvestment channel silently dies.
             financing_scale=0.0,
             equity_floor=-5.0 * firm.initial_equity,
-            hazard=DEFAULTS.hazard,
+            hazard=params.hazard,
             allow_abandonment=True,
             funding_constrained=True,
             allow_payout=True,
-            cliff=DEFAULTS.cliff,
+            cliff=params.cliff,
             # A firm still trading at the horizon is worth more than its book.
             # Without this the model liquidates it at equity, so there is
             # nothing beyond T to protect and GRC spend collapses to zero from
@@ -143,6 +160,23 @@ class EnvConfig:
         )
         settings.update(overrides)  # an explicit override wins over the derived rate
         return cls(**settings)
+
+    @classmethod
+    def quarterly(cls, horizon: int, firm: FirmParams | None = None, **overrides) -> "EnvConfig":
+        """Quarterly decisions. `horizon` counts quarters."""
+        return cls.at_frequency(DEFAULTS, horizon, firm=firm, **overrides)
+
+    @classmethod
+    def weekly(cls, horizon: int, firm: FirmParams | None = None, **overrides) -> "EnvConfig":
+        """Weekly decisions. `horizon` counts weeks.
+
+        A quarter is thirteen of these. Deciding weekly is not a cosmetic
+        change: at quarterly steps an incident lands and the firm's next chance
+        to respond is three months later, so a state-feedback policy has almost
+        nothing to react to -- which may be why it has measured as worthless
+        against a constant one at every horizon tried so far.
+        """
+        return cls.at_frequency(WEEKLY, horizon, firm=firm, **overrides)
 
 
 class FirmEnv:
@@ -232,6 +266,7 @@ class FirmEnv:
         boundary = boundary or self.terminal_value
         states, rewards, weights, infos = [state], [], [], []
         survivals, recoveries, abandons, orderlies = [], [], [], []
+        base_weight = None
 
         context = contextlib.nullcontext() if differentiable else torch.no_grad()
         with context:
@@ -239,6 +274,8 @@ class FirmEnv:
                 t = start + offset
                 action = policy(state)  # state only -- see the module docstring
                 shock = self.sampler(crn.at(t), self.config.profile)
+                if base_weight is None:
+                    base_weight = shock.base_weight
                 result = self.dynamics.step(state, action, shock)
                 state = result.state
                 states.append(state)
@@ -256,6 +293,7 @@ class FirmEnv:
             states=states,
             rewards=rewards,
             weights=weights,
+            base_weight=base_weight,
             log_survivals=survivals,
             failure_values=recoveries,
             abandon_probs=abandons,
@@ -422,4 +460,20 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         orderly_exit_rate=exited.item(),
         effective_sample_size=trajectory.effective_sample_size(),
         going_concern_share=(1.0 - liquidation_value / value).item(),
+    )
+
+
+def standard_env(params: ModelParams, horizon: int, **overrides) -> FirmEnv:
+    """Environment and sampler built from one parameter set.
+
+    Pair them by hand and nothing complains: a weekly config driven by a
+    quarterly sampler hands the firm thirteen times its annual losses and
+    reports a confident number. This is the seam where that mistake is
+    available, so it is the seam that closes it.
+    """
+    from quant.env.shocks import MonteCarloSampler
+
+    return FirmEnv(
+        EnvConfig.at_frequency(params, horizon, **overrides),
+        MonteCarloSampler(params.sampler),
     )

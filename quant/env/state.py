@@ -101,6 +101,7 @@ class Trajectory:
     states: list[FirmState]
     rewards: list[torch.Tensor]
     weights: list[torch.Tensor]
+    base_weight: torch.Tensor
     log_survivals: list[torch.Tensor]
     failure_values: list[torch.Tensor]
     abandon_probs: list[torch.Tensor]
@@ -133,11 +134,23 @@ class Trajectory:
         return active
 
     def path_weights(self) -> torch.Tensor:
-        """Normalized probability weight per path, compounded over the horizon."""
-        weight = self.weights[0]
-        for step_weight in self.weights[1:]:
-            weight = weight * step_weight
-        return weight / weight.sum()
+        """Normalized probability weight per path, compounded over the horizon.
+
+        The prior is applied once and the per-step likelihood ratios are
+        accumulated in **log space**, for the same reason survival is: a
+        product of T factors underflows long before its logarithm does. Done
+        multiplicatively with the prior folded in per step, this reached 1e-344
+        at 104 steps and normalized to 0/0.
+
+        The shift by the maximum before exponentiating is the standard
+        log-sum-exp guard: it cannot change the normalized result and it keeps
+        the largest weight at exactly 1.
+        """
+        log_weight = torch.log(self.base_weight)
+        for ratio in self.weights:
+            log_weight = log_weight + torch.log(ratio)
+        shifted = torch.exp(log_weight - log_weight.max())
+        return shifted / shifted.sum()
 
     def path_values(self, discount: float) -> torch.Tensor:
         """Discounted return per path, survival-weighted.

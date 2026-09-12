@@ -271,7 +271,7 @@ class CliffParams:
     firm and stays invariant to the currency it is denominated in.
     """
 
-    quarterly_probability: float = 0.025   # at zero operational GRC stock
+    period_probability: float = 0.025      # at zero operational GRC stock
     mean_severity_fraction: float = 0.35   # of opening equity, exponential, capped at 1
     # Temperature of the straight-through relaxation used to differentiate the
     # occurrence probability (docs/static-model-debug-notes.md section 7).
@@ -302,7 +302,67 @@ class ModelParams:
     cliff: CliffParams = field(default_factory=CliffParams)
 
 
-DEFAULTS = ModelParams()
+@dataclass(frozen=True)
+class AnnualRates:
+    """The economics, stated without reference to how often the firm decides.
+
+    Everything here is either a rate per year or a per-event magnitude, so it
+    means the same thing whatever the decision frequency is. `model_at` turns
+    it into a per-period parameter set.
+
+    This exists because the model silently assumed its decision frequency. The
+    discount, the GRC depreciation and all three hazard rates were already
+    annual and divide down correctly; the loss means, the event probabilities,
+    the cliff rate and the production parameters were per-period and did not.
+    Switching from quarterly to weekly decisions without this would have handed
+    the firm thirteen times its annual losses and thirteen times its annual
+    return -- the dimensional bug of section 4 of the debug notes, relocated
+    to the time axis and just as silent.
+    """
+
+    # Losses. A *rate* per year for how often, a magnitude per event for how
+    # bad -- severities do not scale with frequency, because an incident is the
+    # size it is however often you look.
+    credit_loss: float = 0.80          # expected credit loss per year
+    op_events: float = 1.0             # operational incidents per year
+    op_severity: float = 0.70          # per incident
+    compliance_events: float = 0.20    # breaches per year
+    compliance_severity: float = 2.0   # per breach
+    cliff_events: float = 0.0963       # cliff strikes per year at zero GRC
+
+    # Production. The gross return is annual and compounds down; the curvature
+    # scales *up* with frequency so that the unconstrained optimum
+    # I* = S ln(A) is the same amount of capital however often it is re-decided.
+    annual_return: float = 1.2155      # = 1.05 ** 4, the old quarterly figure
+    curvature_per_period: float = 150.0
+
+
+ANNUAL = AnnualRates()
+
+
+def model_at(periods_per_year: int, rates: AnnualRates = ANNUAL) -> ModelParams:
+    """A consistent parameter set for a given decision frequency."""
+    return ModelParams(
+        firm=FirmParams(
+            periods_per_year=periods_per_year,
+            production_scale=rates.annual_return ** (1.0 / periods_per_year),
+            production_curvature=rates.curvature_per_period * periods_per_year,
+        ),
+        sampler=SamplerParams(
+            credit_loss_mean=rates.credit_loss / periods_per_year,
+            op_probability=rates.op_events / periods_per_year,
+            op_severity_mean=rates.op_severity,
+            compliance_probability=rates.compliance_events / periods_per_year,
+            compliance_severity=rates.compliance_severity,
+        ),
+        cliff=CliffParams(
+            period_probability=1.0 - (1.0 - rates.cliff_events) ** (1.0 / periods_per_year),
+        ),
+    )
+
+
+DEFAULTS = model_at(4)    # quarterly decisions
+WEEKLY = model_at(52)     # weekly decisions
 
 # Pinned, and deliberately not shared with DEFAULTS.
 #

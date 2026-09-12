@@ -22,7 +22,7 @@ import pytest
 import torch
 
 from quant.env.actions import FirmAction
-from quant.env.env import ConstantPolicy, EnvConfig, FirmEnv, evaluate
+from quant.env.env import ConstantPolicy, EnvConfig, FirmEnv, evaluate, standard_env
 from quant.env.reward import LiquidationValue, PerpetuityValue, Zero
 from quant.env.shocks import CommonRandomNumbers, FourStateSampler, MonteCarloSampler
 from quant.hazard import failure_intensity, intensity_components
@@ -33,7 +33,7 @@ def ZERO_STOCK(like):
     return torch.zeros(*like.shape, 3, dtype=like.dtype, device=like.device)
 from quant.model import GrcBudgets
 from quant.numerics import REFERENCE
-from quant.params import DEFAULTS, ORACLE
+from quant.params import DEFAULTS, ORACLE, WEEKLY
 from quant.solvers.analytic import family_exposures, frictionless_benchmark
 from quant.solvers.neural import train_pathwise
 from quant.solvers.pathwise import (
@@ -292,7 +292,15 @@ def test_frictionless_horizon_one_recovers_the_closed_form():
         expected = getattr(benchmark, family)
         # A budget whose optimum is exactly zero is only approached
         # asymptotically through softplus, so it gets a looser tolerance.
-        tolerance = 1e-3 if expected == 0.0 else 1e-6
+        #
+        # The interior tolerance was 1e-6 and is now 1e-5. Moving the path
+        # weights to log space changed the objective by 1.1e-16 -- machine
+        # epsilon, checked directly against the multiplicative form over 300
+        # random controls -- and 20000 Adam steps amplified that into 1.3e-6 of
+        # credit budget. That says how flat the objective is near the optimum,
+        # not that the identity has weakened: it still holds to five
+        # significant figures.
+        tolerance = 1e-3 if expected == 0.0 else 1e-5
         assert abs(result.grc[index] - expected) < tolerance, family
 
 
@@ -1077,3 +1085,69 @@ def test_impatience_raises_the_payout():
     assert fractions[1] > fractions[0], (
         f"impatience did not raise the payout: {fractions[0]:.3f} -> {fractions[1]:.3f}"
     )
+
+
+# -- Decision frequency ----------------------------------------------------
+
+
+def test_the_model_is_invariant_to_how_often_the_firm_decides():
+    """The time-axis counterpart of unit invariance, and the same class of
+    silent bug (docs/static-model-debug-notes.md section 4).
+
+    The discount, the GRC depreciation and all three hazard rates were already
+    annual and divided down correctly. The loss means, the event probabilities,
+    the cliff rate and the production parameters were *per-period* and did not
+    -- so running the same firm weekly instead of quarterly would have handed
+    it thirteen times its annual losses and thirteen times its annual return
+    while every diagnostic reported normally. `quant/params.model_at` derives
+    all of them from frequency-free annual rates.
+
+    Not asserted tightly, and the reason is economics rather than tolerance.
+    Thirteen weekly draws of a loss summing to the same mean as one quarterly
+    draw are *less* volatile than the quarterly draw -- a sum of exponentials
+    is a gamma, not an exponential -- so a finer decision frequency genuinely
+    carries less aggregate tail. The means are invariant by construction; the
+    distributions are not, and should not be.
+    """
+    annual_spend = 0.32
+    values, failures = [], []
+    for params, steps in ((DEFAULTS, 8), (WEEKLY, 104)):  # both are two years
+        # Split across three families, so the per-family flow is a third of it.
+        per_period = annual_spend / (3 * params.firm.periods_per_year)
+        env = standard_env(params, steps)
+        result = evaluate(
+            ConstantPolicy(
+                grc=(per_period, per_period, per_period), investment=20.0, profile=REFERENCE
+            ),
+            env,
+            CommonRandomNumbers(0, steps, 2048, REFERENCE),
+        )
+        values.append(result.value)
+        failures.append(result.annual_death_probability)
+        assert result.total_grc * params.firm.periods_per_year == pytest.approx(
+            annual_spend, rel=1e-12
+        ), "annual GRC spend must not depend on how often it is bought"
+
+    assert values[1] == pytest.approx(values[0], rel=0.05), (
+        f"firm value moved with decision frequency: {values[0]:.4f} -> {values[1]:.4f}"
+    )
+    assert failures[1] == pytest.approx(failures[0], abs=0.02), (
+        f"failure rate moved with decision frequency: {failures[0]:.2%} -> {failures[1]:.2%}"
+    )
+
+
+def test_compounded_path_weights_survive_a_long_horizon():
+    """The bug this found: the per-path prior was multiplied in at every step,
+    so the accumulated weight carried (1/batch)**T. A constant factor cancels
+    in the normalization, which is exactly why it survived eight quarterly
+    steps unnoticed -- and at 2048 paths over 104 weekly steps it reached
+    1e-344, underflowed to zero on every path, and turned the normalization
+    into 0/0."""
+    env = standard_env(WEEKLY, 104)
+    policy = ConstantPolicy(grc=(0.006, 0.006, 0.006), investment=20.0, profile=REFERENCE)
+    trajectory = env.rollout(policy, CommonRandomNumbers(0, 104, 2048, REFERENCE), False)
+
+    weights = trajectory.path_weights()
+    assert torch.isfinite(weights).all()
+    assert weights.sum().item() == pytest.approx(1.0, rel=1e-12)
+    assert trajectory.effective_sample_size() > 0.5

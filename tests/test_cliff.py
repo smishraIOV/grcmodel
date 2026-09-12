@@ -55,7 +55,7 @@ def exact(env, stock_value, paths=100_000, seed=3):
     state = env.reset(paths)
     stock_scalar = REFERENCE.tensor(stock_value, requires_grad=True)
     probability = exponential_mitigation(
-        REFERENCE.tensor(DEFAULTS.cliff.quarterly_probability),
+        REFERENCE.tensor(DEFAULTS.cliff.period_probability),
         stock_scalar,
         DEFAULTS.alphas.operational,
     )

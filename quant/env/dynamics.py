@@ -100,7 +100,7 @@ class StandardDynamics:
         state this channel exists to represent.
         """
         probability = exponential_mitigation(
-            self.profile.tensor(self.cliff.quarterly_probability),
+            self.profile.tensor(self.cliff.period_probability),
             stock[..., 1],  # operational GRC: the crypto rails are its pillar
             self.alphas.operational,
         )
@@ -219,8 +219,18 @@ class StandardDynamics:
         is what the convex premium prices
         (docs/static-model-debug-notes.md section 5).
 
-        Returned unnormalized: normalizing per step would destroy the product
-        over a trajectory. Trajectory.path_weights normalizes once, at the end.
+        Returns the **ratio only**, not the ratio times the path's prior
+        probability. The prior belongs to the trajectory and is applied once;
+        multiplying it in every period made the accumulated weight carry
+        (1/batch)**T, which is a constant factor that cancels in the
+        normalization and is therefore invisible -- right up until it
+        underflows. At 2048 paths over 104 weekly steps that is 1e-344, every
+        path's weight became exactly zero, and the normalization turned into
+        0/0. Eight quarterly steps hid it completely.
+
+        Returned unnormalized in the other sense too: normalizing per step
+        would destroy the product over a trajectory. Trajectory.path_weights
+        accumulates in log space and normalizes once, at the end.
         """
         p0 = shock.compliance_base_probability
         p = exponential_mitigation(
@@ -232,10 +242,9 @@ class StandardDynamics:
         # Flooring the denominator keeps the unselected branch finite; where it
         # bites there are no breach paths for it to apply to.
         safe_p0 = max(p0, torch.finfo(self.profile.dtype).tiny)
-        ratio = torch.where(
+        return torch.where(
             shock.compliance_occurs > 0.5, p / safe_p0, (1.0 - p) / (1.0 - p0)
         )
-        return shock.base_weight * ratio
 
     def funding_capacity(self, wealth: torch.Tensor) -> torch.Tensor:
         """The most the firm can deploy this quarter: what it has, plus what it
