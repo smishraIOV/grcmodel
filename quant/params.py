@@ -104,6 +104,30 @@ class FirmParams:
     # different thing and had no representation here until now.
     orderly_recovery: float = 0.7
 
+    # How much external finance the firm can raise, as a multiple of the
+    # internal wealth it has left after the quarter's losses -- and whether the
+    # market is open to it at all.
+    #
+    # This is the constraint that makes the balance sheet matter. Without it
+    # the firm deploys its unconstrained optimum every quarter whatever its
+    # capital, the franchise is worth ~473 against equity of 16, and both the
+    # financing friction and the wind-down option sit inert. A bank cannot lend
+    # more than it funds.
+    #
+    # It is also the Froot-Stein underinvestment channel in its hard form. A
+    # bad draw leaves less internal wealth, less wealth means less funding,
+    # less funding means forgone investment -- so risk management protects the
+    # firm's capacity to invest, not merely its cash. The static model priced
+    # that with a smooth convex premium; this states it as a constraint, which
+    # is closer to how funding actually withdraws.
+    external_funding_multiple: float = 0.5
+    # Market access degrades as the firm weakens, rather than vanishing at a
+    # threshold: a sigmoid in internal wealth over opening equity. Smooth
+    # because a step would be one more place the gradient dies, and because
+    # funding does in fact dry up gradually before it dries up suddenly.
+    market_access_ratio: float = 0.15
+    market_access_scale: float = 0.08
+
     periods_per_year: int = 4  # quarterly
     annual_discount_rate: float = 0.08
     # A control installed today still works in a year's time, but not forever:

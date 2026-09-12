@@ -895,3 +895,63 @@ def test_richer_wind_downs_are_taken_more_often():
     # more: 7.20 against 15.20 here.
     assert min(r.orderly_exit_rate for r in results) > 0.9
     assert results[1].value > results[0].value * 1.5
+
+
+# -- Funding constraint: the balance sheet gates operations ----------------
+
+
+def test_unconstrained_config_places_no_cap():
+    """The reduction. The static model let the firm fund anything at a convex
+    price, which is what its closed form is derived under."""
+    env = FirmEnv(EnvConfig(profile=REFERENCE), FourStateSampler(DEFAULTS.shock))
+    capacity = env.dynamics.funding_capacity(REFERENCE.tensor([10.0, -5.0]))
+    assert torch.isinf(capacity).all()
+
+
+def test_funding_capacity_collapses_faster_than_wealth():
+    """Funding withdraws exactly when it is needed.
+
+    Capacity is internal wealth plus a multiple of it, scaled by market access
+    — and access is itself falling in wealth. So the ratio of capacity to
+    wealth shrinks as the firm weakens: it has less of its own money *and* less
+    of anyone else's, which is the mechanism that turns a bad quarter into
+    forgone investment rather than merely expensive investment.
+    """
+    env = FirmEnv(EnvConfig.quarterly(1), MonteCarloSampler(DEFAULTS.sampler))
+    wealth = REFERENCE.tensor([14.0, 8.0, 4.0, 2.0, 1.0])
+    capacity = env.dynamics.funding_capacity(wealth)
+
+    assert (capacity[1:] < capacity[:-1]).all(), "capacity must fall with wealth"
+    leverage = capacity / wealth
+    assert (leverage[1:] <= leverage[:-1] + 1e-12).all(), (
+        "access must not improve as the firm weakens"
+    )
+    assert env.dynamics.funding_capacity(REFERENCE.tensor([-3.0])).item() == 0.0
+
+
+def test_investment_never_exceeds_what_can_be_funded():
+    """The cap is applied to what is deployed, not merely priced. A firm that
+    wants far more than it can raise gets what it can raise."""
+    env = FirmEnv(EnvConfig.quarterly(1), MonteCarloSampler(DEFAULTS.sampler))
+    crn = CommonRandomNumbers(0, 1, 512, REFERENCE)
+    greedy = ConstantPolicy(grc=(0.3, 0.3, 0.3), investment=500.0, profile=REFERENCE)
+    info = env.rollout(greedy, crn, False).infos[0]
+
+    assert (info["investment"] <= info["funding_capacity"] + 1e-9).all()
+    assert info["funding_binds"].all(), "wanting 500 should bind everywhere"
+
+
+def test_a_bad_quarter_forces_underinvestment():
+    """The Froot-Stein channel in its hard form: a large loss leaves less
+    internal wealth, less wealth means less funding, and less funding means
+    investment the firm wanted and could not make. The static model priced that
+    with a convex premium; here it is a quantity the firm simply does not get.
+    """
+    env = FirmEnv(EnvConfig.quarterly(1), MonteCarloSampler(DEFAULTS.sampler))
+    policy = ConstantPolicy(grc=(0.3, 0.3, 0.3), investment=11.0, profile=REFERENCE)
+    info = env.rollout(policy, CommonRandomNumbers(0, 1, 4096, REFERENCE), False).infos[0]
+
+    binds = info["funding_binds"]
+    assert binds.any() and not binds.all(), "should bind in the tail, not everywhere"
+    # The paths where it binds are the ones that took the larger losses.
+    assert info["loss"][binds].mean() > info["loss"][~binds].mean()

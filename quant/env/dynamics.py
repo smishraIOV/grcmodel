@@ -63,6 +63,9 @@ class StandardDynamics:
     # Off by default: the reduction config has no exit option, which is what
     # the static model assumed and what its closed form is derived under.
     allow_abandonment: bool = False
+    # Off by default: the reduction config lets the firm fund any investment at
+    # a convex price, which is what the static model assumed.
+    funding_constrained: bool = False
     differentiable: bool = True
 
     def orderly_value(self, equity: torch.Tensor) -> torch.Tensor:
@@ -187,6 +190,25 @@ class StandardDynamics:
         )
         return shock.base_weight * ratio
 
+    def funding_capacity(self, wealth: torch.Tensor) -> torch.Tensor:
+        """The most the firm can deploy this quarter: what it has, plus what it
+        can raise against it.
+
+        Both terms collapse together in a bad quarter, which is the point. The
+        multiple is applied to internal wealth, and market access is a sigmoid
+        in wealth over opening equity -- so a firm that has just taken a large
+        loss finds both that it has less of its own money and that less of
+        anyone else's is available. Funding withdraws exactly when it is needed.
+        """
+        if not self.funding_constrained:
+            return torch.full_like(wealth, float("inf"))
+        ratio = wealth / self.firm.initial_equity
+        access = torch.sigmoid(
+            (ratio - self.firm.market_access_ratio) / self.firm.market_access_scale
+        )
+        usable = torch.clamp(wealth, min=0.0)
+        return usable + self.firm.external_funding_multiple * usable * access
+
     def financing(self, wealth: torch.Tensor, investment: torch.Tensor):
         external = torch.clamp(investment - wealth, min=0.0)
         premium = financing_cost(
@@ -204,12 +226,19 @@ class StandardDynamics:
         stock = self.grc_stock(state, action)
         loss = self.mitigated_loss(stock, shock)
         wealth = state.equity - spend - loss
-        external, premium = self.financing(wealth, action.investment)
+
+        # The firm may want more than it can fund. What it deploys is the
+        # lesser of the two, so a bad quarter forces underinvestment rather
+        # than merely making investment expensive.
+        capacity = self.funding_capacity(wealth)
+        investment = torch.minimum(action.investment, capacity)
+
+        external, premium = self.financing(wealth, investment)
         produced = production(
-            action.investment, self.firm.production_scale, self.firm.production_curvature
+            investment, self.firm.production_scale, self.firm.production_curvature
         )
 
-        equity = wealth - action.investment + produced - premium
+        equity = wealth - investment + produced - premium
         survives = equity >= self.equity_floor
         intensity = (
             intensity_components(
@@ -252,6 +281,9 @@ class StandardDynamics:
                 "premium": premium,
                 "production": produced,
                 "grc_spend": spend,
+                "investment": investment,
+                "funding_capacity": capacity,
+                "funding_binds": (action.investment > capacity),
                 "grc_flow": action.grc,
                 "grc_stock": stock,
                 "hazard": intensity,

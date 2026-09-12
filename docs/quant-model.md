@@ -34,6 +34,22 @@ unimplemented rows are the honest gap between this section and the code.
 
 ## 3. Frictions, costs and the investment channel
 
+**Funding constraint.** The firm cannot deploy more than it can fund:
+
+$$
+I_t = \min\!\big(I_t^{\text{desired}},\ w_t + \lambda\, w_t \cdot \varsigma\big),
+\qquad \varsigma = \text{sigmoid}\!\left(\frac{w_t/E_0 - \kappa_{\text{mkt}}}{s}\right)
+$$
+
+Both terms collapse together in a bad quarter: the firm has less of its own
+money *and* less of anyone else's, because market access is itself falling in
+wealth. That is the Froot-Stein underinvestment channel in its hard form — a
+bad draw does not make investment expensive, it makes investment *unavailable*,
+so risk management protects the firm's capacity to invest rather than only its
+cash. Smooth in wealth rather than a threshold, because a step would be one
+more place the gradient dies and because funding does dry up gradually before
+it dries up suddenly.
+
 **Convex cost of external finance.** With internal wealth $w$ and desired
 investment $I$, the firm raises $e = \max(0,\ I - w)$ externally at
 
@@ -174,7 +190,8 @@ exactly the one-period problem that benchmark solves.
 | 3c | What failure costs, and what GRC cannot do about it | **built** — `FirmParams.failure_recovery` |
 | 3d | Abandonment / orderly wind-down option | **built** — out of the money, see below |
 | 3e | Diagnostic bundle and the break-even outputs | not started |
-| — | **Link production to capital** (see §6) — nothing currently caps investment by the balance sheet, which leaves both the financing friction and the exit option inert | open, and now the most consequential |
+| — | Funding constraint: the balance sheet gates investment | **built** — live but weak, see §6 |
+| — | **Payout policy** — equity accumulates 16 → 67 over eight quarters with nothing distributed, which is what neutralizes the funding constraint and the exit option | open, and now the most consequential |
 | 4 | Grid / fitted value iteration on a reduced config | not started |
 | 5 | The learner (truncated-BPTT actor-critic) | not started |
 
@@ -375,10 +392,33 @@ equity of 16. Winding down is never close.
 
 That is the same root cause as the convex financing cost going inert: with no
 funding constraint, the balance sheet does not gate operations, and equity
-matters only through the hazard. A bank that cannot lend more than it funds
-would behave very differently. Linking production to capital is a modelling
-change rather than a parameter, and it is now the most consequential open item
-in §5. That gap is the dynamic analogue of the Froot-Stein
+matters only through the hazard.
+
+### The funding constraint, and why it is still not enough
+
+A funding constraint is now in place (§3) and it is correct — a firm that wants
+500 gets what it can raise, and the paths where it binds are the ones that took
+the larger losses. But it is **weak, and it decays**:
+
+| quarter | median equity | funding binds |
+|---|---|---|
+| 1 | 23.22 | 2.4% |
+| 4 | 42.73 | 1.7% |
+| 8 | 66.76 | 0.1% |
+
+Over the whole horizon it binds on 1.1% of live probability mass and moves firm
+value by 0.10%. The reason is visible in the first column: **equity grows from
+16 to 67 in eight quarters because nothing is ever distributed.** Funding
+capacity grows with it, the opportunity does not, and the constraint the firm
+starts out facing has stopped mattering by the third quarter.
+
+So the open item moves rather than closes. A payout policy — the firm choosing
+what to distribute against what to retain — is what would keep the balance
+sheet scarce, and it would make three other things work at once: the funding
+constraint would keep binding, the wind-down option would have something to be
+in the money against, and per-period rewards would become non-zero for the
+first time, which is what would finally make the discount rate load-bearing
+rather than a scalar multiplier. That gap is the dynamic analogue of the Froot-Stein
 premium: spend that pays for itself only because the firm has a franchise worth
 surviving to keep.
 

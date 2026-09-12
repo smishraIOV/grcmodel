@@ -78,6 +78,7 @@ class EnvConfig:
     equity_floor: float = -float("inf")
     hazard: HazardParams | None = None
     allow_abandonment: bool = False
+    funding_constrained: bool = False
     terminal: TerminalValue = field(default_factory=LiquidationValue)
 
     @classmethod
@@ -114,6 +115,7 @@ class EnvConfig:
             equity_floor=-5.0 * firm.initial_equity,
             hazard=DEFAULTS.hazard,
             allow_abandonment=True,
+            funding_constrained=True,
         )
         settings.update(overrides)  # an explicit override wins over the derived rate
         return cls(**settings)
@@ -134,6 +136,7 @@ class FirmEnv:
             grc_depreciation=config.grc_depreciation,
             hazard=config.hazard,
             allow_abandonment=config.allow_abandonment,
+            funding_constrained=config.funding_constrained,
         )
 
     def reset(self, batch: int) -> FirmState:
@@ -230,6 +233,12 @@ class EvalResult:
     grc: tuple[float, float, float]
     grc_stock: tuple[float, float, float]
     constrained_fraction: float
+    # Probability mass on which the firm wanted to deploy more than it could
+    # fund. This is the Froot-Stein underinvestment channel made visible, and
+    # it is the successor to constrained_fraction, which measured only whether
+    # the firm raised externally at all and went inert once the convex premium
+    # stopped binding.
+    underinvestment_fraction: float
     survival_rate: float
     # Probability the firm chooses to wind down at some point over the horizon,
     # as opposed to failing or reaching the end still operating.
@@ -280,6 +289,10 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
             profile.sum(info["grc_flow"] * (mask * weights).unsqueeze(-1), dim=0)
             for info, mask in zip(trajectory.infos, live)
         ) / live_mass
+        underinvested = sum(
+            profile.sum(info["funding_binds"].to(profile.dtype) * mask * weights)
+            for info, mask in zip(trajectory.infos, live)
+        ) / live_mass
         # Survival-weighted, for the same reason the flow is: a failed path's
         # state is frozen and the policy is still evaluated on it, so its
         # action is whatever the network happens to emit in a region it is
@@ -301,6 +314,7 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         grc=(flow[0].item(), flow[1].item(), flow[2].item()),
         grc_stock=(stock[0].item(), stock[1].item(), stock[2].item()),
         constrained_fraction=constrained.item(),
+        underinvestment_fraction=underinvested.item(),
         survival_rate=survives.item(),
         orderly_exit_rate=exited.item(),
         effective_sample_size=trajectory.effective_sample_size(),
