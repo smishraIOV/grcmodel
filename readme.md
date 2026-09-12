@@ -22,9 +22,11 @@ Deposits go into "vaults". Investment managers invest these assets into various 
 ## Running the model
 
 ```bash
+uv run python scripts/run_dynamic_model.py  # the multi-period model -- start here
+uv run python scripts/run_breakevens.py     # the decision-facing break-evens
+uv run python scripts/run_seed_study.py     # is a reactive policy worth its keep?
 uv run python scripts/run_static_model.py   # Froot-Stein premium + mean-preserving spread
 uv run python -m quant.simulate             # Monte Carlo, reported across seeds
-uv run python -m quant.threshold            # break-even analysis
 uv run python scripts/bench_profiles.py     # where the accelerator starts paying
 uv run pytest                               # test suite
 ```
@@ -33,15 +35,30 @@ Each entry point takes `--profile {reference,cpu-fast,fast}` and prints the
 profile, torch version and commit it ran under. Numbers quoted anywhere in
 `docs/` come from `reference`.
 
-The headline number: with external finance costless the firm spends 0.77 on GRC;
-facing convex financing costs the same firm spends 2.56. That gap is the
+**The two-period result.** With external finance costless the firm spends 0.77
+on GRC; facing convex financing costs the same firm spends 2.56. That gap is the
 Froot-Stein premium — risk management that pays for itself only because capital
 is expensive to raise in bad states. It is the quantitative form of the claim
-above that GRC can increase firm value.
+above that GRC can increase firm value, and it is where this project started.
 
-Parameters are illustrative and uncalibrated, which is why `quant/threshold.py`
-reports the effectiveness a programme must reach to be worth running rather than
-a spend recommendation.
+**The model is now multi-period, and the firm can die.** It operates over eight
+quarters, funds a book of about 81 with 16 of capital and a deposit base four
+times that, accumulates GRC as a depreciating capital stock, and faces three
+competing failure hazards plus rare severe "cliff" events. The corresponding
+headline is a threshold rather than a budget:
+
+> A programme costing 0.76 a year, against a business worth 28.25 as a going
+> concern, must cut the annual probability of failure by at least **270 basis
+> points** to pay for itself.
+
+Parameters are illustrative and uncalibrated, which is why the outputs are
+break-evens — the effectiveness a programme must reach to be worth running —
+rather than spend recommendations.
+
+[`docs/status-report.md`](docs/status-report.md) is the orientation document:
+what has been built, which approaches were tried and abandoned, and what is
+still unresolved. [`docs/quant-model.md`](docs/quant-model.md) is the
+specification and the full results.
 
 ## Numerics: a profile per workload, not one global default
 
