@@ -718,6 +718,86 @@ is too high for a business of this risk, or value genuinely is horizon-specific
 and results should never be compared across $T$. Deliberately left open rather
 than guessed at.
 
+### How often the firm decides
+
+`quant/params.model_at(periods_per_year)`. The model silently assumed quarterly
+decisions. The discount, the GRC depreciation and all three hazard rates were
+already annual and divided down correctly; the loss means, the event
+probabilities, the cliff rate and the production parameters were *per-period*
+and did not. Running the same firm weekly would have handed it thirteen times
+its annual losses and thirteen times its annual return with every diagnostic
+reporting normally — §4 of the debug notes relocated to the time axis.
+
+`AnnualRates` now states the economics without reference to frequency: a rate
+per year for how often, a magnitude per event for how bad, since a severity
+does not scale with how often you look. Production needs both directions — the
+gross return compounds *down* while the curvature scales *up*, so the
+unconstrained optimum $I^{\star} = S\ln A$ is the same amount of capital
+however often it is re-decided (29.273 at both frequencies).
+
+**Invariance, verified.** The same firm over the same two years:
+
+| frequency | steps | value | GRC/year | annual failure |
+|---|---|---|---|---|
+| quarterly | 8 | 24.4071 | 0.9600 | 9.06% |
+| weekly | 104 | 24.2268 | 0.9600 | 9.27% |
+
+Asserted at 5%, not tighter, and for an economic reason rather than a numerical
+one: thirteen weekly losses summing to the same mean as one quarterly loss are
+*less* volatile, because a sum of exponentials is a gamma. The means are
+invariant by construction; the distributions are not, and should not be. A
+finer decision frequency genuinely carries less aggregate tail.
+
+**Weekly decisions do not make state feedback pay.** The motivating idea was
+that at quarterly steps an incident lands and the firm's next chance to respond
+is three months away, so a reactive policy has nothing to react to. Measured:
+
+| frequency | constant | neural | edge |
+|---|---|---|---|
+| quarterly (8 steps) | 25.4608 | 25.4739 | +0.05% |
+| weekly (104 steps) | 25.1572 | 25.1700 | +0.05% |
+
+Identical, and the reason is not the frequency. Survival-weighted over
+everything the firm visits, its equity runs from **15.71 at the 5th percentile
+to 18.68 at the 95th** — the middle half spans 9% of the median. Across that
+whole range the trained policy's own outputs move by less than a percent
+(per-period GRC 0.01682 → 0.01671).
+
+**State feedback buys nothing because the state barely varies.** A constant
+action is close to optimal everywhere the firm actually goes, and adding
+decision points to a state that does not move adds nothing to react to. The
+learner is not failing; it is being asked to exploit variation the model does
+not generate.
+
+### When state feedback does earn its place
+
+That suggests a test, and the test passes. Sweeping the cliff rate — the one
+shock large enough to move the state sharply — while holding everything else:
+
+| cliff strikes/year | equity p5–p95 | spread | constant | neural | edge |
+|---|---|---|---|---|---|
+| 0.101 (default) | 15.83–18.53 | 16% | 25.3975 | 25.4068 | **+0.04%** |
+| 0.500 | 15.13–18.01 | 18% | 24.5415 | 25.5052 | **+3.93%** |
+| 1.500 | 14.31–17.46 | 20% | 23.3652 | 24.9242 | **+6.67%** |
+| 3.000 | 14.09–17.24 | 20% | 22.3022 | 24.3819 | **+9.32%** |
+
+Monotone, and by a factor of two hundred from end to end. Note what does *not*
+explain it: the unconditional spread of equity barely moves, 16% to 20%. So it
+is not dispersion as such.
+
+**State feedback pays when the state makes large discrete jumps a policy can
+respond to, not when it merely varies.** A cliff is a recognisable event with a
+sensible response; smooth quarter-to-quarter drift is not, and no amount of it
+adds up to something worth reacting to. The constant policy loses 12% of firm
+value across this sweep (25.40 → 22.30) while the neural policy loses 4%
+(25.41 → 24.38) — the entire advantage is in handling cliffs.
+
+That closes a circle. The cliff channel was added because the state it creates
+— impaired but alive, holding a real decision — is where the decision problem
+actually lives. This is the measurement of that claim: it is also the only
+state in this model where having a policy rather than a budget is worth
+anything.
+
 ### Truncated BPTT with a critic, measured against full BPTT
 
 `uv run python scripts/compare_learners.py`. Stage 5 declined to build SVG(K)

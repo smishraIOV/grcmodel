@@ -12,6 +12,7 @@ reports the effectiveness a programme must reach rather than a spend
 recommendation (docs/quant-model.md section 8).
 """
 
+import math
 from dataclasses import dataclass, field
 
 
@@ -328,7 +329,7 @@ class AnnualRates:
     op_severity: float = 0.70          # per incident
     compliance_events: float = 0.20    # breaches per year
     compliance_severity: float = 2.0   # per breach
-    cliff_events: float = 0.0963       # cliff strikes per year at zero GRC
+    cliff_events: float = 0.101272     # cliff strikes per year at zero GRC
 
     # Production. The gross return is annual and compounds down; the curvature
     # scales *up* with frequency so that the unconstrained optimum
@@ -356,7 +357,13 @@ def model_at(periods_per_year: int, rates: AnnualRates = ANNUAL) -> ModelParams:
             compliance_severity=rates.compliance_severity,
         ),
         cliff=CliffParams(
-            period_probability=1.0 - (1.0 - rates.cliff_events) ** (1.0 / periods_per_year),
+            # A Poisson rate, so the per-period probability of at least one
+            # strike is 1 - exp(-lambda/ppy). The obvious-looking
+            # 1 - (1-lambda)**(1/ppy) treats the rate as a probability: it
+            # agrees to three decimals for small lambda, and for lambda > 1 it
+            # raises a negative number to a fractional power and returns a
+            # complex number. Found by sweeping the rate up to 1.5.
+            period_probability=1.0 - math.exp(-rates.cliff_events / periods_per_year),
         ),
     )
 
