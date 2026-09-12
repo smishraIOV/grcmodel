@@ -706,3 +706,74 @@ def test_default_quarterly_model_sits_in_a_usable_regime():
         "the financing friction has become load-bearing again -- if so it "
         "should not be removed without re-examining why"
     )
+
+
+# -- Bite 3c: what failure costs, and what GRC cannot do about it ----------
+
+
+def test_failure_recovery_does_not_depend_on_grc():
+    """The asymmetry this channel exists to express.
+
+    GRC acts on how often failure happens, never on what it costs. A programme
+    that reduced both would let one parameter buy the same protection twice,
+    and the second purchase would be free -- which is how a model comes to
+    recommend spending that no real programme could justify.
+    """
+    env = FirmEnv(EnvConfig.quarterly(1), MonteCarloSampler(DEFAULTS.sampler))
+    equity = REFERENCE.tensor([12.0, 3.0])
+    poor = REFERENCE.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+    rich = REFERENCE.tensor([[50.0, 50.0, 50.0], [50.0, 50.0, 50.0]])
+    args = (16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
+
+    # Elementwise, holding equity fixed. Comparing across equity levels would
+    # be comparing two different firms: at equity 3 the capital channel alone
+    # exceeds anything the control stock does at equity 12.
+    assert (failure_intensity(equity, rich, *args) < failure_intensity(equity, poor, *args)).all()
+
+    # Recovery is a function of equity alone -- no stock argument exists to
+    # pass -- so the same equity gives the same recovery under either stock.
+    assert torch.equal(env.dynamics.failure_value(equity), 0.4 * equity)
+
+
+def test_failure_recovery_is_floored_by_limited_liability():
+    """A firm that died owing money is worth nothing to its owners, not a
+    negative number. The floor is also where this term's gradient stops, which
+    leaves the survival probability as the only thing still pushing a path away
+    from deep insolvency -- the job the hazard was brought forward to do."""
+    env = FirmEnv(EnvConfig.quarterly(1), MonteCarloSampler(DEFAULTS.sampler))
+    equity = REFERENCE.tensor([-40.0, -1.0, 0.0, 5.0])
+    recovery = env.dynamics.failure_value(equity)
+    assert torch.equal(recovery[:3], torch.zeros(3, dtype=recovery.dtype))
+    assert recovery[3].item() == pytest.approx(2.0, rel=1e-12)
+
+
+def test_recovery_raises_value_and_shrinks_the_going_concern_share():
+    """More recoverable on failure means less destroyed by it, so the firm is
+    worth more and less of that worth is going-concern rather than
+    liquidation."""
+    policy = ConstantPolicy(grc=(0.4, 0.4, 0.4), investment=10.0, profile=REFERENCE)
+    crn = CommonRandomNumbers(0, 6, 1024, REFERENCE)
+
+    results = []
+    for recovery in (0.0, 0.4, 0.8):
+        firm = replace(DEFAULTS.firm, failure_recovery=recovery)
+        env = FirmEnv(EnvConfig.quarterly(6, firm=firm), MonteCarloSampler(DEFAULTS.sampler))
+        results.append(evaluate(policy, env, crn))
+
+    assert results[0].value < results[1].value < results[2].value
+    assert results[0].going_concern_share > results[1].going_concern_share > results[2].going_concern_share
+    assert results[0].going_concern_share == pytest.approx(1.0, abs=1e-12), (
+        "with nothing recovered, all value must be going-concern"
+    )
+
+
+def test_going_concern_share_leaves_a_survival_motive():
+    """The regime check for this channel. If liquidation were worth nearly as
+    much as continuing, death would be cheap, the survival motive would vanish
+    and the objective would quietly revert to expected-loss minimization --
+    which docs/framework.md section 3 explicitly rejects."""
+    env = FirmEnv(EnvConfig.quarterly(8), MonteCarloSampler(DEFAULTS.sampler))
+    result = optimize_constant(env, CommonRandomNumbers(0, 8, 1024, REFERENCE), n_steps=2500)[1]
+    assert 0.5 < result.going_concern_share < 1.0, (
+        f"little left to survive for: {result.going_concern_share:.3f}"
+    )

@@ -73,6 +73,7 @@ class StepResult:
     reward: torch.Tensor        # (B,)
     weight: torch.Tensor        # (B,)
     log_survival: torch.Tensor  # (B,) log P(survive this period), <= 0
+    failure_value: torch.Tensor # (B,) what is recovered if it fails this period
     terminated: torch.Tensor    # (B,) bool, crossed the hard barrier THIS step
     info: dict
 
@@ -85,6 +86,7 @@ class Trajectory:
     rewards: list[torch.Tensor]
     weights: list[torch.Tensor]
     log_survivals: list[torch.Tensor]
+    failure_values: list[torch.Tensor]
     terminal_value: torch.Tensor
     infos: list[dict]
 
@@ -109,7 +111,7 @@ class Trajectory:
             weight = weight * step_weight
         return weight / weight.sum()
 
-    def path_values(self, discount: float, failure_value: float = 0.0) -> torch.Tensor:
+    def path_values(self, discount: float) -> torch.Tensor:
         """Discounted return per path, survival-weighted.
 
         Death is not sampled. Each path carries the *probability* it is still
@@ -126,9 +128,11 @@ class Trajectory:
         total = torch.zeros_like(self.terminal_value)
         for step, reward in enumerate(self.rewards):
             total = total + (discount**step) * survival[step + 1] * reward
-            if failure_value:
-                died = survival[step] - survival[step + 1]
-                total = total + (discount ** (step + 1)) * died * failure_value
+            # The probability mass that failed during this period collects its
+            # recovery at this date, not at the horizon -- a failure in quarter
+            # one and a failure in quarter eight are not worth the same.
+            died = survival[step] - survival[step + 1]
+            total = total + (discount ** (step + 1)) * died * self.failure_values[step]
         return total + (discount ** len(self.rewards)) * survival[-1] * self.terminal_value
 
     def effective_sample_size(self) -> float:

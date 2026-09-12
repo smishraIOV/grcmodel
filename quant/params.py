@@ -77,6 +77,21 @@ class FirmParams:
     # docs/static-model-debug-notes.md section 6 warns about, in a new place.
     initial_grc_stock: float = 5.18
 
+    # What creditors and shareholders recover when the firm fails, as a
+    # fraction of whatever positive equity is left at that moment. Limited
+    # liability floors it at zero: a firm that died owing money is worth
+    # nothing to its owners, not a negative number.
+    #
+    # GRC does not appear here, deliberately, and that asymmetry is the point
+    # of this channel. A programme can make failure rarer -- it acts on the
+    # intensity (quant/hazard.py) -- but it cannot make a failure cheaper once
+    # it happens. Losing a licence costs what it costs. Modelling GRC as
+    # reducing both would let one parameter buy the same protection twice.
+    #
+    # 0.4 is illustrative but has anchors, unlike alpha: FDIC loss-given-
+    # failure, and crypto bankruptcy recoveries in the 30-70c range.
+    failure_recovery: float = 0.4
+
     periods_per_year: int = 4  # quarterly
     annual_discount_rate: float = 0.08
     # A control installed today still works in a year's time, but not forever:

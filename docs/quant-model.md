@@ -170,7 +170,7 @@ exactly the one-period problem that benchmark solves.
 | 2 | Horizon, discounting, GRC as a depreciating stock | **built** — `EnvConfig.quarterly` |
 | 3a | Smooth survival hazard replacing the hard barrier | **built** — `quant/hazard.py` |
 | 3b | GRC acting on the hazard, not only on losses | **built** — `quant/hazard.py` |
-| 3c | Discrete cliff events; licence loss as absorbing | not started |
+| 3c | What failure costs, and what GRC cannot do about it | **built** — `FirmParams.failure_recovery` |
 | 3d | Abandonment / orderly wind-down option | not started |
 | 3e | Diagnostic bundle and the break-even outputs | not started |
 | 4 | Grid / fitted value iteration on a reduced config | not started |
@@ -279,12 +279,12 @@ one period of protection.
 
 | GRC decay | solver | value | spend/qtr | end stock | survives |
 |---|---|---|---|---|---|
-| 1.000 | constant | 8.9347 | 0.5508 | 0.5508 | 24.1% |
-| 1.000 | neural | 9.6099 | 1.2374 | 1.7650 | 28.1% |
-| 1.000 | PI bound | 16.9279 | 1.2262 | 1.8413 | 36.6% |
-| 0.069 | constant | 49.0118 | 1.1094 | 15.7355 | 86.6% |
-| 0.069 | neural | 52.4263 | 1.4355 | 15.7231 | 90.5% |
-| 0.069 | PI bound | 57.1049 | 1.0603 | 14.1154 | 90.8% |
+| 1.000 | constant | 11.2752 | 0.6628 | 0.6628 | 24.4% |
+| 1.000 | neural | 11.6684 | 0.7830 | 0.5991 | 25.2% |
+| 1.000 | PI bound | 20.7015 | 1.2681 | 1.7450 | 37.8% |
+| 0.069 | constant | 50.4143 | 0.8820 | 14.3018 | 85.4% |
+| 0.069 | neural | 53.5495 | 1.3189 | 15.1231 | 89.9% |
+| 0.069 | PI bound | 58.7251 | 0.9513 | 13.6174 | 90.1% |
 
 (The $\delta = 1$ rows start from the same opening stock but cannot keep it, so
 they describe a firm whose control function evaporates each quarter.)
@@ -297,12 +297,43 @@ meaningless, since a world without those channels is simply less dangerous.
 
 | budget set for | spend/qtr | annual death | value |
 |---|---|---|---|
-| expected loss only | 0.5863 | 8.59% | 48.2525 |
-| loss **and** survival | 1.1094 | 6.92% | 49.0118 |
+| expected loss only | 0.5866 | 8.59% | 50.0932 |
+| loss **and** survival | 0.8820 | 7.58% | 50.4143 |
 
-Budgeting as though GRC only bought smaller losses **halves** the right spend,
-costs 1.5% of firm value, and adds 1.7 percentage points to the annual failure
-probability. That gap is the dynamic analogue of the Froot-Stein
+Budgeting as though GRC only bought smaller losses understates the right spend
+by a third, costs 0.6% of firm value, and adds 1.0 percentage point to the
+annual failure probability.
+
+### What failure costs, and what GRC cannot do about it
+
+`--recovery-sweep`. When the firm fails, a fraction of whatever positive equity
+remains is recovered — floored at zero, because a firm that died owing money is
+worth nothing to its owners rather than a negative number.
+
+**GRC does not appear in that recovery, and the asymmetry is the point.** A
+programme acts on how *often* failure happens; it cannot make a failure cheaper
+once it has happened. Losing a licence costs what it costs. A model in which
+GRC reduced both would let one parameter buy the same protection twice, and the
+second purchase would be free.
+
+| recovery | spend/qtr | annual death | value | going-concern share |
+|---|---|---|---|---|
+| 0.0 | 1.1094 | 6.92% | 49.012 | 1.000 |
+| 0.4 | 0.8820 | 7.58% | 50.414 | 0.873 |
+| 0.8 | 0.7466 | 7.91% | 51.997 | 0.754 |
+
+The comparative static is the cleanest the survival channel produces, and it is
+one an executive can argue with: **the less a failure would destroy, the less a
+programme to avoid it is worth.** Spend falls by a third across the range while
+the firm becomes more willing to die. Every unit of that spend is bought by the
+franchise at risk — the going-concern share is exactly the part of firm value
+that failure would destroy, and when nothing is recovered it is 1.000 by
+construction.
+
+That share is also a regime diagnostic. If liquidation were worth nearly as
+much as continuing, death would be cheap, the survival motive would vanish, and
+the objective would quietly revert to expected-loss minimisation — which
+[`framework.md`](framework.md) §3 rejects. That gap is the dynamic analogue of the Froot-Stein
 premium: spend that pays for itself only because the firm has a franchise worth
 surviving to keep.
 
@@ -328,8 +359,8 @@ The high end is the "never binds" trap of
 survival looks excellent and the model is silent on the only question it was
 built to answer.
 
-Persistence is worth **+446% of firm value** (9.61 → 52.43) and takes survival
-from 28% to 91%. The firm also spends **more** per quarter, not less
+Persistence is worth **+359% of firm value** (11.67 → 53.55) and takes survival
+from 25% to 90%. The firm also spends **more** per quarter, not less
 (0.56 → 2.52): a unit of spend now protects every later quarter, so more of it
 is worth buying. That is the intertemporal content the static model could not
 express — it is not the one-period answer repeated.

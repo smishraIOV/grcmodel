@@ -62,6 +62,21 @@ class StandardDynamics:
     hazard: HazardParams | None = None
     differentiable: bool = True
 
+    def failure_value(self, equity: torch.Tensor) -> torch.Tensor:
+        """What is recovered if the firm fails this period.
+
+        A fraction of whatever positive equity remains, floored at zero by
+        limited liability. GRC is absent by construction: it acts on how often
+        failure happens, never on what failure costs.
+
+        The floor is also where the gradient stops, which is worth knowing
+        rather than discovering. Below zero equity this term is flat, so the
+        only thing still pushing a path away from deep insolvency is the
+        survival probability -- which is exactly the job the hazard was brought
+        forward to do.
+        """
+        return self.firm.failure_recovery * torch.clamp(equity, min=0.0)
+
     def log_survival(
         self, state: FirmState, equity: torch.Tensor, stock: torch.Tensor
     ) -> torch.Tensor:
@@ -210,6 +225,7 @@ class StandardDynamics:
             reward=torch.zeros_like(equity),
             weight=self.path_weight(stock, shock),
             log_survival=self.log_survival(state, equity, stock),
+            failure_value=self.failure_value(equity),
             terminated=state.alive & ~survives,
             info={
                 "loss": loss,

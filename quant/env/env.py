@@ -76,9 +76,6 @@ class EnvConfig:
     equity_floor: float = -float("inf")
     hazard: HazardParams | None = None
     terminal: TerminalValue = field(default_factory=LiquidationValue)
-    # What a path that crossed the barrier is worth. Distinct from `terminal`
-    # because a firm that died does not choose how it is valued.
-    failure_value: float = 0.0
 
     @classmethod
     def quarterly(cls, horizon: int, firm: FirmParams | None = None, **overrides) -> "EnvConfig":
@@ -173,7 +170,7 @@ class FirmEnv:
         self, policy: Policy, crn: CommonRandomNumbers, differentiable: bool = True
     ) -> Trajectory:
         state = self.reset(crn.batch)
-        states, rewards, weights, survivals, infos = [state], [], [], [], []
+        states, rewards, weights, survivals, recoveries, infos = [state], [], [], [], [], []
 
         context = contextlib.nullcontext() if differentiable else torch.no_grad()
         with context:
@@ -186,6 +183,7 @@ class FirmEnv:
                 rewards.append(result.reward)
                 weights.append(result.weight)
                 survivals.append(result.log_survival)
+                recoveries.append(result.failure_value)
                 infos.append(result.info)
 
             terminal = self.terminal_value(state)
@@ -195,6 +193,7 @@ class FirmEnv:
             rewards=rewards,
             weights=weights,
             log_survivals=survivals,
+            failure_values=recoveries,
             terminal_value=terminal,
             infos=infos,
         )
@@ -203,7 +202,7 @@ class FirmEnv:
         """Probability-weighted expected discounted return. Differentiable."""
         weights = trajectory.path_weights()
         return self.config.profile.sum(
-            trajectory.path_values(self.config.discount, self.config.failure_value) * weights
+            trajectory.path_values(self.config.discount) * weights
         )
 
 
@@ -223,6 +222,11 @@ class EvalResult:
     constrained_fraction: float
     survival_rate: float
     effective_sample_size: float
+    # (V - Lambda) / V at the opening state: the share of firm value that is
+    # going-concern rather than liquidation. If this is near zero, death is
+    # costless and there is no survival motive left to model -- the objective
+    # has quietly become expected-loss minimization again.
+    going_concern_share: float
 
     @property
     def total_grc(self) -> float:
@@ -269,6 +273,9 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         # never graded on. Unweighted, that read as an end stock of 9.8 in a
         # configuration where the stock cannot exceed one quarter's spend.
         survives = profile.sum(survival[-1] * weights)
+        opening = trajectory.states[0]
+        liquidation = env.config.firm.failure_recovery * torch.clamp(opening.equity, min=0.0)
+        liquidation_value = profile.sum(liquidation * weights)
         final = (survival[-1] * weights).unsqueeze(-1)
         stock = profile.sum(trajectory.states[-1].grc_stock * final, dim=0) / survives
 
@@ -279,4 +286,5 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         constrained_fraction=constrained.item(),
         survival_rate=survives.item(),
         effective_sample_size=trajectory.effective_sample_size(),
+        going_concern_share=(1.0 - liquidation_value / value).item(),
     )

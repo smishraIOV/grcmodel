@@ -71,12 +71,39 @@ def survival_channel(env, naive_env, crn, steps: int, quarters: int) -> None:
     )
 
 
+def recovery_sweep(sampler, crn, steps: int, quarters: int) -> None:
+    """What the firm does as failure becomes less destructive.
+
+    The cleanest comparative static the survival channel produces, and the one
+    an executive can argue with: the less a failure destroys, the less a
+    programme to avoid it is worth. GRC spend here is bought entirely by the
+    franchise at risk, since recovery is the part of firm value that survives
+    failure.
+    """
+    print("\nHow much of the firm survives failure, and what that does to the budget")
+    header = f"  {'recovery':>9} | {'spend/qtr':>10} | {'annual death':>13} | {'value':>8} | {'going-concern':>14}"
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+    for recovery in (0.0, 0.4, 0.8):
+        firm = replace(DEFAULTS.firm, failure_recovery=recovery)
+        env = FirmEnv(EnvConfig.quarterly(quarters, firm=firm), sampler)
+        r = optimize_constant(env, crn, n_steps=steps)[1]
+        print(
+            f"  {recovery:>9.1f} | {r.total_grc:>10.4f} | {annual_death(r.survival_rate, quarters):>12.2%} | "
+            f"{r.value:>8.3f} | {r.going_concern_share:>14.3f}"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--profile", default=DEFAULT_PROFILE.name, choices=sorted(PROFILES))
     parser.add_argument("--quarters", type=int, default=8)
     parser.add_argument("--paths", type=int, default=2048)
     parser.add_argument("--steps", type=int, default=3000)
+    parser.add_argument(
+        "--recovery-sweep", action="store_true",
+        help="also sweep how much of the firm survives failure (slower)",
+    )
     args = parser.parse_args()
 
     profile = get_profile(args.profile)
@@ -131,6 +158,9 @@ def main() -> None:
         sampler,
     )
     survival_channel(env, naive_env, crn, args.steps, args.quarters)
+
+    if args.recovery_sweep:
+        recovery_sweep(sampler, crn, args.steps, args.quarters)
 
     flow, stock = summary[1.0], summary[firm.grc_depreciation()]
     print(
