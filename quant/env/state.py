@@ -46,7 +46,7 @@ class FirmState:
 
         Where a truncated-BPTT window begins: the learner carries the state
         forward as a *value* but not as a path the gradient can flow back
-        along (quant/solvers/svg.py).
+        along (`quant/solvers/svg.py`, on the `svg-critic` branch).
         """
         return replace(
             self,

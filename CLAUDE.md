@@ -16,9 +16,15 @@ uv run python -m quant.threshold              # break-even analysis
 uv run python scripts/run_dynamic_model.py    # multi-period, GRC as a stock
 uv run python scripts/run_breakevens.py       # the decision-facing break-evens
 uv run python scripts/run_seed_study.py       # solver comparison across seeds, out of sample
-uv run python scripts/compare_learners.py     # full BPTT vs truncated BPTT with a critic
 uv run python scripts/bench_profiles.py       # where the accelerator starts paying
 ```
+
+The rejected truncated-BPTT-with-a-critic experiment is not on this branch.
+It lives on `svg-critic` (`quant/solvers/svg.py`, `tests/test_svg.py`,
+`scripts/compare_learners.py`), because a solver that lost at every horizon
+tested should not be one of the things a reader has to rule out when a number
+moves. The verdict and the numbers behind it stay in `docs/quant-model.md`
+section 9 -- the finding is worth keeping even though the code is not.
 
 Every entry point takes `--profile {reference,cpu-fast,fast}` and prints the
 profile, torch version and commit it ran under.

@@ -319,6 +319,8 @@ results, `static-model-debug-notes.md` records the reasoning behind design
 choices and the traps found along the way, `framework.md` covers the conceptual
 structure.
 
-**Code state:** all work sits on branches; `main` is untouched. The main line is
-`weekly-decisions`; the rejected truncated-backpropagation experiment is isolated
-in three files and can be separated cleanly.
+**Code state:** everything described above is on `main`. The rejected
+truncated-backpropagation experiment is not: it is kept on the `svg-critic`
+branch, so a reader chasing a number that moved does not have to rule out a
+solver that lost at every horizon tested. Its verdict stays in the
+documentation.

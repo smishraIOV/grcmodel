@@ -258,7 +258,7 @@ class FirmEnv:
         environment's terminal value. A truncated-BPTT learner passes a learned
         critic instead, so a window that ends mid-episode is valued by an
         estimate of what follows rather than by liquidation
-        (quant/solvers/svg.py).
+        (`quant/solvers/svg.py`, on the `svg-critic` branch).
 
         `start` indexes the random stream, not the state. A window beginning at
         quarter four must consume quarter four's shocks, or the segments of one

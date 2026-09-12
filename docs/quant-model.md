@@ -196,7 +196,7 @@ exactly the one-period problem that benchmark solves.
 | — | Payout control: dividends out of profit, keeping capital scarce | **built** — `FirmAction.payout` |
 | 4 | Grid value iteration on a reduced config, and the agreement metric | **built** — `quant/solvers/gridvi.py` |
 | 5 | The learner: horizon scaling, multi-seed, out-of-sample | **built** — `quant/studies/seeds.py`; verdict in §6 |
-| 5b | Truncated BPTT with a critic, and a head-to-head against full BPTT | **built** — `quant/solvers/svg.py`; verdict in §6 |
+| 5b | Truncated BPTT with a critic, and a head-to-head against full BPTT | **built, then rejected** — on branch `svg-critic`, not on `main`; verdict in §6 |
 
 Survival moved ahead of the grid solver after stage 2: the hard insolvency
 barrier turned out to be required for the multi-period problem to be finite at
@@ -835,8 +835,9 @@ result.)
 
 ### Truncated BPTT with a critic, measured against full BPTT
 
-`uv run python scripts/compare_learners.py`. Stage 5 declined to build SVG(K)
-on the evidence available then; it is now built (`quant/solvers/svg.py`) so the
+`scripts/compare_learners.py` **on the `svg-critic` branch**, where the three
+files this experiment needs are kept; `main` does not carry them. Stage 5
+declined to build SVG(K) on the evidence available then; it was then built so the
 choice rests on a head-to-head rather than on either argument.
 
 **K is a dial, not a different algorithm.** At `K = horizon` the windowed
