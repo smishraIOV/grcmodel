@@ -28,6 +28,7 @@ unimplemented rows are the honest gap between this section and the code.
 |---|---|---|
 | GRC investment, split by risk family | $g_c,\ g_o,\ g_k$ | **yes** — `FirmAction.grc` |
 | Orderly wind-down | — | **yes** — `FirmAction.abandon` |
+| Payout / retention | — | **yes** — `FirmAction.payout` |
 | Capital allocation to investment, state-contingent | $I$ | **yes** — per-path, chosen after the shock |
 | Target liquidity buffer | — | no |
 | Deposit pricing / redemption-term incentives | — | no |
@@ -191,7 +192,7 @@ exactly the one-period problem that benchmark solves.
 | 3d | Abandonment / orderly wind-down option | **built** — out of the money, see below |
 | 3e | Diagnostic bundle and the break-even outputs | not started |
 | — | Funding constraint: the balance sheet gates investment | **built** — live but weak, see §6 |
-| — | **Payout policy** — equity accumulates 16 → 67 over eight quarters with nothing distributed, which is what neutralizes the funding constraint and the exit option | open, and now the most consequential |
+| — | Payout control: dividends out of profit, keeping capital scarce | **built** — `FirmAction.payout` |
 | 4 | Grid / fitted value iteration on a reduced config | not started |
 | 5 | The learner (truncated-BPTT actor-critic) | not started |
 
@@ -298,12 +299,11 @@ one period of protection.
 
 | GRC decay | solver | value | spend/qtr | end stock | survives |
 |---|---|---|---|---|---|
-| 1.000 | constant | 11.2752 | 0.6628 | 0.6628 | 24.4% |
-| 1.000 | neural | 11.6684 | 0.7830 | 0.5991 | 25.2% |
-| 1.000 | PI bound | 20.7015 | 1.2681 | 1.7450 | 37.8% |
-| 0.069 | constant | 50.4143 | 0.8820 | 14.3018 | 85.4% |
-| 0.069 | neural | 53.5495 | 1.3189 | 15.1231 | 89.9% |
-| 0.069 | PI bound | 58.7251 | 0.9513 | 13.6174 | 90.1% |
+| 1.000 | neural | 15.1140 | 0.7612 | 0.7177 | 11.4% |
+| 1.000 | PI bound | 29.2998 | 1.6945 | 1.0891 | 20.1% |
+| 0.069 | constant | 53.0721 | 0.8429 | 14.0555 | 76.6% |
+| 0.069 | neural | 55.5765 | 1.0114 | 13.4570 | 80.0% |
+| 0.069 | PI bound | 62.0605 | 0.8251 | 13.0716 | 88.2% |
 
 (The $\delta = 1$ rows start from the same opening stock but cannot keep it, so
 they describe a firm whose control function evaporates each quarter.)
@@ -316,12 +316,12 @@ meaningless, since a world without those channels is simply less dangerous.
 
 | budget set for | spend/qtr | annual death | value |
 |---|---|---|---|
-| expected loss only | 0.5866 | 8.59% | 50.0932 |
-| loss **and** survival | 0.8820 | 7.58% | 50.4143 |
+| expected loss only | 0.6619 | 13.03% | 52.9068 |
+| loss **and** survival | 0.8429 | 12.49% | 53.0721 |
 
 Budgeting as though GRC only bought smaller losses understates the right spend
-by a third, costs 0.6% of firm value, and adds 1.0 percentage point to the
-annual failure probability.
+by 27%, costs 0.3% of firm value, and adds 0.54 percentage points to the annual
+failure probability.
 
 ### What failure costs, and what GRC cannot do about it
 
@@ -394,31 +394,41 @@ That is the same root cause as the convex financing cost going inert: with no
 funding constraint, the balance sheet does not gate operations, and equity
 matters only through the hazard.
 
-### The funding constraint, and why it is still not enough
+### Retaining earnings versus distributing them
 
-A funding constraint is now in place (§3) and it is correct — a firm that wants
-500 gets what it can raise, and the paths where it binds are the ones that took
-the larger losses. But it is **weak, and it decays**:
+A funding constraint alone was not enough. Retaining everything, equity grew
+from 16 to 67 over eight quarters, funding capacity grew with it, and a
+constraint that bound 2.4% of the time in the first quarter bound 0.1% by the
+eighth. The balance sheet was decorative again, one step removed.
 
-| quarter | median equity | funding binds |
-|---|---|---|
-| 1 | 23.22 | 2.4% |
-| 4 | 42.73 | 1.7% |
-| 8 | 66.76 | 0.1% |
+The firm now chooses what to distribute. Dividends come out of the quarter's
+profit, never the capital base — the ordinary accounting constraint, needing no
+parameter, and without it the control is simply a way to strip the firm:
+distributing all equity returns it at face value, which beats the 0.7 a
+wind-down recovers, so the exit option is dominated and the balance sheet can
+be emptied in a quarter. Measured, the thin-franchise firm's exit rate fell
+from 1.000 to 0.0005 before this constraint was added.
 
-Over the whole horizon it binds on 1.1% of live probability mass and moves firm
-value by 0.10%. The reason is visible in the first column: **equity grows from
-16 to 67 in eight quarters because nothing is ever distributed.** Funding
-capacity grows with it, the opportunity does not, and the constraint the firm
-starts out facing has stopped mattering by the third quarter.
+| payout | value | spend/qtr | underinvestment | annual death | end equity | dividend share |
+|---|---|---|---|---|---|---|
+| retain all | 50.784 | 0.9025 | 0.011 | 7.17% | 66.26 | 0.000 |
+| optimized | 53.072 | 0.8429 | 0.026 | 12.49% | 21.52 | 0.719 |
 
-So the open item moves rather than closes. A payout policy — the firm choosing
-what to distribute against what to retain — is what would keep the balance
-sheet scarce, and it would make three other things work at once: the funding
-constraint would keep binding, the wind-down option would have something to be
-in the money against, and per-period rewards would become non-zero for the
-first time, which is what would finally make the discount rate load-bearing
-rather than a scalar multiplier. That gap is the dynamic analogue of the Froot-Stein
+The firm distributes **89% of each quarter's profit**, holding capital roughly
+flat (16 → 21.5 rather than 16 → 66) and keeping the funding constraint binding
+throughout rather than letting it decay. It accepts a higher failure rate for
+it, which is the trade-off being made rather than a defect: capital held is
+capital not distributed.
+
+**This is where the discount rate starts to matter.** Every reward was zero
+until now — all value was terminal, so $\beta$ was a scalar multiplier that
+could not change any decision. A dividend is worth its face value today against
+capital that pays off later in survival and funding capacity, so a more
+impatient firm distributes more. That is asserted rather than assumed.
+
+Seven-tenths of firm value is now cash actually handed over rather than capital
+still being held when the horizon arrives, which is what makes the going-concern
+story a claim about distributions rather than about a terminal balance sheet. That gap is the dynamic analogue of the Froot-Stein
 premium: spend that pays for itself only because the firm has a franchise worth
 surviving to keep.
 
@@ -444,8 +454,8 @@ The high end is the "never binds" trap of
 survival looks excellent and the model is silent on the only question it was
 built to answer.
 
-Persistence is worth **+359% of firm value** (11.67 → 53.55) and takes survival
-from 25% to 90%. The firm also spends **more** per quarter, not less
+Persistence is worth **+268% of firm value** (15.11 → 55.58) and takes survival
+from 11% to 80%. The firm also spends **more** per quarter, not less
 (0.56 → 2.52): a unit of spend now protects every later quarter, so more of it
 is worth buying. That is the intertemporal content the static model could not
 express — it is not the one-period answer repeated.

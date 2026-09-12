@@ -94,6 +94,31 @@ def recovery_sweep(sampler, crn, steps: int, quarters: int) -> None:
         )
 
 
+def balance_sheet(sampler, crn, steps: int, quarters: int) -> None:
+    """What distributing earnings does to a firm whose funding is scarce.
+
+    Retaining everything, capital compounds until the funding constraint stops
+    mattering and the balance sheet is decorative. Distributing holds it flat,
+    which keeps funding scarce, keeps the underinvestment channel alive, and
+    is the first thing in this model to make the discount rate matter -- until
+    there were dividends, every reward was zero and beta was a scalar
+    multiplier on a terminal value.
+    """
+    print("\nRetaining earnings versus distributing them")
+    header = (f"  {'payout':>10} | {'value':>8} | {'spend/qtr':>10} | {'underinvest':>12} | "
+              f"{'annual death':>13} | {'end equity':>11} | {'div share':>10}")
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+    for label, allow in (("retain all", False), ("optimized", True)):
+        env = FirmEnv(EnvConfig.quarterly(quarters, allow_payout=allow), sampler)
+        policy, r = optimize_constant(env, crn, n_steps=steps)
+        final = env.rollout(policy, crn, False).states[-1].equity.median().item()
+        print(
+            f"  {label:>10} | {r.value:>8.3f} | {r.total_grc:>10.4f} | {r.underinvestment_fraction:>12.3f} | "
+            f"{annual_death(r.survival_rate, quarters):>12.2%} | {final:>11.2f} | {r.payout_share:>10.3f}"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--profile", default=DEFAULT_PROFILE.name, choices=sorted(PROFILES))
@@ -158,6 +183,8 @@ def main() -> None:
         sampler,
     )
     survival_channel(env, naive_env, crn, args.steps, args.quarters)
+
+    balance_sheet(sampler, crn, args.steps, args.quarters)
 
     if args.recovery_sweep:
         recovery_sweep(sampler, crn, args.steps, args.quarters)

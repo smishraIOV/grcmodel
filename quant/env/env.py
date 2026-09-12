@@ -51,6 +51,7 @@ class ConstantPolicy:
     grc: tuple[float, float, float]
     investment: float
     abandon: float = 0.0
+    payout: float = 0.0
     profile: NumericsProfile = DEFAULT_PROFILE
 
     def __call__(self, state: FirmState) -> FirmAction:
@@ -59,6 +60,7 @@ class ConstantPolicy:
             grc=self.profile.tensor(list(self.grc)).expand(batch, N_FAMILIES),
             investment=self.profile.full((batch,), self.investment),
             abandon=self.profile.full((batch,), self.abandon),
+            payout=self.profile.full((batch,), self.payout),
         )
 
 
@@ -79,6 +81,7 @@ class EnvConfig:
     hazard: HazardParams | None = None
     allow_abandonment: bool = False
     funding_constrained: bool = False
+    allow_payout: bool = False
     terminal: TerminalValue = field(default_factory=LiquidationValue)
 
     @classmethod
@@ -116,6 +119,7 @@ class EnvConfig:
             hazard=DEFAULTS.hazard,
             allow_abandonment=True,
             funding_constrained=True,
+            allow_payout=True,
         )
         settings.update(overrides)  # an explicit override wins over the derived rate
         return cls(**settings)
@@ -137,6 +141,7 @@ class FirmEnv:
             hazard=config.hazard,
             allow_abandonment=config.allow_abandonment,
             funding_constrained=config.funding_constrained,
+            allow_payout=config.allow_payout,
         )
 
     def reset(self, batch: int) -> FirmState:
@@ -239,6 +244,10 @@ class EvalResult:
     # the firm raised externally at all and went inert once the convex premium
     # stopped binding.
     underinvestment_fraction: float
+    # Total discounted dividends per unit of firm value: how much of what the
+    # firm is worth is cash it actually hands over, rather than capital it is
+    # still holding when the horizon arrives.
+    payout_share: float
     survival_rate: float
     # Probability the firm chooses to wind down at some point over the horizon,
     # as opposed to failing or reaching the end still operating.
@@ -299,6 +308,12 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         # never graded on. Unweighted, that read as an end stock of 9.8 in a
         # configuration where the stock cannot exceed one quarter's spend.
         survives = profile.sum(survival[-1] * weights)
+        discount = env.config.discount
+        dividends = sum(
+            (discount ** (step + 1))
+            * profile.sum(survival[step + 1] * info["dividend"] * weights)
+            for step, info in enumerate(trajectory.infos)
+        )
         exited = sum(
             profile.sum(survival[step] * trajectory.abandon_probs[step] * weights)
             for step in range(len(trajectory.infos))
@@ -315,6 +330,7 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         grc_stock=(stock[0].item(), stock[1].item(), stock[2].item()),
         constrained_fraction=constrained.item(),
         underinvestment_fraction=underinvested.item(),
+        payout_share=(dividends / value).item(),
         survival_rate=survives.item(),
         orderly_exit_rate=exited.item(),
         effective_sample_size=trajectory.effective_sample_size(),

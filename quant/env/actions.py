@@ -18,7 +18,7 @@ import torch
 
 from quant.env.state import N_FAMILIES
 
-N_RAW = N_FAMILIES + 2  # three GRC budgets, investment, and the exit decision
+N_RAW = N_FAMILIES + 3  # GRC budgets, investment, the exit decision, the payout
 
 # Raw initialization for the exit decision. Zero would mean sigmoid(0) = 0.5 --
 # a firm that starts out planning to wind down with even odds every quarter,
@@ -26,6 +26,12 @@ N_RAW = N_FAMILIES + 2  # three GRC budgets, investment, and the exit decision
 # gives about 1.8%: the option is present and has a gradient, but the firm
 # starts out intending to stay in business.
 ABANDON_INIT = -4.0
+
+# Payout starts low for the same reason: sigmoid(-2) is about 12%, so the firm
+# begins retaining most of what it earns and has to discover that distributing
+# is worth more. Starting at half would have it giving away capital it needs to
+# fund investment before it has learned that funding is scarce.
+PAYOUT_INIT = -2.0
 
 
 @dataclass(frozen=True)
@@ -41,6 +47,7 @@ class FirmAction:
     grc: torch.Tensor         # (B, 3) spend by family
     investment: torch.Tensor  # (B,)
     abandon: torch.Tensor     # (B,) in [0, 1], the probability of exiting now
+    payout: torch.Tensor      # (B,) in [0, 1], share of the quarter's equity distributed
 
     def total_grc(self) -> torch.Tensor:
         return self.grc.sum(dim=-1)
@@ -53,7 +60,7 @@ class ActionSpec:
 
     @staticmethod
     def from_raw(raw: torch.Tensor) -> FirmAction:
-        """`raw` is (B, 5): three budgets, investment, then the exit decision.
+        """`raw` is (B, 6): three budgets, investment, the exit decision, the payout.
 
         Spend and investment go through softplus, as everywhere. The exit
         decision goes through a sigmoid and is treated as a *probability* of
@@ -72,4 +79,5 @@ class ActionSpec:
             grc=positive[..., :N_FAMILIES],
             investment=positive[..., N_FAMILIES],
             abandon=torch.sigmoid(raw[..., N_FAMILIES + 1]),
+            payout=torch.sigmoid(raw[..., N_FAMILIES + 2]),
         )

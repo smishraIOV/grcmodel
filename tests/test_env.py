@@ -69,6 +69,7 @@ class FixedAction:
             grc=self.grc.expand(state.batch(), 3),
             investment=self.investment,
             abandon=torch.zeros_like(self.investment),
+            payout=torch.zeros_like(self.investment),
         )
 
 
@@ -128,9 +129,10 @@ def test_accounting_identity_holds_elementwise():
             start.equity
             - info["grc_spend"]
             - info["loss"]
-            - investment
+            - info["investment"]
             + info["production"]
             - info["premium"]
+            - info["dividend"]
         )
         assert torch.allclose(result.state.equity, expected, atol=1e-10, rtol=0.0)
 
@@ -868,7 +870,7 @@ def test_the_relaxed_exit_decision_lands_on_a_corner():
     policy, _ = perfect_information_bound(
         env, CommonRandomNumbers(0, 4, 256, REFERENCE), n_steps=3000
     )
-    exit_prob = torch.sigmoid(policy.raw_free[..., -1]).detach()
+    exit_prob = torch.sigmoid(policy.raw_free[..., -2]).detach()  # -1 is now the payout
     interior = ((exit_prob > 0.02) & (exit_prob < 0.98)).double().mean().item()
     assert interior < 0.25, f"{interior:.1%} of exit decisions are undecided"
 
@@ -955,3 +957,73 @@ def test_a_bad_quarter_forces_underinvestment():
     assert binds.any() and not binds.all(), "should bind in the tail, not everywhere"
     # The paths where it binds are the ones that took the larger losses.
     assert info["loss"][binds].mean() > info["loss"][~binds].mean()
+
+
+# -- Payout: the first genuine intertemporal trade-off ---------------------
+
+
+def test_dividends_come_out_of_profit_not_capital():
+    """Without this the control is a way to strip the firm. Distributing all
+    equity returns it at face value, which strictly beats the 0.7 an orderly
+    wind-down recovers -- so the exit option would be dominated and the balance
+    sheet could be emptied in a quarter. Measured: the thin-franchise firm's
+    exit rate fell from 1.000 to 0.0005 when payout was unlimited.
+    """
+    env = FirmEnv(EnvConfig.quarterly(1), MonteCarloSampler(DEFAULTS.sampler))
+    greedy = ConstantPolicy(grc=(0.3, 0.3, 0.3), investment=11.0, payout=1.0, profile=REFERENCE)
+    trajectory = env.rollout(greedy, CommonRandomNumbers(0, 1, 1024, REFERENCE), False)
+    info, start = trajectory.infos[0], trajectory.states[0]
+
+    profit = trajectory.states[1].equity + info["dividend"] - start.equity
+    assert (info["dividend"] <= torch.clamp(profit, min=0.0) + 1e-9).all()
+    # A loss-making quarter distributes nothing, however high the fraction.
+    assert (info["dividend"][profit <= 0.0] == 0.0).all()
+
+
+def test_payout_keeps_the_balance_sheet_scarce():
+    """The point of the control, and the reason the funding constraint needed it.
+
+    Retaining everything, equity grows 16 -> 67 over eight quarters, funding
+    capacity grows with it, and the constraint that binds 2.4% of the time in
+    the first quarter binds 0.1% by the eighth. Distributing holds capital
+    roughly flat and keeps it binding throughout.
+    """
+    sampler = MonteCarloSampler(DEFAULTS.sampler)
+    crn = CommonRandomNumbers(0, 8, 1024, REFERENCE)
+
+    results = {}
+    for allow in (False, True):
+        env = FirmEnv(EnvConfig.quarterly(8, allow_payout=allow), sampler)
+        policy, result = optimize_constant(env, crn, n_steps=2500)
+        final = env.rollout(policy, crn, False).states[-1].equity.median().item()
+        results[allow] = (result, final)
+
+    (retained, grown), (distributed, held) = results[False], results[True]
+    assert held < 0.5 * grown, f"capital still ballooned: {grown:.1f} -> {held:.1f}"
+    assert distributed.underinvestment_fraction > retained.underinvestment_fraction
+    assert distributed.payout_share > 0.5, "the firm should be handing over most of its value"
+    assert distributed.value > retained.value, "hoarding capital that earns nothing should lose"
+
+
+def test_impatience_raises_the_payout():
+    """Discounting is finally load-bearing.
+
+    Every reward was zero until this bite, so the discount rate was a scalar
+    multiplier on a terminal value and could not change any decision. Now a
+    dividend is worth its face value today against capital that pays off later
+    in survival and funding capacity, so a more impatient firm should
+    distribute more. If this ever stops holding, rewards have gone back to
+    being terminal-only.
+    """
+    sampler = MonteCarloSampler(DEFAULTS.sampler)
+    crn = CommonRandomNumbers(0, 8, 1024, REFERENCE)
+
+    fractions = []
+    for discount in (0.995, 0.90):
+        env = FirmEnv(EnvConfig.quarterly(8, discount=discount), sampler)
+        policy, _ = optimize_constant(env, crn, n_steps=2500)
+        fractions.append(torch.sigmoid(policy.raw[-1]).item())
+
+    assert fractions[1] > fractions[0], (
+        f"impatience did not raise the payout: {fractions[0]:.3f} -> {fractions[1]:.3f}"
+    )

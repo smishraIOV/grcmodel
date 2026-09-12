@@ -149,7 +149,11 @@ class Trajectory:
             # winding down in quarter one and failing in quarter eight are not
             # worth the same thing.
             total = total + (discount**step) * entering * abandon * self.orderly_values[step]
-            total = total + (discount**step) * operating * reward
+            # Dividends are paid at the end of the quarter, out of what it
+            # left, so only the mass that operated *and* survived collects
+            # them -- and they are discounted to that date, like the recoveries
+            # below rather than like the exit above.
+            total = total + (discount ** (step + 1)) * active[step + 1] * reward
 
             failed = operating - active[step + 1]
             total = total + (discount ** (step + 1)) * failed * self.failure_values[step]

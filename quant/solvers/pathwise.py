@@ -25,7 +25,7 @@ already knows the batch. An honest policy takes a state and returns an action.
 
 import torch
 
-from quant.env.actions import ABANDON_INIT, N_RAW, ActionSpec, FirmAction
+from quant.env.actions import ABANDON_INIT, N_RAW, PAYOUT_INIT, ActionSpec, FirmAction
 from quant.env.env import EvalResult, FirmEnv, evaluate
 from quant.env.shocks import CommonRandomNumbers
 from quant.env.state import N_FAMILIES, FirmState
@@ -64,7 +64,7 @@ class PerPathPolicy:
         # Investment and the exit decision: both free per path, since both are
         # what the clairvoyance is being measured on.
         free = profile.zeros(horizon, batch, N_RAW - N_FAMILIES)
-        free[..., -1] = ABANDON_INIT
+        free[..., -2], free[..., -1] = ABANDON_INIT, PAYOUT_INIT
         self.raw_free = free.requires_grad_(True)
 
     def parameters(self) -> list[torch.Tensor]:
@@ -102,7 +102,7 @@ class RawConstantPolicy:
 
     def __init__(self, profile):
         raw = profile.zeros(N_RAW)
-        raw[-1] = ABANDON_INIT
+        raw[-2], raw[-1] = ABANDON_INIT, PAYOUT_INIT
         self.raw = raw.requires_grad_(True)
 
     def parameters(self) -> list[torch.Tensor]:

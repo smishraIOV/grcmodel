@@ -66,6 +66,9 @@ class StandardDynamics:
     # Off by default: the reduction config lets the firm fund any investment at
     # a convex price, which is what the static model assumed.
     funding_constrained: bool = False
+    # Off by default: the reduction retains everything and is valued at the
+    # horizon, which is what every earlier stage assumed.
+    allow_payout: bool = False
     differentiable: bool = True
 
     def orderly_value(self, equity: torch.Tensor) -> torch.Tensor:
@@ -238,7 +241,30 @@ class StandardDynamics:
             investment, self.firm.production_scale, self.firm.production_curvature
         )
 
-        equity = wealth - investment + produced - premium
+        gross = wealth - investment + produced - premium
+        # Distributed out of what the quarter actually left, and only if it
+        # left something. This is where the model finally has a genuine
+        # intertemporal trade-off: a dividend is worth its face value now,
+        # while capital retained is worth whatever it buys in survival and
+        # funding capacity later. Until now every reward was zero and the
+        # discount rate was a scalar multiplier on a terminal value.
+        # Out of the quarter's profit, never out of the capital base. That is
+        # the ordinary accounting constraint on dividends, it needs no
+        # parameter, and without it the control is a way to strip the firm:
+        # distributing all equity returns it at face value, which strictly
+        # beats the 0.7 an orderly wind-down recovers, so the exit option is
+        # dominated and the balance sheet can be emptied in a quarter.
+        #
+        # With it, a firm that distributes everything it earns holds its
+        # capital flat -- which is what keeps funding scarce and the
+        # constraint above binding.
+        distributable = torch.clamp(gross - state.equity, min=0.0)
+        dividend = (
+            action.payout * distributable
+            if self.allow_payout
+            else torch.zeros_like(gross)
+        )
+        equity = gross - dividend
         survives = equity >= self.equity_floor
         intensity = (
             intensity_components(
@@ -260,7 +286,7 @@ class StandardDynamics:
             # Nothing is distributed before the horizon: all value is carried
             # in equity and realized by the terminal value. Stage 2 splits out
             # a dividend once there is a discount rate to trade it off against.
-            reward=torch.zeros_like(equity),
+            reward=dividend,
             weight=self.path_weight(stock, shock),
             log_survival=self.log_survival(state, equity, stock),
             failure_value=self.failure_value(equity),
@@ -281,6 +307,7 @@ class StandardDynamics:
                 "premium": premium,
                 "production": produced,
                 "grc_spend": spend,
+                "dividend": dividend,
                 "investment": investment,
                 "funding_capacity": capacity,
                 "funding_binds": (action.investment > capacity),
