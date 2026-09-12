@@ -34,11 +34,23 @@ class FrictionlessBenchmark:
         return self.credit + self.operational + self.compliance
 
 
-def family_exposures(shock: Shock) -> dict[str, float]:
-    """Base-probability-weighted expected loss for each risk family."""
+def family_exposures(shock: Shock, book: float = 1.0) -> dict[str, float]:
+    """Base-probability-weighted expected loss for each risk family.
+
+    `book` converts the credit channel from a rate into money. Where credit loss
+    scales with what the firm lends, `shock.credit_loss` is a loss rate per unit
+    deployed, and the exposure a budget is traded against is that rate times the
+    book. The default of 1.0 leaves the oracle's four-state world untouched,
+    where credit loss is an exogenous money amount.
+
+    Getting this wrong is quiet. With the rate read as money, credit's
+    risk-neutral break-even 1/X came out at 118.3 instead of 5.0 -- off by
+    exactly the size of the book -- and simply looked like a family nothing
+    could justify protecting.
+    """
     weight = shock.base_weight / shock.base_weight.sum()
     return {
-        "credit": (weight * shock.credit_loss).sum().item(),
+        "credit": book * (weight * shock.credit_loss).sum().item(),
         "operational": (weight * shock.op_occurs * shock.op_severity).sum().item(),
         "compliance": (
             weight * shock.compliance_occurs * shock.compliance_severity

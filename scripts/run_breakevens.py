@@ -20,6 +20,7 @@ from quant.solvers.analytic import family_exposures
 from quant.numerics import DEFAULT_PROFILE, PROFILES, get_profile
 from quant.params import DEFAULTS
 from quant.studies.breakeven import (
+    solve,
     FAMILIES,
     MATERIALITY,
     alpha_breakeven,
@@ -29,7 +30,7 @@ from quant.studies.breakeven import (
     value_curvature,
 )
 
-def exposures(profile):
+def exposures(profile, book: float):
     """Base-probability-weighted expected loss per family, per quarter.
 
     Computed rather than hardcoded. They were written in as 4.0 / 3.5 / 1.5,
@@ -38,7 +39,8 @@ def exposures(profile):
     1/X was being compared against the wrong denominator entirely.
     """
     crn = CommonRandomNumbers(0, 1, 1 << 16, profile)
-    return family_exposures(MonteCarloSampler(DEFAULTS.sampler)(crn.at(0), profile))
+    shock = MonteCarloSampler(DEFAULTS.sampler)(crn.at(0), profile)
+    return family_exposures(shock, book=book)
 
 
 def main() -> None:
@@ -97,7 +99,9 @@ def main() -> None:
     if args.alpha_sweep:
         print("\n5. EFFECTIVENESS BREAK-EVEN -- the original question, per family")
         print(f"   {'family':>12} | {'risk-neutral 1/X':>17} | {'with survival':>14} | {'ratio':>7}")
-        exposure = exposures(profile)
+        # Credit exposure is a rate on the book, so the comparison needs the
+        # book the firm actually funds, not a bare draw.
+        exposure = exposures(profile, book=solve(firm, crn, **kw).book)
         for family in FAMILIES:
             alpha = alpha_breakeven(firm, crn, family, low=0.0005, iterations=8, **kw)
             neutral = 1.0 / exposure[family]

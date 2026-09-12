@@ -332,6 +332,10 @@ class EvalResult:
     # the firm raised externally at all and went inert once the convex premium
     # stopped binding.
     underinvestment_fraction: float
+    # Average capital deployed per period -- the size of the balance sheet.
+    # Credit exposure is a rate on this, so anything comparing a GRC budget
+    # against credit risk needs it.
+    book: float
     # Total discounted dividends per unit of firm value: how much of what the
     # firm is worth is cash it actually hands over, rather than capital it is
     # still holding when the horizon arrives.
@@ -409,6 +413,10 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
             profile.sum(info["funding_binds"].to(profile.dtype) * mask * weights)
             for info, mask in zip(trajectory.infos, live)
         ) / live_mass
+        deployed = sum(
+            profile.sum(info["investment"] * mask * weights)
+            for info, mask in zip(trajectory.infos, live)
+        ) / live_mass
         # Survival-weighted, for the same reason the flow is: a failed path's
         # state is frozen and the policy is still evaluated on it, so its
         # action is whatever the network happens to emit in a region it is
@@ -453,6 +461,7 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         grc_stock=(stock[0].item(), stock[1].item(), stock[2].item()),
         constrained_fraction=constrained.item(),
         underinvestment_fraction=underinvested.item(),
+        book=deployed.item(),
         payout_share=(dividends / value).item(),
         survival_rate=survives.item(),
         cliff_rate=cliffs.item(),

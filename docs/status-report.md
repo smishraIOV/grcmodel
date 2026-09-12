@@ -31,7 +31,7 @@ licence to operate. The claim is not that the novel risks displace the textbook
 ones; it is that a firm of this shape faces both, and that a GRC function has to
 be budgeted against both.
 
-Everything is a PyTorch model in `quant/`, about 4,300 lines, with 90 tests.
+Everything is a PyTorch model in `quant/`, about 4,300 lines, with 93 tests.
 
 ---
 
@@ -76,6 +76,7 @@ And the world does the following to it:
 | **Funding constraint** | It cannot deploy more than it can fund, and its access to outside money shrinks exactly when it has taken losses. |
 | **Cliff events** | Rare, severe hits — a bridge drained — that leave it alive but badly impaired. GRC makes them rarer; it cannot make them smaller. |
 | **Wind-down option** | It can stop deliberately and recover more than a disorderly failure would leave. |
+| **Credit risk on the book** | Loan defaults scale with how much is lent, so expanding the balance sheet costs more risk. Reduced by credit GRC — better underwriting. |
 
 Default configuration: **quarterly decisions over two years**, a firm earning
 about 19% a year on equity of 16, facing roughly 7% annual probability of failure.
@@ -158,7 +159,26 @@ the firm uses to decide whether to continue, and once it has decided to stop
 there is nothing left to learn from. **It never beat a constant policy at any
 horizon, while costing 2.3× the compute.**
 
-### 4.5 Does a reactive policy earn its place?
+### 4.5 Credit risk that did not depend on the loan book
+
+**Found late, and the most serious error in the model.** Credit losses were
+drawn independently of how much the firm had lent — expected loss was the same
+whether it deployed 5 or 80. Expanding the balance sheet carried no additional
+risk, which inverts the central decision a bank makes.
+
+Fixed: credit loss is now a rate on what is deployed. The level is unchanged at
+the firm's current book, so only its *dependence* on the book is new.
+
+Two things about the fix are worth recording. It forced the sequence within a
+period to change — a bank sets its book from the capital it has and defaults
+arrive on what it lent, so losses can no longer be computed before the lending
+decision. And the effect on the firm's behaviour is small, because **the firm is
+constrained by funding rather than by risk**: it lends up to what it can fund
+either way, so the new marginal cost of risk never binds on the size of the
+book. The structural error is fixed; whether it changes anything depends on a
+calibration where funding is not the binding constraint.
+
+### 4.6 Does a reactive policy earn its place?
 
 A recurring question: is a policy that *reacts to circumstances* worth more than
 a fixed budget?
@@ -177,7 +197,7 @@ from +0.04% to **+9.32%**, monotonically. **A reactive policy pays when the stat
 makes large discrete jumps worth responding to, not when it merely drifts.**
 Which is exactly the case the cliff channel was added to represent.
 
-### 4.6 How often the firm decides
+### 4.7 How often the firm decides
 
 **Tried:** weekly decisions instead of quarterly, reasoning that a firm deciding
 quarterly has nothing to react to because its next decision is three months away.
@@ -282,7 +302,7 @@ every output is a threshold rather than a recommendation.
 ## 7. Running it
 
 ```bash
-uv run pytest                                  # 90 tests
+uv run pytest                                  # 93 tests
 uv run python scripts/run_dynamic_model.py     # the multi-period model
 uv run python scripts/run_breakevens.py        # the decision-facing outputs
 uv run python scripts/run_seed_study.py        # is a reactive policy worth it?

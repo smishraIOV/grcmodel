@@ -195,9 +195,19 @@ def main() -> None:
         f"({flow.value:.2f} -> {stock.value:.2f}) and takes survival from "
         f"{flow.survival_rate:.0%} to {stock.survival_rate:.0%}."
     )
+    # State the measured direction rather than assert one. This line used to
+    # read "spends MORE per quarter" unconditionally; after credit loss was made
+    # to scale with the book it printed that over a pair of numbers that had
+    # gone the other way.
+    rose = stock.total_grc > flow.total_grc
     print(
-        f"The firm also spends MORE per quarter ({flow.total_grc:.2f} -> {stock.total_grc:.2f}), "
-        "not less:\neach unit now protects every later quarter too, so more of it is worth buying."
+        f"Per-quarter spend {'rises' if rose else 'falls'} "
+        f"({flow.total_grc:.3f} -> {stock.total_grc:.3f}). "
+        + (
+            "Each unit now protects every later quarter too, so more of it is worth buying."
+            if rose
+            else "A persisting stock buys the same protection for less flow."
+        )
     )
     print(
         "\nParameters are illustrative. Read the direction and the mechanism, not the\n"
