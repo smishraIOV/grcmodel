@@ -196,6 +196,7 @@ exactly the one-period problem that benchmark solves.
 | — | Payout control: dividends out of profit, keeping capital scarce | **built** — `FirmAction.payout` |
 | 4 | Grid value iteration on a reduced config, and the agreement metric | **built** — `quant/solvers/gridvi.py` |
 | 5 | The learner: horizon scaling, multi-seed, out-of-sample | **built** — `quant/studies/seeds.py`; verdict in §6 |
+| 5b | Truncated BPTT with a critic, and a head-to-head against full BPTT | **built** — `quant/solvers/svg.py`; verdict in §6 |
 
 Survival moved ahead of the grid solver after stage 2: the hard insolvency
 barrier turned out to be required for the multi-period problem to be finite at
@@ -677,15 +678,61 @@ thirty-two; the thirty-two-quarter advantage has gone with the recalibration.
 A learner is a means, not a deliverable, and at every horizon currently
 trustworthy the simplest policy in the ladder is not measurably beaten.
 
-**Truncated backpropagation is still not built, and the evidence for that is
-now weaker than it was.** At the old magnitudes full BPTT was demonstrably
-stable to thirty-two quarters, with the neural edge growing rather than
-degrading. That measurement no longer stands: the thirty-two-quarter case is
-degenerate for the reason above, so it tests nothing about gradient stability.
-The honest position is that the question is currently unmeasurable and should
-be re-asked once the horizon inconsistency is resolved.
+Overfitting is small and is measured rather than assumed: 0.11% to 0.12%.
 
-Overfitting is small and is measured rather than assumed: 0.11% to 0.12%. Knowing its size is
+### Truncated BPTT with a critic, measured against full BPTT
+
+`uv run python scripts/compare_learners.py`. Stage 5 declined to build SVG(K)
+on the evidence available then; it is now built (`quant/solvers/svg.py`) so the
+choice rests on a head-to-head rather than on either argument.
+
+**K is a dial, not a different algorithm.** At `K = horizon` the windowed
+objective is *bitwise* the ordinary rollout value and the critic is never
+consulted — asserted, along with the identity that the critic's regression
+target read backwards equals `path_values` read forwards. Smaller K cuts the
+gradient chain more often and leans harder on the critic.
+
+Eight quarters, trained on 512 paths, scored on 4096 held out:
+
+| solver | held-out | note |
+|---|---|---|
+| constant | 25.3969 | the floor |
+| full BPTT | 25.4064 | K = horizon, no critic |
+| SVG(K=4) | 24.9182 | |
+| SVG(K=2) | 24.1112 | |
+| SVG(K=1) | 11.1992 | collapsed to wind-down |
+
+**Truncation costs value monotonically and buys nothing.** Full BPTT is already
+stable here, so cutting the chain trades an exact gradient for a biased one
+with nothing gained in return. The shorter the window, the worse.
+
+`K=1` is the instructive failure. 11.1992 is $0.7 \times 16$: the firm winds
+down in the first quarter. Early in training the critic underestimates
+continuation, exiting looks better, and once the policy exits there is no
+continuing mass left to generate a gradient for not exiting. The critic then
+learns to predict the wind-down value very accurately — its loss falls to
+0.0003 — which is a self-fulfilling bootstrap rather than convergence.
+
+**And it does not rescue the long horizon, which was the whole case for it:**
+
+| quarters | constant | full BPTT | SVG(K=4) | SVG(K=8) |
+|---|---|---|---|---|
+| 16 | **22.03** | 11.20 | 11.20 | 11.20 |
+| 24 | 11.20 | 11.20 | 11.21 | 11.20 |
+
+At sixteen quarters both learners fall into the wind-down attractor while a
+plain constant policy, which cannot exit selectively, gets twice the value.
+That is not gradient explosion — truncation would help with that — it is an
+absorbing-action trap sitting on top of the horizon-accounting degeneracy
+above. The same pathology as the gradient desert in the perfect-information
+bound: once all the mass has left through an absorbing action, nothing remains
+to carry a gradient back toward not taking it.
+
+So the verdict stands, for a better reason than before. Truncation was declined
+on the grounds that full BPTT was stable; it is now declined on the grounds
+that it was built, measured, and made things worse. The binding problems are
+the horizon accounting and the exit trap, and neither is a gradient-length
+problem. Knowing its size is
 the only way to know it is small.
 
 ### Break-even analysis

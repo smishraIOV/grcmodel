@@ -203,13 +203,40 @@ class FirmEnv:
     def rollout(
         self, policy: Policy, crn: CommonRandomNumbers, differentiable: bool = True
     ) -> Trajectory:
-        state = self.reset(crn.batch)
+        """A full episode from the opening state to the horizon."""
+        return self.rollout_from(policy, crn, self.reset(crn.batch), differentiable=differentiable)
+
+    def rollout_from(
+        self,
+        policy: Policy,
+        crn: CommonRandomNumbers,
+        state: FirmState,
+        start: int = 0,
+        steps: int | None = None,
+        boundary: Callable[[FirmState], torch.Tensor] | None = None,
+        differentiable: bool = True,
+    ) -> Trajectory:
+        """A segment of an episode, from an arbitrary state.
+
+        `boundary` is what the segment is worth when it stops, defaulting to the
+        environment's terminal value. A truncated-BPTT learner passes a learned
+        critic instead, so a window that ends mid-episode is valued by an
+        estimate of what follows rather than by liquidation
+        (quant/solvers/svg.py).
+
+        `start` indexes the random stream, not the state. A window beginning at
+        quarter four must consume quarter four's shocks, or the segments of one
+        episode would silently replay the same scenarios.
+        """
+        steps = self.config.horizon - start if steps is None else steps
+        boundary = boundary or self.terminal_value
         states, rewards, weights, infos = [state], [], [], []
         survivals, recoveries, abandons, orderlies = [], [], [], []
 
         context = contextlib.nullcontext() if differentiable else torch.no_grad()
         with context:
-            for t in range(self.config.horizon):
+            for offset in range(steps):
+                t = start + offset
                 action = policy(state)  # state only -- see the module docstring
                 shock = self.sampler(crn.at(t), self.config.profile)
                 result = self.dynamics.step(state, action, shock)
@@ -223,7 +250,7 @@ class FirmEnv:
                 orderlies.append(result.orderly_value)
                 infos.append(result.info)
 
-            terminal = self.terminal_value(state)
+            terminal = boundary(state)
 
         return Trajectory(
             states=states,

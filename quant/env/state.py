@@ -41,6 +41,20 @@ class FirmState:
         """Next state, with `t` incremented and anything unnamed carried over."""
         return replace(self, t=self.t + 1, **changes)
 
+    def detach(self) -> "FirmState":
+        """The same state with the gradient cut.
+
+        Where a truncated-BPTT window begins: the learner carries the state
+        forward as a *value* but not as a path the gradient can flow back
+        along (quant/solvers/svg.py).
+        """
+        return replace(
+            self,
+            equity=self.equity.detach(),
+            grc_stock=self.grc_stock.detach(),
+            alive=self.alive.detach(),
+        )
+
     def freeze_dead(self, previous: "FirmState") -> "FirmState":
         """Hold every already-dead path at the value it died with.
 
