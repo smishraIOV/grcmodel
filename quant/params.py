@@ -218,6 +218,47 @@ class HazardParams:
 
 
 @dataclass(frozen=True)
+class CliffParams:
+    """A severe but survivable hit: the state worth most avoiding.
+
+    A moderate loss and outright failure both leave management with few real
+    choices -- absorb it, or it is over. The cliff is the case in between: the
+    firm is badly impaired and still alive, holding a decision about whether to
+    rebuild, run down, or wind up, with a hazard that has risen sharply and a
+    balance sheet that no longer funds its opportunity. That is where the
+    decision problem actually lives, and a model without it has no state in
+    which GRC's option value is doing anything.
+
+    GRC reduces the **frequency** and not the severity. A bridge is either
+    drained or it is not; controls make the exploit less likely, they do not
+    make it smaller. That is the opposite of the operational loss channel,
+    where controls contain an incident that happens anyway, and the two are
+    modelled separately because they are different claims.
+
+    Severity is drawn as a fraction of opening equity, so it scales with the
+    firm and stays invariant to the currency it is denominated in.
+    """
+
+    quarterly_probability: float = 0.025   # at zero operational GRC stock
+    mean_severity_fraction: float = 0.35   # of opening equity, exponential, capped at 1
+    # Temperature of the straight-through relaxation used to differentiate the
+    # occurrence probability (docs/static-model-debug-notes.md section 7).
+    #
+    # Chosen by measuring the gradient against the exact analytic mixture,
+    # which is affordable at one period. Bias in dE[loss]/dG, large-sample:
+    #
+    #     tau     1.00   0.50   0.25   0.12   0.06   0.03
+    #     ratio   3.40   1.48   1.11   1.03   1.02   1.01
+    #
+    # and the variance runs the other way -- relative standard deviation of the
+    # gradient across scenario draws at 512 paths is 0.24 at tau = 0.5 and 1.41
+    # at 0.03. 0.1 sits where the bias has flattened out and the variance has
+    # not yet taken over. The sign was never wrong at any temperature tested,
+    # which is the property that actually matters for a descent direction.
+    relaxation_temperature: float = 0.1
+
+
+@dataclass(frozen=True)
 class ModelParams:
     """Everything the static and Monte Carlo stages need, in one place."""
 
@@ -226,6 +267,7 @@ class ModelParams:
     shock: ShockParams = field(default_factory=ShockParams)
     sampler: SamplerParams = field(default_factory=SamplerParams)
     hazard: HazardParams = field(default_factory=HazardParams)
+    cliff: CliffParams = field(default_factory=CliffParams)
 
 
 DEFAULTS = ModelParams()

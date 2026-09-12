@@ -28,7 +28,7 @@ from quant.env.reward import LiquidationValue, TerminalValue
 from quant.env.shocks import CommonRandomNumbers, Shock
 from quant.env.state import N_FAMILIES, FirmState, Trajectory
 from quant.numerics import DEFAULT_PROFILE, NumericsProfile
-from quant.params import DEFAULTS, FirmParams, GrcAlphas, HazardParams
+from quant.params import DEFAULTS, CliffParams, FirmParams, GrcAlphas, HazardParams
 
 Sampler = Callable[[dict[str, torch.Tensor], NumericsProfile], Shock]
 
@@ -82,6 +82,7 @@ class EnvConfig:
     allow_abandonment: bool = False
     funding_constrained: bool = False
     allow_payout: bool = False
+    cliff: CliffParams | None = None
     terminal: TerminalValue = field(default_factory=LiquidationValue)
 
     @classmethod
@@ -120,6 +121,7 @@ class EnvConfig:
             allow_abandonment=True,
             funding_constrained=True,
             allow_payout=True,
+            cliff=DEFAULTS.cliff,
         )
         settings.update(overrides)  # an explicit override wins over the derived rate
         return cls(**settings)
@@ -142,6 +144,7 @@ class FirmEnv:
             allow_abandonment=config.allow_abandonment,
             funding_constrained=config.funding_constrained,
             allow_payout=config.allow_payout,
+            cliff=config.cliff,
         )
 
     def reset(self, batch: int) -> FirmState:
@@ -258,6 +261,8 @@ class EvalResult:
     # comparative statics stop meaning anything
     # (docs/static-model-debug-notes.md section 6).
     annual_death_probability: float
+    # Probability the firm takes at least one cliff hit over the horizon.
+    cliff_rate: float
     # Probability the firm chooses to wind down at some point over the horizon,
     # as opposed to failing or reaching the end still operating.
     orderly_exit_rate: float
@@ -326,6 +331,13 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         # configuration where the stock cannot exceed one quarter's spend.
         survives = profile.sum(survival[-1] * weights)
         discount = env.config.discount
+        # At least one cliff over the horizon, as one minus the probability
+        # of escaping every quarter.
+        cliff_free = 1.0
+        for info in trajectory.infos:
+            cliff_free = cliff_free * (1.0 - (info["cliff_loss"] > 0).to(profile.dtype))
+        cliffs = profile.sum((1.0 - cliff_free) * weights)
+
         dividends = sum(
             (discount ** (step + 1))
             * profile.sum(survival[step + 1] * info["dividend"] * weights)
@@ -358,6 +370,7 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         underinvestment_fraction=underinvested.item(),
         payout_share=(dividends / value).item(),
         survival_rate=survives.item(),
+        cliff_rate=cliffs.item(),
         annual_death_probability=1.0
         - (1.0 - failed.item())
         ** (env.config.firm.periods_per_year / env.config.horizon),

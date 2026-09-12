@@ -177,6 +177,8 @@ class GridSolver:
             compliance_occurs=self.shock.compliance_occurs.repeat(repeats),
             compliance_severity=self.shock.compliance_severity.repeat(repeats),
             base_weight=self.shock.base_weight.repeat(repeats),
+            cliff_uniform=self.shock.cliff_uniform.repeat(repeats),
+            cliff_fraction=self.shock.cliff_fraction.repeat(repeats),
         )
 
     def q_values(self, continuation, spend: float, investment: float, t: int):

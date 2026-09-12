@@ -166,76 +166,95 @@ This is also why compliance severity is set to 30 rather than something more
 dramatic: at 45 and above, every state is constrained and the model slides into the
 second degenerate regime.
 
-## 7. There is no cliff-event loss channel, and that is a modelling decision
+## 7. The cliff channel, and how a frequency is differentiated
 
-The staged path once carried an open item for "discrete cliff events": a bridge
-exploit, a depeg, a licence revocation. Half of it was built and the other half
-is deliberately not going to be.
+The staged path carried an open item for "discrete cliff events". It was once
+declined on the grounds that an event is either severe enough to be fatal — in
+which case it is already a hazard channel — or moderate, in which case it is a
+heavier tail on an existing loss channel. That reasoning was wrong, and the
+correction is worth stating because it is a claim about where a *decision*
+lives rather than about where a loss lives.
 
-The half that exists is the fatal one. Licence revocation and a run following a
-public incident are **hazard** channels (`quant/hazard.py`): GRC reduces the
-intensity, death is absorbing, and the whole thing is differentiable because
-intensities are already expectations rather than sampled events. Nothing about
-that was hard.
+A moderate hit and outright failure both leave management with very few degrees
+of freedom: absorb it, or it is over. The cliff is the case in between, and it
+is the one worth avoiding precisely *because* it does not resolve anything. The
+firm emerges alive, badly impaired, holding a real decision — rebuild, run
+down, or wind up — with a balance sheet that no longer funds its opportunity
+and a hazard that has risen sharply. A model that offers only "moderate" and
+"fatal" has no state in which GRC's option value is doing anything, because
+both of its outcomes are ones where the choice has already been made for you.
 
-The half that is not built would be a discrete loss event that does **not**
-kill the firm — large enough to matter, survivable, with GRC reducing its
-frequency rather than its severity.
+Measured, that limbo is real and it works through funding rather than through
+the loss itself: over the quarters following a strike, the share of paths that
+want to deploy more than they can fund roughly doubles against unstruck paths
+(0.33 versus 0.14 immediately, 0.78 versus 0.36 later). The cliff does not
+merely cost money, it impairs the balance sheet that gates investment.
 
-### Why it would have needed new machinery
+### GRC acts on the frequency, not the severity
 
-`torch.bernoulli(p)` has no gradient in `p`, so any channel where GRC moves a
-*frequency* hits §5's problem. The escape §5 used — likelihood-ratio
-reweighting — is a poor fit for a rare severe event: per-step weights multiply
-along a trajectory, so their variance compounds geometrically, and at a base
-rate of 0.02 with 512 paths roughly ten paths would carry the entire gradient
-signal per quarter.
+A bridge is either drained or it is not. Controls make the exploit less likely;
+they do not make it smaller. That is the opposite of the operational loss
+channel, where controls contain an incident that happens anyway, and the two
+are modelled separately because they are different claims. Modelling GRC as
+reducing both would let one $\alpha$ buy the same protection twice, with the
+second purchase free.
+
+Severity is drawn as a fraction of opening equity — exponential with mean 0.35,
+capped at one — so it scales with the firm and stays unit-invariant. It leaves
+43% of strikes above 0.3 of equity, 10% above 0.8, and only 6% total: heavy
+enough to matter, and not so heavy that the interesting middle disappears.
+
+### Differentiating an occurrence probability
+
+`torch.bernoulli(p)` has no gradient in $p$, which is §5's problem in a new
+place. The escape §5 used — likelihood-ratio reweighting — is a poor fit here:
+per-step weights multiply along a trajectory so their variance compounds, and
+at a base rate of 2.5% only a handful of paths per quarter would carry the
+entire gradient.
 
 Smoothing it away is not available either. The hazard is convex in equity, so
-$\mathbb{E}[h(E - L)] \neq h(E - \mathbb{E}[L])$: replacing a 2% chance of
-losing 40 with a certain loss of 0.8 deletes exactly the tail the model exists
-to price.
+$\mathbb{E}[h(E - L)] \neq h(E - \mathbb{E}[L])$: replacing a 2.5% chance of
+losing a third of the firm with a certain loss of 1% deletes exactly the state
+the channel exists to represent.
 
-### The three conditions, and why they do not hold together
+What is used instead is a **straight-through relaxation**. The forward pass is
+the true hard indicator, so the jump and its tail are exact; the backward pass
+differentiates $\text{sigmoid}\big((\text{logit}\,p - \text{logit}\,u)/\tau\big)$.
+The gradient is biased, but the bias is a temperature knob rather than
+something that grows with the horizon — a far better failure mode than a
+variance that compounds.
 
-A cliff loss channel earns its machinery only if an event is *all three* of:
+### The bias is measured, not assumed
 
-1. frequency-reducible by GRC,
-2. **survivable**, and
-3. severe enough that smoothing it misprices the tail.
+Against the exact analytic mixture $p(G) \times \text{severity}$, which is
+affordable at one period because the event is binary. Ratio of the relaxed
+gradient to the exact one, large sample:
 
-An event severe enough to usually kill belongs in the hazard, which is built
-and differentiable. An event moderate enough to survive comfortably is a
-heavier tail on the existing operational or compliance loss channels, which
-need no new mechanism. The channel only exists in the band between — a firm
-that takes a catastrophic hit and limps on.
+| $\tau$ | 1.00 | 0.50 | 0.25 | 0.12 | 0.06 | 0.03 |
+|---|---|---|---|---|---|---|
+| gradient ratio | 3.40 | 1.48 | 1.11 | 1.03 | 1.02 | 1.01 |
 
-**The decision is that this band is not part of the model.** For a firm of this
-shape, an event is either severe enough to be fatal or it is moderate; there is
-no limping. That is a statement about the business rather than about the
-mathematics, and it closes the item rather than deferring it again.
+The variance runs the other way. Relative standard deviation of the gradient
+across scenario draws at 512 paths is 0.24 at $\tau = 0.5$ and 1.41 at 0.03.
+The default of 0.1 sits where the bias has flattened and the variance has not
+yet taken over. **The sign was never wrong at any temperature tested**, which
+is the property that actually matters for a descent direction.
 
-### If it is ever reopened
+The analytic mixture stays useful as a permanent check rather than as an
+implementation: over $T$ periods a survivable event branches $2^T$, which is
+precisely why the *hazard* channel can be exact — one branch terminates — and a
+loss channel cannot.
 
-The analysis, so it does not have to be redone. Four estimators, ranked by how
-badly they fail rather than how well they work:
+### What it did not do
 
-- **Straight-through relaxed Bernoulli** — hard indicator forward,
-  $\text{sigmoid}((\text{logit}\,p - \text{logit}\,u)/\tau)$ backward. Pathwise,
-  so low variance; the forward pass keeps the true discrete tail; no compounding
-  in the horizon. Biased, but the bias is a temperature knob rather than
-  something that grows with $T$. The best default.
-- **Per-step score function with a baseline** — $\nabla\mathbb{E}[R] =
-  \mathbb{E}[R \sum_t \nabla \log p_t]$ sums scores instead of multiplying
-  weights, so variance grows linearly in $T$ rather than exponentially, and it
-  is unbiased. Needs a baseline to be usable, and a baseline is a critic. Note
-  that §6 of `quant-model.md` finds a critic is *not* needed for training
-  stability; this is the place it would earn its keep.
-- **Analytic mixture** — exact, zero variance, fully differentiable, but a
-  survivable event branches $2^T$. Tractable only when the event is absorbing,
-  which is precisely why the hazard channel can do it and a loss channel
-  cannot. Still useful at $T = 1$ or $2$ as an exact check on whichever
-  estimator is chosen.
-- **Likelihood-ratio reweighting** — what the compliance channel already does.
-  Adequate there because the weights stay near one; poor for a rare severe
-  event, for the reasons above.
+The wind-down option stays unexercised. A struck firm's funding is impaired but
+the production franchise is unconditional, so continuing still dominates
+winding down even from the limbo state. That is the open item recorded in
+`quant-model.md` §6 rather than anything about this channel.
+
+Worth noting for anyone extending it: strikes are rare by construction — around
+nine paths in four thousand per quarter — so a learned policy receives almost
+no gradient signal about how to behave *after* one. The limbo state is the
+hardest decision in the model and the least trained. Stratifying the proposal
+during training, and correcting by weight, is the obvious remedy and is not
+built.

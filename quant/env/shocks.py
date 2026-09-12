@@ -29,7 +29,17 @@ import torch
 from quant.numerics import NumericsProfile
 from quant.params import SamplerParams, ShockParams
 
-CHANNELS = ("credit", "op_occurs", "op_severity", "compliance_occurs")
+CHANNELS = (
+    "credit",
+    "op_occurs",
+    "op_severity",
+    "compliance_occurs",
+    # Added after the others. Because channels are seeded independently by
+    # name, adding them left every existing draw bit-identical -- which is the
+    # reason that design was chosen rather than one shared stream.
+    "cliff_occurs",
+    "cliff_severity",
+)
 
 
 @dataclass(frozen=True)
@@ -49,6 +59,13 @@ class Shock:
     compliance_severity: torch.Tensor
     base_weight: torch.Tensor          # (B,) path probability before GRC shifts it
     compliance_base_probability: float
+    # The cliff channel carries its *raw uniform*, not a drawn indicator. Its
+    # occurrence probability depends on the GRC stock, which the sampler does
+    # not know and must not: the threshold is applied in the dynamics, where
+    # the relaxation that makes it differentiable can see the control.
+    cliff_uniform: torch.Tensor
+    # Severity is GRC-independent, so it is drawn here like any other shock.
+    cliff_fraction: torch.Tensor
 
 
 class CommonRandomNumbers:
@@ -83,6 +100,19 @@ def _channel_seed(seed: int, channel: str) -> int:
     return (seed * 1_000_003 + zlib.crc32(channel.encode())) % (2**31 - 1)
 
 
+def cliff_fraction(
+    uniform: torch.Tensor, profile: NumericsProfile, mean: float = 0.35
+) -> torch.Tensor:
+    """Share of opening equity a cliff event destroys, given it happens.
+
+    Exponential with the given mean, capped at one: mostly severe, sometimes
+    total, and heavy enough in the middle that a firm often survives badly
+    impaired rather than cleanly dying. That middle is the point of the
+    channel.
+    """
+    return profile.to(torch.clamp(-mean * torch.log1p(-uniform), max=1.0))
+
+
 @dataclass(frozen=True)
 class MonteCarloSampler:
     """Exponential losses by inverse CDF, Bernoulli events by thresholding."""
@@ -107,6 +137,8 @@ class MonteCarloSampler:
             compliance_severity=profile.full((batch,), self.params.compliance_severity),
             base_weight=profile.full((batch,), 1.0 / batch),
             compliance_base_probability=self.params.compliance_probability,
+            cliff_uniform=profile.to(uniforms["cliff_occurs"]),
+            cliff_fraction=cliff_fraction(uniforms["cliff_severity"], profile),
         )
 
 
@@ -140,4 +172,9 @@ class FourStateSampler:
             compliance_severity=profile.full((4,), p.compliance_severity),
             base_weight=business_weight.repeat_interleave(2) * breach_weight.repeat(2),
             compliance_base_probability=p.compliance_probability,
+            # No cliff in the enumerated world: it exists to keep the
+            # closed-form benchmark exactly solvable, and a heavy-tailed jump
+            # is the opposite of that. A uniform of 1.0 never fires.
+            cliff_uniform=profile.full((4,), 1.0),
+            cliff_fraction=profile.full((4,), 0.0),
         )

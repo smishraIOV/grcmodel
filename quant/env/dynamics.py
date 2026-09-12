@@ -27,7 +27,7 @@ from quant.env.state import FirmState, StepResult
 from quant.frictions import exponential_mitigation, financing_cost, production
 from quant.hazard import failure_intensity, intensity_components, log_survival
 from quant.numerics import NumericsProfile
-from quant.params import FirmParams, GrcAlphas, HazardParams
+from quant.params import CliffParams, FirmParams, GrcAlphas, HazardParams
 
 
 class FirmDynamics(Protocol):
@@ -69,7 +69,51 @@ class StandardDynamics:
     # Off by default: the reduction retains everything and is valued at the
     # horizon, which is what every earlier stage assumed.
     allow_payout: bool = False
+    # None switches the cliff channel off, which is what the reduction and the
+    # closed-form benchmark run under.
+    cliff: CliffParams | None = None
     differentiable: bool = True
+
+    def cliff_loss(self, state: FirmState, stock: torch.Tensor, shock: Shock):
+        """A severe, survivable hit whose frequency GRC reduces and whose
+        severity it does not.
+
+        The occurrence probability depends on the operational GRC stock, and a
+        drawn Bernoulli has no gradient in its probability -- the problem
+        docs/static-model-debug-notes.md section 5 met for compliance. The
+        escape used there, likelihood-ratio reweighting, is a poor fit here:
+        per-step weights multiply along a trajectory so their variance
+        compounds, and at a base rate of 2.5% only a handful of paths per
+        quarter would carry the entire gradient.
+
+        This uses a straight-through relaxation instead. The forward pass is
+        the true hard indicator, so the discrete jump and its tail are exactly
+        right; the backward pass differentiates a tempered sigmoid of the same
+        threshold. The gradient is biased, but the bias is a temperature knob
+        rather than something that grows with the horizon, which is a much
+        better failure mode than a variance that compounds.
+
+        Smoothing the event away instead -- charging p(G) x severity every
+        quarter -- is not available. The hazard is convex in equity, so
+        E[h(E - L)] is not h(E - E[L]): replacing a 2.5% chance of losing a
+        third of the firm with a certain loss of 1% deletes precisely the
+        state this channel exists to represent.
+        """
+        probability = exponential_mitigation(
+            self.profile.tensor(self.cliff.quarterly_probability),
+            stock[..., 1],  # operational GRC: the crypto rails are its pillar
+            self.alphas.operational,
+        )
+        uniform = shock.cliff_uniform.clamp(1e-9, 1.0 - 1e-9)
+        occurs = (uniform < probability).to(self.profile.dtype)
+
+        relaxed = torch.sigmoid(
+            (torch.logit(probability) - torch.logit(uniform))
+            / self.cliff.relaxation_temperature
+        )
+        # Forward value is `occurs` exactly; the gradient is the relaxation's.
+        indicator = occurs + relaxed - relaxed.detach()
+        return indicator * shock.cliff_fraction * torch.clamp(state.equity, min=0.0)
 
     def orderly_value(self, equity: torch.Tensor) -> torch.Tensor:
         """What winding down deliberately recovers, evaluated on the equity the
@@ -228,6 +272,12 @@ class StandardDynamics:
         spend = action.total_grc()
         stock = self.grc_stock(state, action)
         loss = self.mitigated_loss(stock, shock)
+        cliff = (
+            self.cliff_loss(state, stock, shock)
+            if self.cliff is not None
+            else torch.zeros_like(loss)
+        )
+        loss = loss + cliff
         wealth = state.equity - spend - loss
 
         # The firm may want more than it can fund. What it deploys is the
@@ -302,6 +352,7 @@ class StandardDynamics:
             terminated=state.alive & ~survives,
             info={
                 "loss": loss,
+                "cliff_loss": cliff,
                 "wealth": wealth,
                 "external": external,
                 "premium": premium,
