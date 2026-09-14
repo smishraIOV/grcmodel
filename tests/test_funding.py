@@ -64,17 +64,22 @@ def one_step(env, policy, seed=0, batch=BATCH):
 
 
 def test_accounting_identity_carries_the_funding_cost():
-    """equity' = equity - grc - loss - investment + production - premium
-                        - interest + reserve income - dividend.
+    """equity' = equity - grc - loss - investment + production + cash raised
+                        - premium - interest + reserve income - dividend.
 
-    Elementwise, as the pre-liability identity is. The two new terms are the
-    ones most likely to be silently dropped: both are small next to everything
-    else in the expression, so a test written on the mean would not notice
-    either going missing.
+    Elementwise, as the pre-liability identity is. The funding terms are the
+    ones most likely to be silently dropped: each is small next to everything
+    else in the expression, so a test written on the mean would not notice any
+    of them going missing.
+
+    `cash raised` is the fire-sale proceeds, and it belongs here rather than
+    only in tests/test_run.py because a run fires on its own in a plain rollout
+    -- this test caught the term being absent as soon as the channel existed.
     """
     env = funded_env()
     state, result = one_step(env, Deploy(grc=0.1, investment=60.0))
     info = result.info
+    raised = info["liquidated"] * (1.0 - DEFAULTS.funding.fire_sale_haircut)
 
     expected = (
         state.equity
@@ -82,6 +87,7 @@ def test_accounting_identity_carries_the_funding_cost():
         - info["loss"]
         - info["investment"]
         + info["production"]
+        + raised
         - info["premium"]
         - info["interest"]
         + info["reserve_income"]

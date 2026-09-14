@@ -37,21 +37,31 @@ lets the caller accumulate their sum in log space:
 
     capital       rises as equity falls. GRC reaches it only indirectly, by
                   leaving more equity behind.
-    operational   an incident becomes public and depositors leave. Operational
-                  GRC reduces it directly.
+    liquidity     the firm was asked for its deposits back and could not pay.
+                  Driven by the shortfall the dynamics computes, not by a rate.
+    operational   RETIRED -- see below.
     licence       a breach escalates to revocation. Compliance GRC reduces it
                   directly.
 
-**The operational channel is still a label, and now visibly so.** It is a
-constant annual rate that GRC bends, and it is *named* after depositors
-leaving -- but until the liability stage the model had no depositors, so
-nothing about the firm's funding could make a run likelier or costlier. There
-are deposits now (quant/params.py, FundingParams), and the channel still does
-not consult them: a firm funded five-to-one on demandable money faces exactly
-the same assumed run rate as one funded entirely by its owners, which is
-plainly wrong. The stage after next replaces this rate with withdrawals the
-firm actually has to meet, so that a run is something the balance sheet
-produces rather than something the parameters assert.
+**The operational channel was a label, and it is now switched off.** It was a
+constant annual rate, *named* after depositors leaving, asserting three things
+at once: that an incident becomes public, that depositors leave, and that the
+firm therefore dies. There were no depositors in the model to leave, so the
+middle claim had no representation and the third followed from a parameter
+rather than from anything.
+
+It is replaced by two things that do the same work honestly. Depositors now
+actually leave (`FundingParams.annual_run_rate`), and the firm either meets the
+withdrawal out of reserves, or liquidates its book at a haircut to do so, or
+fails -- and only that last case kills it, through the `liquidity` channel
+above. Operational GRC still buys survival, but it buys it by making the run
+rarer rather than by being told it lowers a death rate.
+
+That change is not cosmetic and it cost the model a result. Under the asserted
+rate, operational GRC was **72% of the entire GRC budget**. Once the mechanism
+is explicit the firm has a second defence -- holding reserves -- and it prefers
+it. What the asserted rate was really pricing was the absence of a liquidity
+buffer.
 
 That split is what makes GRC buy *survival* rather than only buying smaller
 losses, and it is the difference between a programme justified by expected-loss
@@ -135,6 +145,33 @@ def grc_reduced_intensity(
     )
 
 
+def liquidity_intensity(
+    unmet_share: torch.Tensor, params: HazardParams, periods_per_year: int
+) -> torch.Tensor:
+    """Per-period hazard from having failed to pay depositors who asked.
+
+        h = (rate / periods_per_year) * unmet_share
+
+    Linear in the share, not exponential, because the quantity is already a
+    fraction in [0, 1] and the rate is calibrated at its top end: a firm that
+    met none of a withdrawal survives the quarter with probability 0.2%.
+
+    **Not an asserted rate.** `unmet_share` is computed by the dynamics from
+    what depositors demanded against what reserves and a fire sale could raise,
+    so this channel fires only when the balance sheet says it should. That is
+    the difference between this and the operational rate it partly replaces,
+    which asserted that an incident kills the firm without representing
+    anything in between.
+
+    It is deliberately *not* redundant with the capital channel. The shortfall
+    also lands on equity and is priced there, but insolvency and illiquidity are
+    different failures: a firm can be solvent and unable to pay, which is the
+    case a liquidity buffer exists for and the case a run produces.
+    """
+    rate = params.annual_liquidity_failure_rate / periods_per_year
+    return rate * torch.clamp(unmet_share, min=0.0, max=1.0)
+
+
 def intensity_components(
     equity: torch.Tensor,
     grc_stock: torch.Tensor,
@@ -142,6 +179,7 @@ def intensity_components(
     params: HazardParams,
     alphas: GrcAlphas,
     periods_per_year: int,
+    unmet_share: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """The three channels separately, for diagnostics and for the tests.
 
@@ -149,7 +187,7 @@ def intensity_components(
     are different failures with different remedies, and a single number cannot
     tell a risk owner which one is binding.
     """
-    return {
+    components = {
         "capital": capital_intensity(equity, reference_equity, params, periods_per_year),
         "operational": grc_reduced_intensity(
             params.annual_operational_rate,
@@ -164,6 +202,11 @@ def intensity_components(
             periods_per_year,
         ),
     }
+    if unmet_share is not None:
+        components["liquidity"] = liquidity_intensity(
+            unmet_share, params, periods_per_year
+        )
+    return components
 
 
 def failure_intensity(
@@ -173,11 +216,13 @@ def failure_intensity(
     params: HazardParams,
     alphas: GrcAlphas,
     periods_per_year: int,
+    unmet_share: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Total per-period hazard. Competing risks add in intensity."""
     return sum(
         intensity_components(
-            equity, grc_stock, reference_equity, params, alphas, periods_per_year
+            equity, grc_stock, reference_equity, params, alphas,
+            periods_per_year, unmet_share,
         ).values()
     )
 

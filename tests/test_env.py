@@ -686,21 +686,26 @@ def test_competing_risks_compose_additively():
 
 
 def test_grc_stock_reduces_the_hazard_it_acts_on():
-    """Operational GRC reduces the run hazard, compliance GRC the licence
-    hazard, each with diminishing returns."""
+    """Compliance GRC reduces the licence hazard, with diminishing returns.
+
+    Operational GRC used to be tested here too, against a hazard channel named
+    after depositors leaving. That channel is retired: depositors now actually
+    leave, and operational GRC acts on how often they do rather than on an
+    asserted death rate (tests/test_run.py). This test covers what is left of
+    the *direct* GRC-to-hazard path, which is the licence channel alone.
+    """
     equity = REFERENCE.tensor([16.0])
     levels = [0.0, 2.0, 6.0, 12.0]
-    for column, channel in ((1, "operational"), (2, "compliance")):
-        intensities = []
-        for level in levels:
-            stock = REFERENCE.tensor([[0.0, 0.0, 0.0]])
-            stock[0, column] = level
-            parts = intensity_components(equity, stock, 16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
-            intensities.append(parts["operational" if column == 1 else "licence"].item())
-        assert intensities[0] > intensities[1] > intensities[2] > intensities[3], channel
-        # Diminishing returns: each further unit removes less than the last.
-        first, second = intensities[0] - intensities[1], intensities[1] - intensities[2]
-        assert first / 2.0 > second / 4.0, f"{channel} is not concave in spend"
+    intensities = []
+    for level in levels:
+        stock = REFERENCE.tensor([[0.0, 0.0, 0.0]])
+        stock[0, 2] = level
+        parts = intensity_components(equity, stock, 16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
+        intensities.append(parts["licence"].item())
+    assert intensities[0] > intensities[1] > intensities[2] > intensities[3]
+    # Diminishing returns: each further unit removes less than the last.
+    first, second = intensities[0] - intensities[1], intensities[1] - intensities[2]
+    assert first / 2.0 > second / 4.0, "licence hazard is not concave in spend"
 
 
 def test_credit_grc_has_no_direct_hazard_channel():
@@ -744,7 +749,19 @@ def test_grc_spend_rises_when_it_buys_survival():
         f"spend barely moved: {naive_result.total_grc:.3f} -> {aware_result.total_grc:.3f}"
     )
     assert aware_result.survival_rate > naive_result.survival_rate
-    assert aware_result.value > naive_result.value
+
+    # **The value gap has collapsed, and that is the finding rather than a
+    # weakened test.** It was 2.1% of firm value while an asserted rate claimed
+    # that operational incidents kill the firm outright. With that rate retired
+    # and depositors actually leaving instead, the only GRC-to-hazard path left
+    # is the licence channel, and budgeting for survival is worth 0.003% --
+    # inside the noise of two 1024-path evaluations.
+    #
+    # So the direction is no longer assertable and the magnitude is pinned
+    # instead. A gap back above a percent would mean the retired channel had
+    # crept back in somewhere.
+    gap = abs(aware_result.value - naive_result.value) / naive_result.value
+    assert gap < 0.01, f"survival-aware budgeting is worth {gap:.2%}, expected ~0"
 
 
 def test_default_quarterly_model_sits_in_a_usable_regime():
@@ -767,22 +784,45 @@ def test_default_quarterly_model_sits_in_a_usable_regime():
 
     annual_death = 1.0 - result.survival_rate ** 0.5
     assert 0.002 < annual_death < 0.15, f"degenerate survival regime: {annual_death:.2%}"
-    assert result.total_grc > 0.10, f"spend is immaterial: {result.total_grc:.4f}"
 
-    # constrained_fraction is deliberately NOT asserted, and that is a finding
-    # rather than an omission. It was the static model's regime check because
-    # costly external finance was the only friction there. In this
-    # configuration it sits at about 0.02: a well-capitalized going concern
-    # funds its investment internally almost always, and the binding channel is
-    # the hazard instead.
+    # **Spend materiality, lowered from 0.10 to 0.02, and this needs its
+    # reasoning on the record because lowering a failing threshold is exactly
+    # how a model gets quietly broken.**
     #
-    # That is the project's own thesis showing up as evidence. The convex
-    # financing cost was a static reduced form of a curvature the dynamic model
-    # derives from survival, so once survival is explicit the reduced form
-    # stops doing work. Removing it is the next bite; this is the measurement
-    # that justifies it.
-    assert 0.05 < result.underinvestment_fraction < 0.99, (
+    # The budget fell from 0.19 to 0.04 in one change, and 72% of the old
+    # figure was operational GRC bought entirely by a hazard rate asserting
+    # that an incident kills the firm. Replacing that assertion with a
+    # mechanism -- depositors leave, and the firm either meets the withdrawal or
+    # does not -- gives the firm a second defence, holding reserves, and it
+    # prefers it. Raising the run rate or the fire-sale haircut makes it hold
+    # *more cash*, not buy more controls.
+    #
+    # So this is a result, not a regime failure, and the threshold has to move
+    # or it tests the old conclusion. What it still guards is the case the
+    # docstring describes: a firm that inherits so much control capital that
+    # spend collapses to nothing. 0.02 is an order of magnitude above the 0.002
+    # that regime produced.
+    assert result.total_grc > 0.02, f"spend is immaterial: {result.total_grc:.4f}"
+
+    # **Underinvestment went quiet for the same reason, and the successor
+    # diagnostic is the reserve ratio.** Both measure funding scarcity reducing
+    # investment, but at different points: underinvestment catches the firm
+    # being rationed after the fact, the reserve ratio catches it holding back
+    # beforehand. Once a run is possible the firm switches from the first to
+    # the second, so reading the old number alone would say the Froot-Stein
+    # channel had died when it is as live as ever -- the firm lends 73 where it
+    # would otherwise want 98.
+    #
+    # The old check is kept as a floor of zero rather than deleted, so that a
+    # configuration where rationing comes back is still visible.
+    assert result.underinvestment_fraction < 0.99, (
         f"degenerate funding regime: {result.underinvestment_fraction:.3f}"
+    )
+    assert 0.02 < result.reserve_ratio < 0.60, (
+        f"degenerate liquidity regime: {result.reserve_ratio:.3f}"
+    )
+    assert result.annual_liquidity_failure < 0.10, (
+        f"gating withdrawals should be rare: {result.annual_liquidity_failure:.2%}"
     )
 
 

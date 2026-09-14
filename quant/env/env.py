@@ -390,6 +390,21 @@ class EvalResult:
     # zero and one respectively when there is no liability side.
     deposits: float
     leverage: float
+    # Reserves as a share of the balance sheet: funding the firm deliberately
+    # did not lend. This is the successor diagnostic to
+    # `underinvestment_fraction` once a run exists to hold reserves against.
+    #
+    # Both measure the same channel -- funding scarcity reducing investment --
+    # but at different points. Underinvestment catches the firm being *rationed*
+    # after the fact; this catches it holding back *beforehand*. When a run
+    # becomes possible the firm switches from the first to the second, so
+    # underinvestment goes quiet while the channel is as live as ever. Reading
+    # the old number alone would say the mechanism had died.
+    reserve_ratio: float
+    # Probability the firm is asked for deposits it cannot pay, per year. The
+    # liquidity failure the buffer exists to prevent, as distinct from
+    # insolvency: a firm can be solvent and unable to pay.
+    annual_liquidity_failure: float
     # Total discounted dividends per unit of firm value: how much of what the
     # firm is worth is cash it actually hands over, rather than capital it is
     # still holding when the horizon arrives.
@@ -478,6 +493,16 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
             profile.sum(info["deposits"] * mask * weights)
             for info, mask in zip(trajectory.infos, live)
         ) / live_mass
+        reserve = sum(
+            profile.sum(info["reserves"] * mask * weights)
+            for info, mask in zip(trajectory.infos, live)
+        ) / live_mass
+        # Mass on which a withdrawal went unmet at least once, annualized the
+        # same way the death probability is.
+        met = 1.0
+        for info in trajectory.infos:
+            met = met * (1.0 - (info["unmet_withdrawal"] > 0).to(profile.dtype))
+        gated = profile.sum((1.0 - met) * weights)
         # Averaged as a ratio per path-period rather than as a ratio of the two
         # averages. Those differ whenever leverage and size are correlated,
         # which they are by construction here -- the deposit base is a multiple
@@ -548,6 +573,10 @@ def evaluate(policy: Policy, env: FirmEnv, crn: CommonRandomNumbers) -> EvalResu
         book=deployed.item(),
         deposits=funding.item(),
         leverage=levered.item(),
+        reserve_ratio=(reserve / max(deployed + reserve, 1e-12)).item(),
+        annual_liquidity_failure=1.0
+        - (1.0 - gated.item())
+        ** (env.config.firm.periods_per_year / env.config.horizon),
         payout_share=(dividends / value).item(),
         survival_rate=survives.item(),
         cliff_rate=cliffs.item(),

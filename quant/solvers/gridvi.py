@@ -196,17 +196,21 @@ class GridSolver:
         return self.env.dynamics.deposit_capacity(equity)
 
     def _tile(self, repeats: int):
-        return replace(
-            self.shock,
-            credit_loss=self.shock.credit_loss.repeat(repeats),
-            op_occurs=self.shock.op_occurs.repeat(repeats),
-            op_severity=self.shock.op_severity.repeat(repeats),
-            compliance_occurs=self.shock.compliance_occurs.repeat(repeats),
-            compliance_severity=self.shock.compliance_severity.repeat(repeats),
-            base_weight=self.shock.base_weight.repeat(repeats),
-            cliff_uniform=self.shock.cliff_uniform.repeat(repeats),
-            cliff_fraction=self.shock.cliff_fraction.repeat(repeats),
-        )
+        """The same shock draw, repeated once per node.
+
+        Every tensor field is tiled by reflection rather than by name. The
+        hand-written version listed eight fields, and adding a ninth to `Shock`
+        left it at the original batch size while everything else was 128 times
+        larger -- a shape error rather than a silent wrong answer, which is the
+        only reason it was cheap to find. Reflection means a new channel cannot
+        be forgotten here at all.
+        """
+        tiled = {
+            name: value.repeat(repeats)
+            for name, value in vars(self.shock).items()
+            if isinstance(value, torch.Tensor)
+        }
+        return replace(self.shock, **tiled)
 
     def q_values(self, continuation, spend: float, investment: float, t: int):
         """E[ reward + discount * continuation ] at every node, for one action.

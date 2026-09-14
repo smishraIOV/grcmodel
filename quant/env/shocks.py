@@ -39,6 +39,11 @@ CHANNELS = (
     # reason that design was chosen rather than one shared stream.
     "cliff_occurs",
     "cliff_severity",
+    # The liability side, added last. Independent seeding by name is what let
+    # every earlier channel's draw stay bit-identical across all three of these
+    # additions -- the reason that design was chosen over one shared stream.
+    "run_occurs",
+    "run_severity",
 )
 
 
@@ -66,6 +71,14 @@ class Shock:
     cliff_uniform: torch.Tensor
     # Severity is GRC-independent, so it is drawn here like any other shock.
     cliff_fraction: torch.Tensor
+    # The run carries its raw uniform for the same reason the cliff does: its
+    # probability depends on the GRC stock *and* on the equity the quarter's
+    # losses left behind, neither of which the sampler knows or should.
+    run_uniform: torch.Tensor
+    # Share of the deposit base withdrawn given a run. Independent of GRC --
+    # controls make a run less likely, they do not make it smaller, which is
+    # the same asymmetry the cliff channel asserts.
+    run_fraction: torch.Tensor
 
 
 class CommonRandomNumbers:
@@ -113,6 +126,19 @@ def cliff_fraction(
     return profile.to(torch.clamp(-mean * torch.log1p(-uniform), max=1.0))
 
 
+def withdrawal_fraction(
+    uniform: torch.Tensor, profile: NumericsProfile, mean: float = 0.35
+) -> torch.Tensor:
+    """Share of the deposit base withdrawn, given a run.
+
+    Exponential with the given mean, capped at one -- the same shape as the
+    cliff's severity and for the same reason: heavy enough in the middle that
+    the firm is often left alive and badly impaired rather than cleanly dead,
+    which is the state the channel exists to produce.
+    """
+    return profile.to(torch.clamp(-mean * torch.log1p(-uniform), max=1.0))
+
+
 @dataclass(frozen=True)
 class MonteCarloSampler:
     """Exponential losses by inverse CDF, Bernoulli events by thresholding."""
@@ -139,6 +165,8 @@ class MonteCarloSampler:
             compliance_base_probability=self.params.compliance_probability,
             cliff_uniform=profile.to(uniforms["cliff_occurs"]),
             cliff_fraction=cliff_fraction(uniforms["cliff_severity"], profile),
+            run_uniform=profile.to(uniforms["run_occurs"]),
+            run_fraction=withdrawal_fraction(uniforms["run_severity"], profile),
         )
 
 
@@ -177,4 +205,7 @@ class FourStateSampler:
             # is the opposite of that. A uniform of 1.0 never fires.
             cliff_uniform=profile.full((4,), 1.0),
             cliff_fraction=profile.full((4,), 0.0),
+            # No runs either, and for the same reason.
+            run_uniform=profile.full((4,), 1.0),
+            run_fraction=profile.full((4,), 0.0),
         )

@@ -265,12 +265,9 @@ class FundingParams:
       channel arriving through the liability side rather than being asserted
       as a constraint on the asset side.
 
-    What is *not* here yet, and is the next stage: withdrawals as a shock, and
-    the fire-sale cost of meeting them out of a book that has not matured.
-    Deposits currently adjust smoothly toward capacity, which is a run in slow
-    motion -- enough to make leverage a real decision, not enough to make
-    liquidity one. The reserve the firm holds against withdrawals is already
-    here and already priced; what is missing is anything to hold it against.
+    The run itself is the `run_*` and `fire_sale_haircut` parameters below. A
+    deposit base that only drifts toward capacity is a run in slow motion --
+    enough to make leverage a real decision, not enough to make liquidity one.
     """
 
     # Deposits the firm can carry per unit of equity, at full market access.
@@ -324,6 +321,86 @@ class FundingParams:
     # in what it may deploy -- its existing funding is leaving.
     access_ratio: float = 0.15
     access_scale: float = 0.08
+
+    # -- the run ---------------------------------------------------------
+    #
+    # A discrete event, not a smooth outflow, and that is the whole point. The
+    # hazard is convex in equity, so replacing a 6% chance of losing a third of
+    # the deposit base with a certain loss of 2% deletes precisely the state
+    # this channel exists to represent -- the same argument CliffParams makes
+    # for the asset side.
+    #
+    # Runs per year at zero operational GRC and full capitalization. This rate
+    # is the **successor to HazardParams.annual_operational_rate**, which
+    # asserted that an incident becomes public and depositors leave *and that
+    # the firm therefore dies*, with no depositors in the model and no step in
+    # between. Here the same event withdraws money; whether the firm dies
+    # depends on whether it can meet the withdrawal, which is a property of the
+    # balance sheet rather than a parameter.
+    annual_run_rate: float = 0.45
+
+    # How sharply a run becomes likely as capital thins, evaluated on equity
+    # *after* the quarter's losses. This is what closes the loop: losses thin
+    # the capital, thin capital draws a run, the run forces a fire sale, the
+    # fire sale thins the capital further. A run that did not depend on the
+    # firm's condition would be a weather event, not a run.
+    #
+    # Deliberately gentler and earlier than the death hazard's equivalent
+    # (HazardParams.capital_target 0.4, capital_scale 0.2). Depositors do not
+    # wait for insolvency; they leave on the suspicion of it, which is why a
+    # bank can be killed by a run while still solvent on paper.
+    run_capital_target: float = 0.75
+    run_capital_scale: float = 0.35
+
+    # Share of the deposit base withdrawn, given a run: exponential with this
+    # mean, capped at one. Heavy enough in the middle that the firm often
+    # survives badly impaired rather than cleanly dying, which is where the
+    # decision lives.
+    mean_withdrawal_fraction: float = 0.35
+
+    # What the firm loses per unit of book it has to liquidate early to meet a
+    # withdrawal it cannot cover from reserves. Raising S of cash costs
+    # S/(1-h) of book, so the value destroyed is S*h/(1-h).
+    #
+    # This is the only place in the model where a loss is caused by the
+    # *timing* of an obligation rather than by anything going wrong with an
+    # asset. It is what makes a liquidity failure distinct from a solvency
+    # one, and what makes an idle reserve worth holding.
+    #
+    # **It also decides whether a run can be fatal at all**, which is worth
+    # deriving rather than tuning. Everything the firm can raise is its reserves
+    # plus the discounted book: E + D - hB. To meet a withdrawal of wD it needs
+    # hB <= E + D(1 - w), so a *full* run is survivable exactly when B <= E/h.
+    #
+    # At h = 0.20 that is a book of 80 against equity of 16 -- which is where
+    # the leverage limit already puts the firm, so no run was ever quite
+    # unmeetable and the model concluded that operational controls are
+    # worthless and one should simply hold cash. True, but only because the
+    # buffer was a complete defence.
+    #
+    # 0.35 puts the boundary at 46 instead, so the firm's actual book of ~75
+    # cannot cover a full withdrawal however it is arranged. It is also the more
+    # plausible figure: 20% is a discount on a liquid book in an orderly market,
+    # and neither adjective applies to the situation this models. Observed
+    # discounts in crypto-lender liquidations and in the 2023 bank failures ran
+    # wider than this.
+    fire_sale_haircut: float = 0.35
+
+    # Temperature of the straight-through relaxation used to differentiate the
+    # run probability, as CliffParams.relaxation_temperature is for the cliff.
+    # Same value for the same measured reason -- see that docstring for the
+    # bias-against-variance sweep.
+    relaxation_temperature: float = 0.1
+
+    def period_run_rate(self, periods_per_year: int) -> float:
+        """Probability of at least one run in a period, at zero GRC and full
+        capitalization.
+
+        Poisson, `1 - exp(-lambda/ppy)`, for the reason `model_at` spells out
+        for the cliff: the obvious `1 - (1-lambda)**(1/ppy)` treats a rate as a
+        probability and returns a complex number once lambda exceeds one.
+        """
+        return 1.0 - math.exp(-self.annual_run_rate / periods_per_year)
 
     def period_deposit_rate(self, periods_per_year: int) -> float:
         """Interest per period. A rate that compounds down, not one divided
@@ -380,8 +457,46 @@ class HazardParams:
     #
     # Rates below are at ZERO GRC stock, so they are what the firm faces with no
     # programme at all, not what it faces in practice.
-    annual_operational_rate: float = 0.15
+    #
+    # **The operational channel is now zero, and that is a replacement rather
+    # than a deletion.** It asserted that an incident becomes public, depositors
+    # leave, and the firm therefore dies -- three claims in one parameter, with
+    # no depositors in the model and no step between the second and the third.
+    # A firm funded five-to-one on demandable money faced exactly the same rate
+    # as one funded entirely by its owners.
+    #
+    # The mechanism now lives in FundingParams.annual_run_rate: the same event
+    # withdraws deposits, and whether the firm dies depends on whether it can
+    # meet the withdrawal out of reserves or has to liquidate its book at a
+    # haircut to do so. Death from a run is therefore priced by the capital
+    # channel below, on equity the run actually destroyed, rather than asserted
+    # here. Operational GRC still buys survival -- it makes the run less likely
+    # -- but it buys it through the balance sheet instead of directly.
+    #
+    # Set it non-zero only to model incidents that kill the firm without any
+    # funding consequence, which is not what the label describes.
+    annual_operational_rate: float = 0.0
     annual_licence_rate: float = 0.08
+
+    # Failing to pay depositors who asked. Not a rate the firm faces but a
+    # consequence of one: the intensity is this figure times the share of a
+    # withdrawal the firm could not meet, out of reserves or by liquidating its
+    # book. At the full share it is 25 a year, so a quarter's survival is 0.2%
+    # -- a bank that gates withdrawals is finished, and the number says so.
+    #
+    # **This is what makes liquidity failure a different thing from solvency
+    # failure**, which is the entire point of modelling a run at all. The
+    # shortfall also lands on equity, where the capital channel prices it, but
+    # the two are not the same event: a firm can be solvent and unable to pay,
+    # and that is the case a liquidity buffer exists for.
+    #
+    # It is also what stops the buffer being a complete defence. Reserves come
+    # out of the same balance sheet as the book, so a firm lending more than its
+    # own capital cannot cover a full withdrawal however much it holds back.
+    # Without this channel the model concluded that operational controls are
+    # worthless and the firm should simply hold cash -- true only because an
+    # unmeetable run was survivable.
+    annual_liquidity_failure_rate: float = 25.0
 
 
 @dataclass(frozen=True)

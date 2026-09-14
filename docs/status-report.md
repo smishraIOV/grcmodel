@@ -22,7 +22,7 @@ protection of the firm's capacity to keep operating.
 
 The firm modelled is a **financial intermediary on crypto rails**: it takes
 deposits, lends and invests them, and runs the technology those assets live on.
-It does so on a real balance sheet — about 81 of assets funded by 16 of capital
+It does so on a real balance sheet — about 81 (unclear, missing % perhaps) of assets funded by 16 of capital
 and the rest by deposits.
 
 It carries the full set of banking risks. **Loan defaults, liquidity events and

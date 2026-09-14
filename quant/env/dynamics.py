@@ -152,7 +152,11 @@ class StandardDynamics:
         return self.firm.failure_recovery * torch.clamp(equity, min=0.0)
 
     def log_survival(
-        self, state: FirmState, equity: torch.Tensor, stock: torch.Tensor
+        self,
+        state: FirmState,
+        equity: torch.Tensor,
+        stock: torch.Tensor,
+        unmet_share: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """log P(survive this period), given where the period left the firm.
 
@@ -177,6 +181,7 @@ class StandardDynamics:
                 self.hazard,
                 self.alphas,
                 self.firm.periods_per_year,
+                unmet_share,
             )
             if self.hazard is not None
             else torch.zeros_like(equity)
@@ -329,6 +334,24 @@ class StandardDynamics:
         rate = self.funding.period_deposit_rate(self.firm.periods_per_year)
         return rate * torch.clamp(deposits, min=0.0)
 
+    def reserves_held(
+        self, state: FirmState, fundable: torch.Tensor, investment: torch.Tensor
+    ) -> torch.Tensor:
+        """Balance-sheet funding the firm chose not to lend.
+
+        The residual of the lending decision, not a control of its own: whatever
+        equity and deposits could have deployed and did not. That makes the
+        liquidity buffer implicit in how much the firm lends, which is the
+        honest reading -- a bank does not separately choose a buffer, it chooses
+        a book and lives with the remainder.
+        """
+        return torch.clamp(
+            torch.clamp(fundable, min=0.0)
+            + torch.clamp(state.deposits, min=0.0)
+            - investment,
+            min=0.0,
+        )
+
     def reserve_income(
         self, state: FirmState, fundable: torch.Tensor, investment: torch.Tensor
     ) -> torch.Tensor:
@@ -353,14 +376,122 @@ class StandardDynamics:
         reserves are what actually sits there, and only the second is a
         quantity the firm can earn on.
         """
-        reserves = torch.clamp(
-            torch.clamp(fundable, min=0.0)
-            + torch.clamp(state.deposits, min=0.0)
-            - investment,
-            min=0.0,
-        )
         rate = self.funding.period_reserve_rate(self.firm.periods_per_year)
-        return rate * reserves
+        return rate * self.reserves_held(state, fundable, investment)
+
+    def run_probability(
+        self, stock: torch.Tensor, equity: torch.Tensor
+    ) -> torch.Tensor:
+        """Chance the deposit base runs this period, given where the quarter's
+        losses left the firm.
+
+            p = (rate / ppy) * exp(-alpha_o * G_o) * exp((target - kappa) / scale)
+
+        Three factors, and each is a separate claim.
+
+        The **base rate** is how often an incident becomes public at all. The
+        **GRC term** is the only place operational controls still buy survival,
+        and they now buy it by making the run less likely rather than by being
+        told they reduce a death rate -- the same alpha and the same mitigation
+        curve the loss channels use.
+
+        The **capital term** is what makes this a run rather than a weather
+        event. It is evaluated on equity *after* the quarter's losses, so a bad
+        quarter draws the run that then makes the quarter worse: losses thin the
+        capital, thin capital draws depositors out, meeting them forces a fire
+        sale, the fire sale thins the capital further. That loop is the whole
+        mechanism, and a withdrawal drawn independently of the firm's condition
+        would not have it.
+
+        Gentler and earlier than the death hazard's capital term, deliberately.
+        Depositors do not wait for insolvency, they leave on the suspicion of
+        it, which is how a bank that is solvent on paper gets killed.
+        """
+        base = self.profile.tensor(
+            self.funding.period_run_rate(self.firm.periods_per_year)
+        )
+        mitigated = exponential_mitigation(base, stock[..., 1], self.alphas.operational)
+        kappa = equity / self.firm.initial_equity
+        stress = torch.exp(
+            torch.clamp(
+                (self.funding.run_capital_target - kappa) / self.funding.run_capital_scale,
+                max=20.0,
+            )
+        )
+        # Floored as well as capped. `withdrawal` takes the logit of this, and
+        # logit(0) is -inf with an infinite derivative, so a run rate of zero --
+        # the configuration someone reaches for to switch the channel off --
+        # produced a NaN gradient that propagated through every path and every
+        # other control. The forward pass was correct throughout; only the
+        # backward pass was poisoned, so nothing looked wrong until a solve
+        # returned NaN.
+        #
+        # Same trap as the compliance likelihood ratio at p0 = 0
+        # (`path_weight`), in a new place. Flooring at `tiny` keeps the logit
+        # finite and the event impossible.
+        tiny = torch.finfo(self.profile.dtype).tiny
+        return torch.clamp(mitigated * stress, min=tiny, max=1.0 - 1e-9)
+
+    def withdrawal(
+        self, state: FirmState, stock: torch.Tensor, equity: torch.Tensor, shock: Shock
+    ):
+        """How much of the deposit base walks out this period.
+
+        Straight-through relaxed, exactly as `cliff_loss` is: the forward pass
+        is the true hard indicator so the discrete jump and its tail are right,
+        and the backward pass differentiates a tempered sigmoid of the same
+        threshold. Smoothing the event into a certain small outflow is not
+        available for the same reason it was not available there -- the cost of
+        a run is convex in its size, because a small one comes out of reserves
+        and a large one comes out of a fire sale.
+
+        Returns (probability, amount) so the probability can be reported: it is
+        the quantity operational GRC actually acts on, and the one worth showing
+        a risk owner.
+        """
+        probability = self.run_probability(stock, equity)
+        uniform = shock.run_uniform.clamp(1e-9, 1.0 - 1e-9)
+        occurs = (uniform < probability).to(self.profile.dtype)
+        relaxed = torch.sigmoid(
+            (torch.logit(probability) - torch.logit(uniform))
+            / self.funding.relaxation_temperature
+        )
+        indicator = occurs + relaxed - relaxed.detach()
+        return probability, indicator * shock.run_fraction * torch.clamp(
+            state.deposits, min=0.0
+        )
+
+    def meet_withdrawal(
+        self,
+        demanded: torch.Tensor,
+        reserves: torch.Tensor,
+        book: torch.Tensor,
+    ):
+        """Pay depositors out of reserves first, then by selling book early.
+
+        Reserves are cash and go at par. The book has not matured, so raising
+        `S` from it costs `S / (1 - h)` of book and destroys `S * h / (1 - h)`.
+        That is the only loss in the model caused by the *timing* of an
+        obligation rather than by anything going wrong with an asset, and it is
+        what makes a liquidity failure a different thing from a solvency one.
+
+        It is also what makes an idle reserve worth holding. Reserves earn less
+        than the book and still cost deposit interest, so a firm that ignored
+        runs would hold none; the fire-sale haircut is the price of that
+        choice, paid only in the states where it matters.
+
+        The liquidation is capped at the book available. A firm that cannot
+        raise the cash even by selling everything has not met its obligations,
+        and the shortfall stays owed -- which drives equity sharply negative and
+        lets the capital hazard price it, rather than introducing a second hard
+        death branch with no gradient.
+        """
+        from_reserves = torch.minimum(demanded, torch.clamp(reserves, min=0.0))
+        shortfall = torch.clamp(demanded - from_reserves, min=0.0)
+        haircut = self.funding.fire_sale_haircut
+        wanted = shortfall / (1.0 - haircut)
+        liquidated = torch.minimum(wanted, torch.clamp(book, min=0.0))
+        return from_reserves, liquidated
 
     def funding_capacity(
         self, state: FirmState, wealth: torch.Tensor
@@ -438,29 +569,61 @@ class StandardDynamics:
         loss = loss + cliff
         wealth = fundable - loss
 
+        # The run is drawn on equity *after* the quarter's losses, so a bad
+        # quarter draws the run that then makes it worse. Everything from here
+        # to `produced` is the liability side of the period: who asks for their
+        # money back, what the firm can pay them out of, and what it costs to
+        # find the rest.
+        if self.funding is not None:
+            held = self.reserves_held(state, fundable, investment)
+            run_probability, demanded = self.withdrawal(state, stock, wealth, shock)
+            from_reserves, liquidated = self.meet_withdrawal(
+                demanded, held, investment
+            )
+            raised = liquidated * (1.0 - self.funding.fire_sale_haircut)
+            paid = from_reserves + raised
+            # The haircut, reported separately because it is the only loss in
+            # the model that no asset going wrong can explain.
+            fire_sale = liquidated - raised
+            book = investment - liquidated
+            # As a share of what was asked for, not as an amount: the hazard
+            # takes dimensionless arguments, and "could not pay a tenth of what
+            # was demanded" means the same thing whatever currency the firm is
+            # denominated in. Zero when nothing was demanded, which is most
+            # periods.
+            unmet = torch.clamp(demanded - paid, min=0.0)
+            unmet_share = unmet / torch.clamp(demanded, min=1e-12)
+            interest = self.deposit_interest(state.deposits)
+            # Earned on what is left after depositors have been paid, not on
+            # the opening balance: reserves that walked out mid-period did not
+            # sit there earning for the firm.
+            reserves = self.funding.period_reserve_rate(
+                self.firm.periods_per_year
+            ) * torch.clamp(held - from_reserves, min=0.0)
+        else:
+            zero = torch.zeros_like(wealth)
+            held = run_probability = demanded = from_reserves = zero
+            liquidated = raised = paid = fire_sale = zero
+            book = investment
+            interest = reserves = zero
+            unmet = unmet_share = zero
+
         # Priced against wealth *after* losses, as before. Only the funding
         # capacity had to move ahead of the losses -- the book cannot be sized
         # by a quantity that depends on the book. Keeping the premium where it
         # was preserves the machine-precision identity against quant/model.py.
         external, premium = self.financing(wealth, investment)
         produced = production(
-            investment, self.firm.production_scale, self.firm.production_curvature
-        )
-        # Paid on the base the firm opened with, not on what it chose to deploy.
-        # Deposits are a liability, not a drawdown facility: money left idle is
-        # still money someone is owed.
-        interest = (
-            self.deposit_interest(state.deposits)
-            if self.funding is not None
-            else torch.zeros_like(produced)
-        )
-        reserves = (
-            self.reserve_income(state, fundable, investment)
-            if self.funding is not None
-            else torch.zeros_like(produced)
+            book, self.firm.production_scale, self.firm.production_curvature
         )
 
-        gross = wealth - investment + produced - premium - interest + reserves
+        # The liquidated book leaves twice over: it stops producing, and it
+        # comes back as cash worth (1 - h) of its face. `raised` is that cash.
+        # Depositors take it, and the deposit base falls by the same amount, so
+        # the two cancel out of equity and what remains is the haircut.
+        gross = (
+            wealth - investment + produced + raised - premium - interest + reserves
+        )
         # Distributed out of what the quarter actually left, and only if it
         # left something. This is where the model finally has a genuine
         # intertemporal trade-off: a dividend is worth its face value now,
@@ -493,14 +656,20 @@ class StandardDynamics:
                 self.hazard,
                 self.alphas,
                 self.firm.periods_per_year,
+                unmet_share,
             )
             if self.hazard is not None
             else None
         )
-        # Moved on closing equity, so a quarter's losses start the deposit base
-        # shrinking in the quarter they land.
+        # Depositors who left are gone before the base starts rebuilding, so a
+        # run leaves the firm funding-impaired for several quarters rather than
+        # for one. That persistence is what makes the run a state event and not
+        # just a bad draw -- it is the same argument the GRC stock makes on the
+        # asset side.
         deposits = (
-            self.deposit_flow(state.deposits, equity)
+            self.deposit_flow(
+                torch.clamp(state.deposits - paid, min=0.0), equity
+            )
             if self.funding is not None
             else None
         )
@@ -519,7 +688,7 @@ class StandardDynamics:
             # a dividend once there is a discount rate to trade it off against.
             reward=dividend,
             weight=self.path_weight(stock, shock),
-            log_survival=self.log_survival(state, equity, stock),
+            log_survival=self.log_survival(state, equity, stock, unmet_share),
             failure_value=self.failure_value(equity),
             # Decided at the start of the period, on what the firm knows then:
             # you wind down on the basis of the balance sheet you have, not the
@@ -548,6 +717,18 @@ class StandardDynamics:
                 "hazard": intensity,
                 "interest": interest,
                 "reserve_income": reserves,
+                "reserves": held,
+                "run_probability": run_probability,
+                "withdrawal": demanded,
+                "withdrawal_paid": paid,
+                "liquidated": liquidated,
+                "fire_sale_loss": fire_sale,
+                # What the firm was asked for and could not raise even by
+                # selling its whole book. Non-zero is a liquidity failure: the
+                # obligation stays owed, equity carries it, *and* the liquidity
+                # hazard channel fires on the share unpaid.
+                "unmet_withdrawal": unmet,
+                "unmet_share": unmet_share,
                 # The opening balance sheet, so a diagnostic averaging these
                 # reports what the firm was funding the quarter with rather
                 # than what it closed on.
