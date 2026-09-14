@@ -50,10 +50,29 @@ def main() -> None:
         for study in studies.values():
             print("  " + study.line())
         advantage = edge(studies)
+        # Compared against the spread this run actually measured, not against a
+        # fixed 2%. The constant against which "clear of seed noise" means
+        # anything is the noise, and it is not a constant: at thirty-two
+        # quarters the neural policy's interval reached +/-37% of its own median
+        # because one seed collapsed to 0.9, and a fixed threshold called a
+        # +4.8% median difference clear of it.
+        noise = max(s.half_width() / abs(s.median()) for s in studies.values())
         verdict = (
-            "within seed noise" if abs(advantage) < 0.02 else "clear of seed noise"
+            "within seed noise" if abs(advantage) < max(noise, 0.02)
+            else "clear of seed noise"
         )
-        print(f"  state feedback: {advantage:+.2%} at the median -- {verdict}")
+        print(
+            f"  state feedback: {advantage:+.2%} at the median, against seed noise of "
+            f"{noise:.2%} -- {verdict}"
+        )
+        worst = min(min(s.held_out) for s in studies.values())
+        if worst < 0.5 * max(max(s.held_out) for s in studies.values()):
+            print(
+                f"  WARNING: a seed landed at {worst:.3f}, less than half the best. "
+                "One solve
+  failed rather than merely varied; read the range, not "
+                "the median."
+            )
 
     print(
         "\nThe interval is what decides whether a solver difference is real. A single"

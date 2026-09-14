@@ -15,7 +15,7 @@ and records what is actually built. It builds on the choices in
 | Alive / failed | — | **yes** — `FirmState.alive`, absorbing |
 | Deposit volume | $D$ | **yes** — `FirmState.deposits`, a stock that persists, costs interest and shrinks with the capital ratio |
 | Portfolio composition / risk metrics | — | no |
-| Liquidity buffer | $L_{\text{buf}}$ | partial — reserves are the residual of the funding decision and earn a rate, but nothing yet forces the firm to hold them |
+| Liquidity buffer | $L_{\text{buf}}$ | **yes, as a residual** — reserves are what the firm chose not to lend; they earn a rate, absorb withdrawals at par, and the firm now holds them deliberately (22% of the balance sheet) because a run can arrive |
 | Operational-risk indicator | — | partial — enters as a risk-family exposure, not as evolving state |
 | Compliance-risk score | — | partial — enters as a breach probability, not as evolving state |
 
@@ -29,7 +29,7 @@ The unimplemented rows are the honest gap between this section and the code.
 | Orderly wind-down | — | **yes** — `FirmAction.abandon` |
 | Payout / retention | — | **yes** — `FirmAction.payout` |
 | Capital allocation to investment, state-contingent | $I$ | **yes** — per-path, chosen after the shock |
-| Target liquidity buffer | — | partial — implied by how much of the balance sheet the firm chooses to deploy, not chosen directly |
+| Target liquidity buffer | — | **yes, implicitly** — chosen through how much of the balance sheet to deploy rather than as a separate control. A bank does not pick a buffer and a book independently; it picks a book and lives with the remainder |
 | Deposit pricing / redemption-term incentives | — | no — the firm takes the deposit base its capital supports at a fixed rate |
 
 ## 3. Frictions, costs and the investment channel
@@ -76,8 +76,51 @@ invest rather than only its cash.
 
 The partial adjustment is what makes $D$ a state variable rather than a formula
 in $E$. At $\theta = 1$ the liability side collapses back into the asset side
-and nothing is outstanding that could run — which is the property the next
-stage needs.
+and nothing is outstanding that could run.
+
+**The run.** A discrete event, not a smooth outflow. Its probability is
+
+$$
+p_{\text{run}} = \frac{\lambda_r}{m}\, e^{-\alpha_o G_o}
+  \cdot \exp\!\left(\frac{\tau_r - \kappa}{s_r}\right),
+\qquad \kappa = \frac{E - g - L}{E_0}
+$$
+
+— three separate claims. $\lambda_r$ is how often an incident becomes public at
+all. The GRC term is the only place operational controls still buy survival,
+and they buy it by making the run rarer rather than by being told they lower a
+death rate. The capital term is evaluated on equity **after** the quarter's
+losses, which is what makes this a run rather than a weather event: losses thin
+the capital, thin capital draws depositors out, meeting them forces a fire sale,
+and the fire sale thins the capital further. It is deliberately gentler and
+earlier than the death hazard's capital term — depositors do not wait for
+insolvency, they leave on the suspicion of it.
+
+Differentiated by the same straight-through relaxation the cliff channel uses,
+for the same reason: the cost of a run is convex in its size, because a small
+one comes out of reserves and a large one comes out of a fire sale, so replacing
+the event by its expectation deletes the state it exists to represent.
+
+**Meeting it.** A withdrawal $W$ is paid from reserves at par and from the
+unmatured book at a haircut $h$: raising $S$ costs $S/(1-h)$ of book and
+destroys $S\,h/(1-h)$. That is the only loss in the model caused by the *timing*
+of an obligation rather than by an asset going wrong, and it is what makes an
+idle reserve worth holding — reserves earn less than the book and still cost
+deposit interest, so a firm ignoring runs would hold none.
+
+**Whether it is fatal, in closed form.** Everything the firm can raise is
+$E + D - hB$, so a withdrawal of $\omega D$ is meetable exactly when
+$hB \le E + D(1-\omega)$, and a *full* run when
+
+$$B \le E/h$$
+
+independent of the deposit base, which cancels. This is worth stating because
+it is a trap: at $h = 0.20$ the boundary is a book of 80 against equity of 16,
+which is precisely where the leverage limit puts the firm — so no run was ever
+quite unmeetable, and the model concluded that operational controls are
+worthless and one should simply hold cash. True, but only because the buffer
+was a complete defence. $h = 0.35$ puts the boundary at 46, inside the firm's
+actual balance sheet.
 
 **Convex cost of external finance.** With internal wealth $w$ and desired
 investment $I$, the firm raises $e = \max(0,\ I - w)$ externally at
@@ -101,20 +144,33 @@ intensities add:
 | channel | driver | GRC acting on it |
 |---|---|---|
 | capital | equity falls toward insolvency | indirect — GRC leaves more equity behind |
-| operational | an incident becomes public, depositors leave | **operational GRC, directly** |
+| liquidity | the firm was asked for its deposits and could not pay | indirect — operational GRC makes the run rarer |
 | licence | a breach escalates to revocation | **compliance GRC, directly** |
+| ~~operational~~ | ~~an incident becomes public, depositors leave~~ | **retired — see below** |
 
 Credit has no hazard channel of its own, deliberately: bad underwriting erodes
 equity, and equity is already the capital channel's argument, so giving it one
 would count the same mechanism twice.
 
-**The operational channel is still a label, and now visibly so.** It is an
-assumed annual rate that GRC bends, and it is *named* after depositors leaving
-— but it does not consult the deposit stock that now exists. A firm funded
-five-to-one on demandable money faces exactly the same assumed run rate as one
-funded entirely by its owners, which is plainly wrong. Replacing it with
-withdrawals the firm has to meet, so that a run is something the balance sheet
-produces rather than something the parameters assert, is the next stage (§5).
+**The liquidity channel is not an assumed rate.** Its intensity is
+$\lambda_\ell / m$ times the *share* of a withdrawal the firm could not meet,
+which the dynamics computes from reserves and what a fire sale could raise. At
+the full share it is 25 a year, so a quarter's survival is 0.2% — a bank that
+gates withdrawals is finished, and the number says so. It is deliberately not
+redundant with the capital channel: the shortfall also lands on equity and is
+priced there, but **insolvency and illiquidity are different failures**, and a
+firm can be solvent and unable to pay. That distinction is the whole reason to
+model a run.
+
+**The operational channel is retired, and that is a replacement rather than a
+deletion.** It asserted three things in one parameter: that an incident becomes
+public, that depositors leave, and that the firm therefore dies. There were no
+depositors in the model to leave, so the middle claim had no representation and
+the third followed from a rate. Depositors now leave for real, and whether the
+firm dies depends on whether it can meet them.
+
+That change cost the model a result, and §6 reports it: under the asserted rate,
+operational GRC was **72% of the entire GRC budget**.
 
 The two GRC-reducible channels are $\bar{h}_f e^{-\alpha_f G_f} / 4$, reusing
 each family's existing $\alpha$ rather than introducing a second effectiveness
@@ -235,8 +291,9 @@ exactly the one-period problem that benchmark solves.
 | 5 | The learner: horizon scaling, multi-seed, out-of-sample | **built** — `quant/studies/seeds.py`; verdict in §6 |
 | 5b | Truncated BPTT with a critic, and a head-to-head against full BPTT | **built, then rejected** — on branch `svg-critic`, not on `main`; verdict in §6 |
 | 6a | The liability side: deposits as a priced, persistent, procyclical stock | **built** — `quant/params.py` `FundingParams`, `FirmState.deposits` |
-| 6b | Withdrawals, a liquidity buffer that must be held, and the fire-sale cost of meeting a run out of an unmatured book | not built |
-| 6c | The run hazard derived from deposit flight rather than assumed as a rate | not built |
+| 6b | Withdrawals, a liquidity buffer, and the fire-sale cost of meeting a run out of an unmatured book | **built** — `StandardDynamics.withdrawal`, `meet_withdrawal` |
+| 6c | The run hazard derived from deposit flight rather than assumed as a rate | **built** — `HazardParams.annual_operational_rate` retired; `quant/hazard.py` `liquidity_intensity` |
+| 6d | A run that damages the deposit *franchise*, not only its level | not built — see §6 |
 
 **Why the liability side is a stage at all.** Until 6a the firm had no
 liabilities: it funded its book out of equity plus a costless multiple of
@@ -247,10 +304,13 @@ because there were no depositors in the model to leave. Loan defaults were
 present but could not threaten the firm, because a loss on an unlevered book is
 a loss of the same size on capital rather than a multiple of it.
 
-6a is the stock; 6b is what can happen to it; 6c is the channel 6b lets us
-stop asserting. They are separated because 6a alone forces a recalibration —
-a bank-sized balance sheet needs a bank-sized opportunity, or the firm simply
-stops wanting what it can now fund.
+6a is the stock; 6b is what can happen to it; 6c is the channel 6b lets us stop
+asserting. 6a was separated because it alone forces a recalibration — a
+bank-sized balance sheet needs a bank-sized opportunity, or the firm stops
+wanting what it can now fund. **6b and 6c had to land together**: a model where
+a run withdraws deposits *and* a hazard rate still asserts that depositors
+leaving kills the firm charges twice for one event, and reports plausible
+numbers either way.
 
 Survival moved ahead of the grid solver after stage 2: the hard insolvency
 barrier turned out to be required for the multi-period problem to be finite at
@@ -338,6 +398,22 @@ assumption baked into a solver.
 > deposits is less often capital-rationed than one financing itself out of
 > retained earnings, which is most of the reason to be a bank.
 >
+> **The third** was forced by the run replacing the asserted operational
+> hazard, and it is a single parameter — `initial_grc_stock`, 1.17 → 0.79.
+> Missing it was briefly the most misleading thing in the model. That parameter
+> is a fixed point *of the whole model*: the level at which the firm's own
+> optimal maintenance spend replaces depreciation. Retiring a hazard that was
+> buying a large share of the budget moves optimal spend, so the old value left
+> the firm opening **six times above the steady state it would now choose**,
+> spending the horizon running the stock down, and reporting a budget of 0.043
+> a quarter. That read as "retiring the hazard destroyed the case for GRC". At
+> the correct fixed point the budget is 0.187 against 0.197 before — a fall of
+> 5%, not 78%.
+>
+> A stale fixed point degrades into a plausible wrong answer rather than an
+> error, so it is worth a standing rule: re-solve it after anything that
+> touches a hazard or a loss channel.
+>
 > **23% overshoots the 17.6% `annual_return` was set against, and the reason is
 > an ordering mistake worth recording.** The margin was chosen first, holding
 > the opening GRC stock at its old value of 0.650; the stock was then re-solved
@@ -417,23 +493,41 @@ one period of protection.
 
 | GRC decay | solver | value | spend/qtr | end stock | survives |
 |---|---|---|---|---|---|
-| 1.000 | constant | 23.1602 | 0.3616 | 0.3616 | 67.0% |
-| 1.000 | neural | 23.1981 | 0.3519 | 0.3916 | 67.0% |
-| 1.000 | PI bound | 24.9512 | 0.3431 | 0.4829 | 66.2% |
-| 0.069 | constant | 34.5491 | 0.1972 | 3.2176 | 90.7% |
-| 0.069 | neural | 34.5489 | 0.1958 | 3.2088 | 90.7% |
-| 0.069 | PI bound | 35.4712 | 0.2072 | 2.9928 | 91.8% |
+| 1.000 | constant | 25.7939 | 0.0126 | 0.0126 | 74.2% |
+| 1.000 | neural | *11.1987* | *3.7141* | *2.5768* | *0.0%* |
+| 1.000 | PI bound | 29.6321 | 0.1134 | 0.1435 | 80.0% |
+| 0.069 | constant | 33.7268 | 0.1873 | 2.5141 | 91.6% |
+| 0.069 | neural | 27.1737 | 0.5964 | 5.0934 | 91.2% |
+| 0.069 | PI bound | 35.8290 | 0.1881 | 2.2816 | 93.7% |
+
+**The italicised row is an optimizer trap, not a valuation**, and the script
+now says so rather than letting it be averaged into a headline. 11.1987 is
+$0.7 \times 16$: the neural policy has fallen into the absorbing wind-down,
+which is why survival is zero. The exit action is absorbing, so once the
+probability mass has left there is nothing still operating to generate a
+gradient for staying ([debug notes §8](static-model-debug-notes.md)).
+
+This mattered: the persistence headline below used to take the neural row
+unconditionally and printed **+203%** off that collapsed solve. It now takes
+whichever of the two implementable solvers is higher, which is both the better
+estimate and robust to one of them failing.
 
 (The $\delta = 1$ rows start from the same opening stock but cannot keep it, so
 they describe a firm whose control function evaporates each quarter.)
 
-**Persistence is worth +49% of firm value** (23.16 → 34.55) and takes two-year
-survival from 67% to 91%, while the firm spends *less* per quarter to get it
-(0.362 → 0.197). A control that persists delivers the same protection for a
-smaller flow, which is the whole argument for treating GRC as capital rather
-than as an expense.
+**Persistence is worth +31% of firm value** (25.79 → 33.73) and takes two-year
+survival from 74% to 92%. Per-quarter spend *rises* as it does so, 0.013 to
+0.187: at $\delta = 1$ a unit of spend buys one quarter of protection and is
+barely worth anything, while at $\delta = 0.069$ it protects every later quarter
+too, so much more of it is worth buying. That is the intertemporal content the
+static model could not express — it is not the one-period answer repeated.
 
-The value of perfect information is 0.92 at $\delta = 0.069$ against 1.75 at
+(The direction of that last sentence has flipped twice across recalibrations,
+which is why the script now prints the measured direction rather than an
+asserted one. It printed "spends MORE" unconditionally once, over a pair of
+numbers that had gone the other way.)
+
+The value of perfect information is 2.10 at $\delta = 0.069$ against 3.84 at
 $\delta = 1$. Persistence narrows the gap a clairvoyant policy can exploit: a
 stock that carries across quarters is partly a substitute for knowing what is
 coming.
@@ -446,32 +540,96 @@ meaningless, since a world without those channels is simply less dangerous.
 
 | budget set for | spend/qtr | annual failure | value |
 |---|---|---|---|
-| expected loss only | 0.0228 | 7.45% | 33.8141 |
-| loss **and** survival | 0.1972 | 4.79% | 34.5491 |
+| expected loss only | 0.1136 | 5.37% | 33.5543 |
+| loss **and** survival | 0.1873 | 4.29% | 33.7268 |
 
-Budgeting as though GRC only bought smaller losses gives a programme **nine
-times smaller**, and costs 2.1% of firm value and 2.7 percentage points of
-annual failure probability.
+Budgeting as though GRC only bought smaller losses gives a programme **40%
+smaller**, and costs 0.5% of firm value and 1.1 percentage points of annual
+failure probability.
 
-**Leverage moved this result a long way, and against the direction the earlier
-model implied.** The same comparison before the liability side gave a
-loss-only programme of 0.0046 against 0.2510 — *fifty* times smaller, and worth
-4.9% of firm value. The conclusion was that GRC is paid for almost entirely by
-survival and hardly at all by loss reduction. That was substantially an artifact
-of an unlevered balance sheet. Losses on a book four times capital are worth far
-more to avoid, so ordinary loss reduction now carries a real share of the
-programme. The survival channel is still the larger half and still expensive to
-ignore; it is no longer overwhelming.
+**This number has now moved twice, in the same direction, for two different
+reasons — and both of them were the model being made more honest.**
+
+The ratio of the survival-aware budget to the loss-only one ran *fifty* times
+before the liability side, *nine* times after it, and **1.6 times** now. The
+first fall was leverage: losses on a book four times capital are worth far more
+to avoid, so ordinary loss reduction carries a real share of the programme. The
+second was retiring the asserted rate that claimed an operational incident kills
+the firm — the single largest source of GRC's *survival* value, and the one that
+turned out to assert its own conclusion.
+
+What is left is a firm that buys GRC for both reasons in roughly equal measure.
+**The original headline — that GRC is paid for almost entirely by survival and
+hardly at all by loss reduction — does not survive either correction.** It was
+true of an unlevered firm whose death rate was asserted rather than derived.
 
 Read alongside the horizon caveat below, which pushes in the same direction and
 has not yet been re-measured: *how much* of the programme survival pays for is
 partly a statement about the two-year horizon as well.
 
-The history is worth keeping because the number has now moved twice for
-different reasons. At the original magnitudes the gap was 27% of the budget and
-0.3% of value; the first recalibration removed a loss channel large enough to
-disguise the survival effect and took it to fifty times; the liability side then
-took it back to nine. Only the middle figure was ever quotable on its own.
+The history is worth keeping because no single figure here was ever quotable on
+its own. At the original magnitudes the gap was 27% of the budget and 0.3% of
+value; the first recalibration removed a loss channel large enough to disguise
+the survival effect and took it to fifty times; the liability side took it to
+nine; retiring the asserted operational hazard took it to 1.6. Four values of
+the project's sharpest result, each correct about the model that produced it.
+
+### Controls or cash? What the run channel changed
+
+`uv run python scripts/run_dynamic_model.py`. The run replaced a hazard rate
+that asserted an operational incident kills the firm. Once depositors actually
+leave and the firm can hold reserves against them, it has **two** defences
+rather than one, and which it buys is the question this stage exists to answer.
+
+The same firm, at its own GRC-stock fixed point in each configuration and at
+identical solver settings:
+
+| | credit | operational | compliance | **total** | reserves | book | annual failure |
+|---|---|---|---|---|---|---|---|
+| asserted rate, no run | 0.0204 | **0.1469** | 0.0299 | **0.1972** | 9.4% | 80.9 | 4.79% |
+| run mechanism | 0.0455 | **0.0651** | 0.0767 | **0.1873** | 24.2% | 68.2 | 4.29% |
+
+**The asserted rate was overstating operational GRC by about 2.3×.** It claimed
+three things in one parameter — that an incident becomes public, that depositors
+leave, and that the firm therefore dies — with no depositors in the model to
+leave. Replacing it with a mechanism the firm can respond to cuts the
+operational line by 56%.
+
+**The budget does not disappear; it moves.** Total spend falls 5%, while credit
+and compliance each roughly double. Retiring a channel does not make the firm
+stop buying GRC — it makes it buy a different mix, and the mix it was buying
+before was distorted by the channel that asserted its own conclusion.
+
+**And it holds a liquidity buffer.** Reserves go from 9.4% of the balance sheet
+to 24.2%, funded by lending 15% less. That buffer is the largest single
+behavioural change in the stage and it is entirely new: before the run there was
+nothing to hold reserves against.
+
+Sweeping how often runs happen separates the two defences:
+
+| runs/year | GRC/qtr | of which operational | reserves | book | p(run)/qtr | annual failure | value |
+|---|---|---|---|---|---|---|---|
+| 0.00 | 0.1635 | 0.0021 | 9.9% | 80.50 | 0.000% | 3.63% | 34.692 |
+| 0.45 | 0.1873 | 0.0651 | 24.2% | 68.23 | 2.043% | 4.29% | 33.727 |
+| 1.00 | 0.1730 | 0.0716 | 30.9% | 61.67 | 3.841% | 4.79% | 33.134 |
+| 2.00 | 0.1074 | 0.0386 | 37.7% | 55.20 | 7.757% | 6.13% | 32.108 |
+
+Introducing a run at all takes operational GRC from 0.0021 to 0.0651 and
+reserves from 10% to 24%: **the firm buys both defences.** Past that it
+substitutes — at two runs a year reserves reach 38% while operational GRC falls
+back to 0.0386. Cash is the certain defence and controls are the probabilistic
+one, so at the margin the cheaper certainty wins.
+
+The decision-relevant reading is the middle of that table rather than either
+end. A firm facing occasional runs should do both; a firm facing frequent ones
+should hold capital and liquidity rather than buy its way out with controls.
+
+**What most drives this, and is not modelled.** Deposits rebuild toward capacity
+at a four-month half-life, whether they left in a panic or drifted away. Real
+deposit franchises do not come back that fast after a run, and a slower rebuild
+would make runs costlier in a way a buffer cannot offset — which is the most
+likely route to operational GRC being worth more than this. That is stage 6d
+(§5) and it is not built.
 
 ### What failure costs, and what GRC cannot do about it
 
@@ -487,16 +645,14 @@ second purchase would be free.
 
 | recovery | spend/qtr | annual failure | value | going-concern share |
 |---|---|---|---|---|
-| 0.0 | 0.2448 | 4.28% | 33.949 | 1.000 |
-| 0.4 | 0.1972 | 4.79% | 34.549 | 0.815 |
-| 0.8 | 0.1453 | 5.40% | 35.207 | 0.636 |
+| 0.0 | 0.2136 | 4.00% | 33.343 | 1.000 |
+| 0.4 | 0.1873 | 4.29% | 33.727 | 0.810 |
+| 0.8 | 0.1562 | 4.68% | 34.195 | 0.626 |
 
 The comparative static is the cleanest the survival channel produces, and it is
 one an executive can argue with: **the less a failure would destroy, the less a
-programme to avoid it is worth.** Spend falls by 41% across the range — the same
-41% it fell before the liability side, on entirely different levels, which is
-the kind of agreement worth noticing in a model with no calibrated parameters —
-while
+programme to avoid it is worth.** Spend falls by 27% across the range (41%
+before the run channel, on different levels) while
 the firm becomes more willing to die. Every unit of that spend is bought by the
 franchise at risk — the going-concern share is exactly the part of firm value
 that failure would destroy, and when nothing is recovered it is 1.000 by
@@ -564,26 +720,21 @@ from 1.000 to 0.0005 before this constraint was added.
 
 | payout | value | spend/qtr | underinvestment | annual failure | end equity | dividend share |
 |---|---|---|---|---|---|---|
-| retain all | 34.528 | 0.2077 | 0.141 | 4.50% | 23.32 | 0.000 |
-| optimized | 34.549 | 0.1972 | 0.147 | 4.79% | 21.70 | 0.044 |
+| retain all | 33.727 | 0.1873 | 0.012 | 4.29% | 22.45 | 0.000 |
+| optimized | 33.727 | 0.1873 | 0.012 | 4.29% | 22.45 | 0.000 |
 
-**The firm now pays a dividend, and before the liability side it did not.**
-This is the first configuration in which the payout control does anything at
-all: the two rows used to be identical to four decimal places, with a dividend
-share of exactly 0.000.
+**The firm retains everything again, and the dividend it briefly paid has
+gone.** With deposits but no run it distributed 4.4% of value, because the
+funding constraint had stopped binding and the marginal retained unit was no
+longer worth much. Once a run is possible, retained capital buys something else:
+it is what reserves are held out of, and a larger buffer is the firm's main
+defence. So the marginal unit is valuable again and the firm keeps it.
 
-The reason is the deposit base. Retaining a unit of capital is worth what it
-buys, and what it bought was relief from a funding constraint that bound on
-**82.4%** of probability mass. With deposits doing most of the funding it binds
-on **14.7%**, so the marginal retained unit is no longer nearly as valuable and
-distributing wins on time value for part of the profit. The firm still retains
-most of what it earns — 4.4% of value is a small dividend — and it accepts a
-slightly higher failure rate (4.79% against 4.50%) in exchange, which is exactly
-the trade-off the control exists to express.
-
-A bank with a deposit franchise is less capital-hungry than one financing
-itself out of retained earnings. That is close to the whole reason to be a bank,
-and the model could not say it until it had liabilities.
+Three configurations, three different answers, all from the same control:
+retain everything because funding is scarce (pre-deposits); distribute a little
+because it is not (deposits, no run); retain everything because capital is now
+liquidity (deposits and a run). The control is doing real work in each — what
+changes is what a retained unit is *for*.
 
 The control also responds to impatience — at a quarterly discount of 0.90 the
 same firm distributes more, and `test_impatience_raises_the_payout` asserts the
@@ -797,22 +948,26 @@ bounds both sources at once.
 
 | quarters | solver | median | 95% CI | range over seeds |
 |---|---|---|---|---|
-| 8 | constant | 34.603 | ±0.029 | [34.548, 34.618] |
-| 8 | neural | 34.596 | ±0.028 | [34.540, 34.608] |
-| 32 | constant | 32.579 | ±0.059 | [32.475, 32.643] |
-| 32 | neural | 32.617 | ±0.351 | [32.477, 33.457] |
+| 8 | constant | 33.602 | ±0.092 | [33.536, 33.782] |
+| 8 | neural | 33.435 | ±1.485 | [29.714, 33.739] |
+| 32 | constant | 31.148 | ±0.171 | [30.923, 31.438] |
+| 32 | neural | 32.657 | ±12.350 | [**0.908**, 32.747] |
 
-**State feedback is worth −0.02% at eight quarters and +0.12% at thirty-two —
-within seed noise at both.** The verdict survived the liability side unchanged,
-which is worth something: a second state variable was added to the observation
-and the learner still cannot use it. The reason in §"When state feedback does
-earn its place" holds — the deposit base tracks equity closely, so it moves as
-little as equity does and gives a reactive policy nothing new to react to.
+**State feedback is worth −0.50% at eight quarters and +4.84% at thirty-two,
+and both are inside the spread** — the second one overwhelmingly so. Read the
+range rather than the median: at thirty-two quarters one seed landed at
+**0.908**, against a best of 32.7. That is not variance, it is a solve that
+failed, and a median computed over it means nothing.
 
-**The learner is six times noisier across seeds at the long horizon** (±0.351
-against ±0.059). Its best seed beats the constant policy by 2.6% and its worst
-loses; a single run would report whichever it drew. That spread is the finding,
-not the median.
+The script previously called the +4.84% "clear of seed noise" because it
+compared against a hard-coded 2% rather than against the spread the run had
+actually measured (±37% of the median). It now compares against the measurement
+and warns when any seed lands below half the best.
+
+**The learner has become markedly less stable with the run channel**, from
+±0.351 to ±12.350 at thirty-two quarters. The verdict is unchanged and if
+anything firmer: a policy whose worst seed is worth 3% of its best has not
+earned its place over a fixed one, whatever its median says.
 
 Read this table against the one immediately above it too: at the old
 magnitudes state feedback was worth nothing at eight quarters and +11.5% at
@@ -842,8 +997,8 @@ trap rather than economics (see the note below).
 A learner is a means, not a deliverable, and at every horizon currently
 trustworthy the simplest policy in the ladder is not measurably beaten.
 
-Overfitting is small and is measured rather than assumed: 0.16% at eight
-quarters, 0.32% to 0.36% at thirty-two.
+Overfitting is small and is measured rather than assumed: 0.11% to 0.43% at
+eight quarters, 1.3% to 1.6% at thirty-two.
 
 ### Open: firm value is not comparable across horizons
 
@@ -1086,8 +1241,8 @@ failures, and the price of the D&O and cyber cover insuring the same risk.
 
 **1. Hazard break-even — the only one with no $\alpha$ in it.**
 
-> A programme costing **0.76 a year**, against a franchise of **28.25**, must
-> cut the annual probability of failure by at least **270 basis points** to pay
+> A programme costing **0.66 a year**, against a franchise of **27.27**, must
+> cut the annual probability of failure by at least **243 basis points** to pay
 > for itself.
 
 Both inputs are things a board already has a view on, so the whole claim can be
@@ -1097,11 +1252,11 @@ checked without touching an uncalibrated parameter.
 
 | equity | spend/qtr | annual failure | going-concern share | verdict |
 |---|---|---|---|---|
-| 4.0 | 0.0872 | 14.31% | 0.784 | uneconomic |
-| **8.0** | **0.1963** | 7.89% | 0.814 | worth running |
-| 16.0 | 0.1905 | 4.75% | 0.815 | worth running |
-| 32.0 | 0.0669 | 2.62% | 0.809 | uneconomic |
-| 64.0 | 0.0019 | 1.79% | 0.801 | uneconomic |
+| 4.0 | 0.0182 | 17.56% | 0.761 | uneconomic |
+| 8.0 | 0.1260 | 9.25% | 0.802 | worth running |
+| **16.0** | **0.1657** | 4.54% | 0.810 | worth running |
+| 32.0 | 0.0562 | 2.56% | 0.807 | uneconomic |
+| 64.0 | 0.0026 | 1.93% | 0.800 | uneconomic |
 
 **Optimal GRC spend is non-monotone in capitalization and peaks in the middle.**
 Well capitalized, the hazard is too small to be worth buying down; thinly
@@ -1134,10 +1289,10 @@ equity alone; once the balance sheet scaled with equity it was not.
 
 | going concern | spend/qtr | firm value | verdict |
 |---|---|---|---|
-| 0.0 | 0.0387 | 19.543 | uneconomic |
-| 3.0 | 0.0625 | 21.718 | uneconomic |
-| 8.0 | 0.1283 | 25.418 | worth running |
-| 15.0 | 0.1576 | 30.793 | worth running |
+| 0.0 | 0.0793 | 18.192 | uneconomic |
+| 3.0 | 0.0820 | 20.469 | uneconomic |
+| 8.0 | 0.1130 | 24.319 | worth running |
+| 15.0 | 0.1475 | 29.759 | worth running |
 
 Swept through the going-concern value itself rather than through the
 productivity that generates it — sweeping productivity leaves the terminal
@@ -1161,8 +1316,8 @@ when credit loss was made to scale with the book:**
 
 | equity | 2.0 | 4.0 | 8.0 | 16.0 | 32.0 | 64.0 |
 |---|---|---|---|---|---|---|
-| firm value | 17.784 | 21.591 | 27.173 | 34.653 | 47.167 | 72.599 |
-| $d^2V/dE^2$ | — | −0.169 | −0.077 | −0.013 | +0.0005 | — |
+| firm value | 16.632 | 20.869 | 26.152 | 33.668 | 46.715 | 72.508 |
+| $d^2V/dE^2$ | — | −0.266 | −0.064 | −0.010 | −0.0004 | — |
 
 It was an artifact, and an instructive one. With credit loss fixed rather than
 proportional, a small firm faced the *same* expected default loss as a large
@@ -1171,12 +1326,13 @@ collapsed (2.800 at equity 4, against 13.459 now), and the value function turned
 convex near the bottom. Once lending less also means losing less, that
 fragility goes and the firm is risk-averse everywhere the diagnostic reaches.
 
-The largest positive second difference is $5 \times 10^{-4}$, which is noise —
-and it held at exactly that figure across the liability-side recalibration,
-having survived a change that moved every level on the row above it. The
-curvature at the thin end also softened by an order of magnitude (−1.62 to
-−0.17 at equity 4), because a firm with a deposit base is no longer nearly
-worthless when its capital is thin. The diagnostic stays in place: a genuine convex region would mean the
+**There is now no positive second difference at all** — the largest is
+$-4 \times 10^{-4}$, so the firm is concave in equity everywhere the diagnostic
+reaches. The faint convexity that survived the liability side has gone with the
+run channel, and for a reason worth stating: a thinly capitalised firm now faces
+a *higher* run probability, so taking more risk when weak makes a run likelier
+rather than merely making the gamble larger. The channel that most plausibly
+produces gambling-for-resurrection is the one that removed the last trace of it. The diagnostic stays in place: a genuine convex region would mean the
 firm is risk-loving near failure, and a learner would find it and recommend
 **cutting GRC in a crisis** — correct inside the model, indefensible outside
 it.
@@ -1190,9 +1346,9 @@ worthwhile, which is what it did here before being corrected.
 
 | family | risk-neutral $1/X$ | with survival | ratio |
 |---|---|---|---|
-| credit | 1.462 | 0.0981 | 15× |
-| operational | 5.694 | 0.0434 | 131× |
-| compliance | 9.924 | 0.0864 | 115× |
+| credit | 1.725 | 0.1684 | 10× |
+| operational | 5.694 | 0.1215 | 47× |
+| compliance | 9.924 | 0.1215 | 82× |
 
 Credit's exposure is a *rate on the book*, so the comparison needs the book the
 firm funds rather than the bare draw. Read as money it gave a risk-neutral
@@ -1209,12 +1365,19 @@ grounds alone**, and it is why credit's ratio is 15× where the other two are
 above 100×.
 
 Read the compliance row as: *this programme pays provided you believe a unit of
-spend removes about 9% of exposure, where pure expected-loss reduction would
+spend removes about 12% of exposure, where pure expected-loss reduction would
 demand 992%* — which is to say, on expected-loss grounds alone it could never
-pay at all. Credit's equivalent pair is 10% against 146%: still a gap, but the
+pay at all. Credit's equivalent pair is 17% against 173%: still a gap, but the
 only one of the three where the expected-loss threshold is a number a
 practitioner could argue about rather than dismiss. The gap is the Froot-Stein
 premium expressed as a threshold.
+
+**Every threshold rose when the asserted operational hazard was retired** —
+operational from 0.043 to 0.122, compliance from 0.086 to 0.122, credit from
+0.098 to 0.168. A programme now has to clear a higher bar to be worth running,
+which is the direct consequence of removing a channel that had been crediting
+GRC with preventing deaths it was never shown to prevent. The ratios narrowed
+correspondingly: 131× to 47× for operational.
 
 The exposures are computed rather than written in. They were hardcoded at the
 static model's 4.0 / 3.5 / 1.5 and are now about twenty-five times smaller, so

@@ -108,13 +108,22 @@ class FirmParams:
     #
     # Re-solved again when the liability side arrived: 1.17. The firm's losses
     # in money terms roughly tripled with the book, so the programme that
-    # maintains itself is correspondingly larger. The iteration oscillates
-    # rather than converging monotonically (1.83, 0.77, 1.33 on successive
-    # passes) because a larger opening stock buys survival, which raises the
-    # value of the franchise, which buys more spend; the value quoted is the
-    # damped average and is accurate to about +/- 15%. That is well inside the
-    # precision anything downstream of it claims.
-    initial_grc_stock: float = 1.17
+    # maintains itself is correspondingly larger.
+    #
+    # Re-solved a third time when the run replaced the asserted operational
+    # hazard: 0.79. **Not re-solving it was briefly the most misleading thing
+    # in the model.** With the old 1.17 the firm opened six times above its own
+    # steady state, spent the horizon running the stock down, and reported a
+    # budget of 0.043 a quarter -- which read as "retiring the hazard destroyed
+    # the case for GRC" when it was mostly "the firm was handed a control
+    # function it would never have built". At the correct fixed point the budget
+    # is 0.164 against 0.191 before, a fall of 14% rather than 78%.
+    #
+    # The lesson generalises: this parameter is a fixed point *of the whole
+    # model*, so any change that moves optimal spend invalidates it, and a stale
+    # value degrades gracefully into a plausible wrong answer rather than an
+    # error. Re-solve it after anything that touches a hazard or a loss channel.
+    initial_grc_stock: float = 0.79
 
     # What creditors and shareholders recover when the firm fails, as a
     # fraction of whatever positive equity is left at that moment. Limited

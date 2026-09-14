@@ -71,6 +71,61 @@ def survival_channel(env, naive_env, crn, steps: int, quarters: int) -> None:
     )
 
 
+def liquidity_defence(sampler, crn, steps: int, quarters: int) -> None:
+    """Controls or cash? What the firm buys when a run is a mechanism.
+
+    The run replaced a hazard rate that asserted an incident kills the firm.
+    Once depositors actually leave and the firm can hold reserves against them,
+    it has two defences rather than one, and the comparison below is what it
+    chooses. Sweeping the run rate is the test: if controls were the answer, a
+    likelier run would buy more of them.
+    """
+    from quant.env.env import EnvConfig, FirmEnv
+    from quant.params import DEFAULTS as D
+
+    print("\nDefending against a run: controls, or cash?")
+    header = (
+        f"  {'runs/year':>10} | {'GRC/qtr':>8} {'operational':>12} | {'reserves':>9} "
+        f"{'book':>7} | {'p(run)/qtr':>11} {'annual death':>13} | {'value':>8}"
+    )
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+    rows = []
+    for rate in (0.0, 0.45, 1.0, 2.0):
+        funding = replace(D.funding, annual_run_rate=rate)
+        env = FirmEnv(
+            EnvConfig.quarterly(quarters, funding=funding), sampler
+        )
+        policy, r = optimize_constant(env, crn, n_steps=steps)
+        trajectory = env.rollout(policy, crn, differentiable=False)
+        runs = sum(
+            float(info["run_probability"].mean()) for info in trajectory.infos
+        ) / len(trajectory.infos)
+        rows.append((rate, r))
+        print(
+            f"  {rate:>10.2f} | {r.total_grc:>8.4f} {r.grc[1]:>12.4f} | "
+            f"{r.reserve_ratio:>8.1%} {r.book:>7.2f} | {runs:>10.3%} "
+            f"{annual_death(r.survival_rate, quarters):>12.2%} | {r.value:>8.3f}"
+        )
+
+    # Read off the measured rows rather than asserted. An earlier version of
+    # this line said flatly that a likelier run buys cash and not controls,
+    # which was true of the first calibration it was written against and stopped
+    # being true at the next one. The repo has made this mistake before, in this
+    # same script, about which way per-quarter spend moves.
+    quiet, first = rows[0][1], rows[1][1]
+    riskiest = rows[-1][1]
+    print(
+        f"  Introducing a run at all takes operational GRC from {quiet.grc[1]:.4f} to "
+        f"{first.grc[1]:.4f}\n  and reserves from {quiet.reserve_ratio:.0%} to "
+        f"{first.reserve_ratio:.0%}: the firm buys both defences.\n"
+        f"  Past that it substitutes -- at {rows[-1][0]:.1f} runs a year reserves reach "
+        f"{riskiest.reserve_ratio:.0%} while\n  operational GRC falls back to "
+        f"{riskiest.grc[1]:.4f}. Cash is the certain defence and controls\n"
+        f"  are the probabilistic one, so the cheaper certainty wins at the margin."
+    )
+
+
 def recovery_sweep(sampler, crn, steps: int, quarters: int) -> None:
     """What the firm does as failure becomes less destructive.
 
@@ -170,9 +225,32 @@ def main() -> None:
         bound = results["PI bound"].value
         for name in ("constant", "neural"):
             assert results[name].value <= bound + 1e-6, f"{name} broke the bound"
-        print(f"{'':>11} | EVPI = {bound - results['neural'].value:.4f}")
+
+        # Flag a solver that has fallen into the absorbing wind-down rather
+        # than letting it be averaged into a headline. The exit action is
+        # absorbing, so once the probability mass has left there is nothing
+        # still operating to generate a gradient for staying, and the solve
+        # lands on exactly `orderly_recovery * initial_equity` with survival at
+        # zero. That is an optimizer trap and not a valuation
+        # (docs/static-model-debug-notes.md section 8).
+        collapsed = firm.orderly_recovery * firm.initial_equity
+        for name, r in results.items():
+            if abs(r.value - collapsed) < 1e-2 and r.survival_rate < 1e-3:
+                print(
+                    f"{'':>11} | WARNING: {name} collapsed into the wind-down "
+                    f"({collapsed:.3f}); its row is an optimizer trap, not a value"
+                )
+
+        # The best *implementable* policy, not a fixed one of the two. The
+        # persistence headline below used to take the neural row unconditionally
+        # and printed "+203%" off a collapsed solve. The sandwich only claims
+        # V(constant) <= V*, so whichever of the two is higher is the better
+        # estimate -- and taking the maximum is also what stops one solver
+        # failing from rewriting a result about the model.
+        best = max(("constant", "neural"), key=lambda n: results[n].value)
+        print(f"{'':>11} | EVPI = {bound - results[best].value:.4f} (over {best})")
         print("-" * len(header))
-        summary[delta] = results["neural"]
+        summary[delta] = results[best]
 
     env = FirmEnv(EnvConfig.quarterly(args.quarters), sampler)
     naive_env = FirmEnv(
@@ -185,6 +263,8 @@ def main() -> None:
     survival_channel(env, naive_env, crn, args.steps, args.quarters)
 
     balance_sheet(sampler, crn, args.steps, args.quarters)
+
+    liquidity_defence(sampler, crn, args.steps, args.quarters)
 
     if args.recovery_sweep:
         recovery_sweep(sampler, crn, args.steps, args.quarters)

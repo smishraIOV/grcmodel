@@ -22,13 +22,21 @@ protection of the firm's capacity to keep operating.
 
 The firm modelled is a **financial intermediary on crypto rails**: it takes
 deposits, lends and invests them, and runs the technology those assets live on.
-It does so on a real balance sheet — about 81 (unclear, missing % perhaps) of assets funded by 16 of capital
-and the rest by deposits.
+It does so on a real balance sheet: roughly **five units of assets for every
+unit of shareholder capital**, the rest funded by deposits.
+
+> **A note on units.** Money in this model has no denomination. Opening capital
+> is 16 and every other quantity below — a book of 81, a programme costing 0.76,
+> a franchise of 28 — is in the same arbitrary currency. Only ratios carry
+> meaning, which is deliberate: the cost functions are built so that the answer
+> cannot depend on whether the firm is denominated in dollars or cents, and
+> every published output is a ratio, a rate or a threshold rather than a level.
+> Bare numbers here are not percentages.
 
 It carries the full set of banking risks. **Loan defaults, liquidity events and
 depositor runs are central**, not background: credit is the largest single loss
-channel at 62% of expected loss, and because the book is funded four-to-one
-against capital, those losses land on equity at four times their size on assets.
+channel at 62% of expected loss, and because assets are about five times
+capital, a loss of one percent of assets is a loss of five percent of capital.
 What the crypto rails add is a second family on top — operational incidents at
 16%, cliff events such as a drained bridge at 13%, compliance penalties at 9%.
 The claim is not that the novel risks displace the textbook ones; it is that a
@@ -77,20 +85,21 @@ And the world does the following to it:
 | **Funding constraint** | It cannot deploy more than it can fund, and the constraint bites with a lag: this quarter's losses shrink the deposit base, which binds *next* quarter's lending. |
 | **Survival hazard** | It can fail three ways: running out of capital, an incident becoming public and depositors leaving, or losing its licence. GRC reduces the last two directly. |
 | **Credit risk on the book** | Loan defaults scale with how much is lent, so expanding the balance sheet costs more risk. Reduced by credit GRC — better underwriting. |
+| **Runs** | Depositors can leave suddenly. A run is likelier when operational controls are weak and when the quarter's losses have thinned the capital, so a bad quarter draws the run that makes it worse. |
+| **Liquidity and fire sales** | Withdrawals come out of reserves at par and out of the unmatured book at a 35% discount. A firm that cannot pay even after liquidating everything has failed at something being solvent would not have prevented. |
 | **Cliff events** | Rare, severe hits — a bridge drained — that leave it alive but badly impaired. GRC makes them rarer; it cannot make them smaller. |
 | **Wind-down option** | It can stop deliberately and recover more than a disorderly failure would leave. |
 
-The deposit base is what makes ordinary banking risk bite. **A one percent loss
-on a book funded four-to-one against capital is a five percent loss of capital.**
+The deposit base is what makes ordinary banking risk bite. Deposits are about
+four times capital, so assets are about five times capital, and **a loss of one
+percent of assets is a loss of five percent of capital.**
 Until the liability side existed the model had no way to carry that — a loss on
 an unlevered book costs capital its own size, not a multiple of it.
 
 Default configuration: **quarterly decisions over two years**, equity of 16, a
-book near 81, leverage 4.9, earning **23% a year** on that equity and facing a
-**4.8%** annual probability of failure. Funding binds in about 15% of quarters,
-against 71% before deposits existed — a bank with a deposit franchise is less
-often capital-rationed than one financing itself out of retained earnings, which
-is close to the whole reason to be one.
+book near 68, leverage about 4.9, and a **4.3%** annual probability of failure.
+The firm holds **24% of its balance sheet in reserves** against a run, funded by
+lending 15% less than it otherwise would.
 
 ---
 
@@ -184,7 +193,54 @@ difference of two float32 numbers near 1.
 deposit base — a firm funded four-to-one on demandable money faces the same
 assumed run rate as one funded entirely by its owners. §6 has the rest.
 
-### 4.7 Does a reactive policy earn its place?
+### 4.7 The run that was asserted rather than modelled
+
+The hazard channel named *"an incident becomes public and depositors leave"* was
+an annual rate. It asserted three things in one parameter: that an incident
+becomes public, that depositors leave, and that the firm therefore dies. There
+were no depositors in the model to leave, so the middle claim had no
+representation and the third followed from a number.
+
+**Fixed:** depositors now leave for real. A run is a discrete event, likelier
+when operational controls are weak and when the quarter's losses have thinned
+the capital — drawn *after* losses, so a bad quarter draws the run that makes it
+worse. Withdrawals come out of reserves at par and out of the unmatured book at
+a 35% discount. A firm that cannot pay even after liquidating everything has
+failed at something the solvency channel does not describe, and a fourth hazard
+prices the share it could not meet. The old rate is retired, not kept alongside:
+both together would charge the firm twice for one event.
+
+**The result.** The same firm, before and after, each at its own steady state:
+
+| | credit | operational | compliance | **total** | reserves |
+|---|---|---|---|---|---|
+| asserted rate | 0.020 | **0.147** | 0.030 | **0.197** | 9% |
+| run modelled | 0.046 | **0.065** | 0.077 | **0.187** | 24% |
+
+**The asserted rate was overstating operational GRC by about 2.3×** — the
+channel that justified the largest line in the budget was the one asserting its
+own conclusion. But the budget does not disappear; it *moves*: total spend falls
+5% while credit and compliance each roughly double. And the firm starts holding
+a real liquidity buffer, 9% of the balance sheet to 24%.
+
+Sweeping how often runs happen separates the two defences. Introducing a run at
+all makes the firm buy **both** — operational GRC from 0.002 to 0.065, reserves
+from 10% to 24%. Past that it substitutes: at two runs a year reserves reach 38%
+while operational GRC falls back. **Cash is the certain defence and controls are
+the probabilistic one, so at the margin the cheaper certainty wins.** The useful
+reading is the middle: a firm facing occasional runs should do both; one facing
+frequent runs should hold capital and liquidity rather than buy its way out.
+
+**One near-miss worth recording.** The first measurement of this said the budget
+had collapsed from 0.191 to 0.043 — that retiring the hazard had destroyed the
+case for GRC. It had not. The firm's opening stock of controls is a *fixed point
+of the whole model*, and it had been solved while the retired channel was live,
+so the firm was starting six times above the level it would now choose and spent
+the horizon running it down. Re-solved, the fall is 5% rather than 78%. A stale
+fixed point does not error; it produces a plausible wrong answer, and this one
+would have been reported as a headline.
+
+### 4.8 Does a reactive policy earn its place?
 
 Is a policy that *reacts to circumstances* worth more than a fixed budget?
 
@@ -206,7 +262,7 @@ worth responding to, not when it merely drifts.** (That sweep predates the
 liability side; the verdict it supports was re-measured and holds, the figure
 itself has not been.)
 
-### 4.8 How often the firm decides
+### 4.9 How often the firm decides
 
 **Tried:** weekly decisions instead of quarterly, reasoning that a firm deciding
 quarterly has nothing to react to because its next decision is three months away.
@@ -229,59 +285,73 @@ to quote a budget**. It inverts the question into claims a reader can argue with
 
 **The headline, with no uncalibrated parameter in it:**
 
-> A programme costing 0.76 a year, against a business worth 28.25 as a going
-> concern, must cut the annual probability of failure by at least **270 basis
+> A programme costing 0.66 a year, against a business worth 27.27 as a going
+> concern, must cut the annual probability of failure by at least **243 basis
 > points** to pay for itself.
 
-**Leverage makes ordinary loss reduction matter far more.** The largest change
-the liability side produced, and it reverses what the earlier model implied. A
-firm budgeting only for expected loss reduction used to spend fifty times less
-than one budgeting for both; it now spends **nine times less**. The survival
-channel is still the larger half — ignoring it costs 2.1% of firm value and 2.7
-points of annual failure probability — but it is no longer overwhelming. The old
-claim that GRC is paid for almost entirely by survival was substantially an
-artifact of an unlevered firm.
+**GRC is bought about equally by survival and by smaller losses — and the
+project's original headline said otherwise.** A firm budgeting only for expected
+loss reduction spends 40% less than one budgeting for both, and the gap costs
+0.5% of firm value and 1.1 points of annual failure probability. That ratio has
+now moved twice, both times because the model was made more honest: it was
+*fifty times* before the balance sheet was levered, *nine times* after, and 1.6
+times once the asserted "depositors leave" death rate was replaced by a
+mechanism. The claim that GRC is paid for almost entirely by survival survived
+neither correction.
 
-**GRC spend peaks at middling capitalisation.** 0.196 a quarter at equity 8 and
-0.191 at 16, against 0.087 at equity 4 and 0.002 at 64. A well-capitalised firm
+**Given a run, the firm buys liquidity as well as controls — and past a point,
+instead of them.** Introducing runs takes reserves from 10% to 24% of the
+balance sheet *and* operational GRC from 0.002 to 0.065. At two runs a year
+reserves reach 38% while operational GRC falls back. Cash is the certain
+defence, controls the probabilistic one.
+
+**GRC spend peaks at middling capitalisation.** 0.166 a quarter at equity 16 and
+0.126 at 8, against 0.018 at equity 4 and 0.003 at 64. A well-capitalised firm
 faces too little risk to bother; a nearly-failed one is too far gone for a
-programme to pull back. The band is wider at the bottom than it was, because a
-firm with thin capital still has a deposit-funded business worth protecting.
+programme to pull back.
 
 **Accumulation matters more than the annual number.** Treating GRC as a stock
-rather than an expense is worth **+49% of firm value**, and the firm buys *less*
-per quarter to get it (0.36 down to 0.20) — a control that persists delivers the
-same protection for a smaller flow. Two-year survival goes from 67% to 91%.
+rather than an expense is worth **+31% of firm value**, and takes two-year
+survival from 74% to 92%. The firm buys *more* per quarter when it persists
+(0.013 to 0.187): a control that keeps working next quarter is worth much more
+than one that does not.
 
 **The less a failure would destroy, the less a programme to avoid it is worth.**
-Spend falls 41% as recovery in failure rises from nothing to 80%.
+Spend falls 27% as recovery in failure rises from nothing to 80%.
 
 **As an effectiveness threshold**, a compliance programme pays if a unit of
-spend removes about 9% of exposure, where pure loss-reduction arithmetic demands
-an impossible 992%. Credit's pair is 10% against 146% — the only one of the
-three where the loss-reduction threshold is arguable rather than absurd, because
-the book it applies to is now four times larger.
+spend removes about 12% of exposure, where pure loss-reduction arithmetic
+demands an impossible 992%. Credit's pair is 17% against 173% — the only one of
+the three where the loss-reduction threshold is arguable rather than absurd.
+Every one of these thresholds *rose* when the asserted hazard was retired: a
+programme now has to clear a higher bar, which is what removing a channel that
+credited GRC with preventing unproven deaths should do.
 
-**The firm now pays a dividend.** Small, 4.4% of value, but it was exactly zero
-before: with deposits funding the lending, capital is no longer scarce enough
-that hoarding every unit beats distributing it.
+**The firm is risk-averse everywhere.** The gambling-for-resurrection check now
+finds no convex region at all, where a trace survived before. The run channel
+removed it: a thinly capitalised firm faces a *higher* run probability, so
+taking more risk when weak makes a run likelier rather than just making the
+gamble bigger.
 
 ---
 
 ## 6. What is unresolved
 
-**The liability side is half built.** Deposits exist as a stock, are priced, and
-shrink with the firm's capital — which is what makes leverage, and therefore
-ordinary loan defaults, matter. What is missing is everything that makes a *run*
-a run: no **withdrawal shock**, so deposits leave smoothly rather than suddenly;
-no **liquidity buffer the firm must hold**, only whatever is left after it
-decides how much to lend; and no **fire-sale cost**, because the book matures
-inside the period, so no unmatured asset ever has to be dumped to meet a
-withdrawal. So the channel named "an incident becomes public and depositors
-leave" is still an assumed rate that GRC bends. **A firm funded four-to-one on
-demandable money faces the same assumed run rate as one funded entirely by its
-owners.** That was always wrong; it is now wrong *visibly*, because there is a
-deposit base in the state for it to ignore.
+**A run damages the deposit base, but not the franchise.** This is the
+assumption doing most of the work in §4.7's conclusion, and it should be
+weakened before anyone acts on that conclusion. Deposits rebuild toward capacity
+at a four-month half-life whether they left in a panic or drifted away. Real
+deposit franchises do not come back that fast after a run — the reputational
+damage outlasts the outflow by years. A slower rebuild would make runs costlier
+in a way a liquidity buffer *cannot* offset, which is the most likely route to
+operational controls being worth more than the model currently says. Until it is
+built, read "cash beats controls" as conditional on runs being survivable events
+rather than franchise-ending ones.
+
+**The learner has become unstable.** At the eight-year horizon one seed of five
+produced a firm worth 0.9 against a best of 32.7 — a failed solve, not variance.
+The verdict on state feedback is unchanged and if anything firmer, but the
+instability is new with the run channel and is not understood.
 
 **One number still carries too much weight.** The model stops after two years
 and values what is left with a constant standing in for "the business continues"

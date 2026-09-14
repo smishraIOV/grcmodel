@@ -797,12 +797,18 @@ def test_default_quarterly_model_sits_in_a_usable_regime():
     # prefers it. Raising the run rate or the fire-sale haircut makes it hold
     # *more cash*, not buy more controls.
     #
-    # So this is a result, not a regime failure, and the threshold has to move
-    # or it tests the old conclusion. What it still guards is the case the
-    # docstring describes: a firm that inherits so much control capital that
-    # spend collapses to nothing. 0.02 is an order of magnitude above the 0.002
-    # that regime produced.
-    assert result.total_grc > 0.02, f"spend is immaterial: {result.total_grc:.4f}"
+    # **The threshold stays at 0.10, and the first attempt to lower it was
+    # wrong.** The budget appeared to fall to 0.043, which looked like a result
+    # and was mostly a stale parameter: `initial_grc_stock` is a fixed point of
+    # the whole model, it had been solved while the retired hazard was live, and
+    # the firm was opening six times above the steady state it would now choose.
+    # Re-solved, the budget is 0.164 against 0.191 before.
+    #
+    # Recorded because the failure mode is the dangerous kind. Lowering a
+    # threshold to admit a number that a stale calibration produced would have
+    # locked in the wrong conclusion and left the check unable to catch it
+    # again.
+    assert result.total_grc > 0.10, f"spend is immaterial: {result.total_grc:.4f}"
 
     # **Underinvestment went quiet for the same reason, and the successor
     # diagnostic is the reserve ratio.** Both measure funding scarcity reducing

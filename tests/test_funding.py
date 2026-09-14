@@ -280,23 +280,40 @@ def test_leverage_amplifies_an_asset_loss_onto_equity():
     crn = CommonRandomNumbers(0, 1, BATCH, REFERENCE)
     policy = Deploy(grc=0.1, investment=1e6)  # take the whole balance sheet
 
-    damage = {}
-    for multiple in (0.5, 2.0, 4.0):
-        env = funded_env(funding=FundingParams(deposit_capacity=multiple))
+    def damage_at(multiple: float, run_rate: float) -> float:
+        env = funded_env(
+            funding=FundingParams(
+                deposit_capacity=multiple, annual_run_rate=run_rate
+            )
+        )
         state = env.reset(BATCH)
         shock = env.sampler(crn.at(0), REFERENCE)
         with_credit = env.dynamics.step(state, policy(state), shock).state.equity
         without = env.dynamics.step(
             state, policy(state), replace(shock, credit_loss=torch.zeros_like(shock.credit_loss))
         ).state.equity
-        damage[multiple] = ((without - with_credit) / state.equity).mean().item()
+        return ((without - with_credit) / state.equity).mean().item()
 
-    levels = [damage[m] for m in (0.5, 2.0, 4.0)]
-    assert levels[0] < levels[1] < levels[2], damage
+    # Runs off first, to isolate leverage from everything else.
+    plain = [damage_at(m, 0.0) for m in (0.5, 2.0, 4.0)]
+    assert plain[0] < plain[1] < plain[2], plain
     # Roughly proportional to the balance sheet, since the loss is a rate on a
     # book that is itself the balance sheet. Loose, because GRC mitigation and
     # the capacity sigmoid both bend it.
-    assert levels[2] / levels[0] == pytest.approx((1 + 4.0) / (1 + 0.5), rel=0.2)
+    assert plain[2] / plain[0] == pytest.approx((1 + 4.0) / (1 + 0.5), rel=0.2)
+
+    # **With runs on, the amplification is more than proportional**, and that is
+    # a second mechanism rather than noise. A credit loss thins the capital, and
+    # the run probability is evaluated on the capital the losses left behind, so
+    # the same loss also makes a withdrawal likelier -- and at this leverage a
+    # withdrawal means a fire sale. Losses feed runs feed losses.
+    #
+    # This test began by asserting plain proportionality with runs on, and
+    # failed at 4.03 against 3.33 once the channel existed. The excess is the
+    # finding.
+    amplified = [damage_at(m, FundingParams().annual_run_rate) for m in (0.5, 2.0, 4.0)]
+    assert amplified[2] / amplified[0] > plain[2] / plain[0]
+    assert amplified[2] > plain[2], "a run must make a credit loss cost more, not less"
 
 
 # -- wiring ---------------------------------------------------------------

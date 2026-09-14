@@ -69,6 +69,14 @@ profile, torch version and commit it ran under.
   diagnostic still in band and the tests still green, because the firm simply
   stopped wanting what it could now fund. If you change what the firm can fund,
   re-check what it wants to deploy (`AnnualRates.curvature_per_period`).
+- **Re-solve `initial_grc_stock` after anything that touches a hazard or a loss
+  channel.** It is a fixed point of the whole model — the level at which the
+  firm's own optimal maintenance spend replaces depreciation — so a change that
+  moves optimal spend invalidates it, and a stale value degrades into a
+  plausible wrong answer rather than an error. Retiring one hazard left the firm
+  opening six times above its new steady state; it spent the horizon running the
+  stock down and reported a budget 78% lower, which read as a headline finding
+  and was an artifact. Re-solved, the fall was 5%.
 - **`optimize_constant`'s step budget has to reach the answer.** The control
   starts at `softplus(0)` and Adam moves the raw parameter by at most `lr` per
   step, so 1500 steps at lr 0.05 cannot reach an investment level near 80 —
