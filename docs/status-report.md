@@ -40,12 +40,20 @@ capital, a loss of one percent of assets is a loss of five percent of capital.
 What the crypto rails add is a second family on top — operational incidents at
 16%, cliff events such as a drained bridge at 13%, compliance penalties at 9%.
 The claim is not that the novel risks displace the textbook ones; it is that a
-firm of this shape faces both, and a GRC function has to be budgeted against
-both.
+firm of this shape faces both, and a GRC **programme** has to be budgeted
+against both.
 
-The one textbook risk still named rather than mechanised is the **run**: the
-deposits are there and can shrink, but they leave smoothly rather than suddenly.
-§6 sets out what is missing.
+*(Function or programme? The model has only one of these. It represents the
+**programme** — the spend, and the stock of control capability that spend builds
+up. Whether that capability sits in a standing GRC function, in the business
+lines, or in outside counsel is a question the model cannot see and does not
+need to.)*
+
+All three textbook risks are now mechanised, including the run: deposits can
+leave suddenly, the firm meets the withdrawal out of reserves or by selling its
+book at a discount, and it fails if it cannot. What is *not* modelled is the
+lasting damage a run does to a deposit franchise — see §6, which is the
+assumption most worth arguing with.
 
 Everything is a PyTorch model in `quant/`, about 4,700 lines, with 103 tests.
 
@@ -53,9 +61,18 @@ Everything is a PyTorch model in `quant/`, about 4,700 lines, with 103 tests.
 
 ## 2. Where it started
 
-The original model was **two periods**. The firm picked a GRC budget, a random
-loss arrived, and it chose how much to invest, paying a convex penalty if it had
-to raise money externally. Its headline:
+The original model was **two periods**, which is Froot, Scharfstein and Stein's
+own structure rather than an arbitrary choice: their argument needs exactly one
+period in which risk is borne and one in which the investment opportunity
+arrives, so that a bad draw in the first can be shown to cost real investment in
+the second. Two periods is the smallest model in which risk management can add
+value at all.
+
+So: the firm picked a GRC budget; then a draw arrived across three risk families
+— a continuous credit loss, an operational incident times a severity, and a rare
+compliance breach — reducing its internal wealth; then it chose how much to
+invest, paying a convex penalty on anything it had to raise externally. Its
+headline:
 
 > With external finance free, the firm spends 0.77 on GRC. Facing convex
 > financing costs, the same firm spends 2.56. The gap is risk management that
@@ -76,25 +93,59 @@ A firm that operates over many periods and can fail. Each period it chooses how
 much to spend on GRC (split across credit, operational and compliance), how much
 capital to deploy, how much profit to distribute, and whether to wind down.
 
-And the world does the following to it:
+### The balance sheet
+
+It funds a book with its own capital **plus a deposit base about four times that
+capital**. Deposits persist between periods, pay interest whether or not the book
+earns, and the base its capital can carry shrinks as that capital does.
+
+**It cannot deploy more than it funds.** The constraint needs no free parameter,
+because the balance sheet states it: capacity is *equity, minus what it just
+spent on GRC, plus the deposits it holds*. Whatever it does not lend sits as
+reserves, earning less than the book would and still costing deposit interest.
+
+The constraint bites with a **lag**, which is the interesting part: this period's
+losses shrink the deposit base, and that binds *next* period's lending.
+
+Leverage is what makes ordinary banking risk bite. Assets are about five times
+capital, so **a loss of one percent of assets is a loss of five percent of
+capital.** Until the liability side existed the model could not carry that — a
+loss on an unlevered book costs capital its own size, not a multiple of it.
+
+### What can go wrong
 
 | mechanism | what it represents |
 |---|---|
-| **GRC as capital stock** | Controls accumulate and depreciate (~25%/year). Spending today protects for years, which is what makes prevention worth anything. |
-| **Deposit funding** | It funds its book with capital *plus a deposit base* about four times its equity. Deposits persist, pay interest whether or not the book earns, and shrink as its capital does. |
-| **Funding constraint** | It cannot deploy more than it can fund, and the constraint bites with a lag: this quarter's losses shrink the deposit base, which binds *next* quarter's lending. |
-| **Survival hazard** | It can fail three ways: running out of capital, an incident becoming public and depositors leaving, or losing its licence. GRC reduces the last two directly. |
-| **Credit risk on the book** | Loan defaults scale with how much is lent, so expanding the balance sheet costs more risk. Reduced by credit GRC — better underwriting. |
-| **Runs** | Depositors can leave suddenly. A run is likelier when operational controls are weak and when the quarter's losses have thinned the capital, so a bad quarter draws the run that makes it worse. |
-| **Liquidity and fire sales** | Withdrawals come out of reserves at par and out of the unmatured book at a 35% discount. A firm that cannot pay even after liquidating everything has failed at something being solvent would not have prevented. |
-| **Cliff events** | Rare, severe hits — a bridge drained — that leave it alive but badly impaired. GRC makes them rarer; it cannot make them smaller. |
-| **Wind-down option** | It can stop deliberately and recover more than a disorderly failure would leave. |
+| **Credit losses** | Loan defaults, as a rate on what is lent — so expanding the balance sheet costs more risk. Reduced by credit GRC: better underwriting. |
+| **Operational incidents** | Failures in process and systems. GRC contains them: it reduces the severity, not the frequency. |
+| **Compliance breaches** | Penalties and enforcement. GRC prevents them: it reduces the frequency, not the severity. |
+| **Cliff events** | Rare, severe hits — a bridge drained. GRC makes them rarer; it cannot make them smaller. |
+| **Runs** | Depositors leave suddenly. A run is likelier when operational controls are weak *and* when the period's losses have thinned the capital — so a bad period draws the run that makes it worse. |
+| **Fire sales** | Withdrawals come out of reserves at par and out of the unmatured book at a 35% discount. That discount is the only loss in the model caused by the *timing* of an obligation rather than by an asset going wrong. |
 
-The deposit base is what makes ordinary banking risk bite. Deposits are about
-four times capital, so assets are about five times capital, and **a loss of one
-percent of assets is a loss of five percent of capital.**
-Until the liability side existed the model had no way to carry that — a loss on
-an unlevered book costs capital its own size, not a multiple of it.
+### How it actually dies
+
+Three channels, and their intensities add:
+
+| channel | what it is | GRC acting on it |
+|---|---|---|
+| **Capital** | Equity thins toward insolvency | indirectly — GRC leaves more equity behind |
+| **Liquidity** | It was asked for deposits it could not pay, even after liquidating | indirectly — operational GRC makes the run rarer |
+| **Licence** | A breach escalates to revocation | **directly** — compliance GRC |
+
+Solvency and liquidity are deliberately *different* failures: a firm can be
+solvent and unable to pay, and that is the case a reserve buffer exists for.
+
+A fourth channel — "an incident becomes public and depositors leave" — was
+retired. It asserted three things in one parameter, with no depositors in the
+model to leave. The run channel above now carries that mechanism honestly, and
+§5 reports what it cost to find out.
+
+Against all of this the firm holds two defences, and it uses both: the GRC
+stock, which accumulates and depreciates at **25% a year** (so spending today
+still protects in two years' time, which is what makes prevention worth
+anything), and **reserves**. It can also stop deliberately, recovering more than
+a disorderly failure would leave.
 
 Default configuration: **quarterly decisions over two years**, equity of 16, a
 book near 68, leverage about 4.9, and a **4.3%** annual probability of failure.
@@ -103,178 +154,50 @@ lending 15% less than it otherwise would.
 
 ---
 
-## 4. Approaches considered, and what happened to them
-
-This is the part worth reading. Most of what was learned came from things that
-did not work.
-
-### 4.1–4.3 Three things replaced, in brief
-
-| tried | outcome | why |
-|---|---|---|
-| Convex financing cost as the friction | **Retired** | Once the firm could fail it bound on 1.9% of outcomes against 52% in the two-period model. It had been a *reduced form*: a two-period model must assume the curvature that makes risk matter, while a model where death destroys a going concern derives it. Over many periods it is also unbounded below — equity roughly squares once negative — so the problem was not well-posed without a failure barrier. |
-| Firm fails when equity crosses zero | **Replaced by a smooth hazard** | A hard threshold cannot be optimised through: a failed firm is worth a fixed amount, so nothing about it responds to what the firm did. Measured, a solver from a poor guess converged to *worse* than a policy ignoring the state entirely. The economics agree — intermediaries fail because a loss becomes public and funding leaves, not on an accounting threshold. |
-| Cliff events — first **declined**, then **reinstated** | **Built** | Declined because an event is either severe enough to kill (the hazard) or moderate (ordinary losses). Reversed on a better argument: that reasons about where a *loss* lives, not where a *decision* lives. The cliff is the case in between — alive, badly impaired, holding a real choice. **A model with only "moderate" and "fatal" has no state in which GRC's option value does anything.** Measurable: after a cliff, the share of paths that cannot fund the investment they want roughly doubles. |
-
-### 4.4 Four ways to solve the model
+## 4. How the model is solved
 
 The model has no closed-form answer, so it is solved numerically. Four methods
-were built, and comparing them is how errors get caught.
+were built, and comparing them is how errors get caught — three agreeing solvers
+on a broken simulator agree wrongly, so the agreement is only worth what the
+independence behind it is worth.
 
-| method | how it works | verdict |
+| method | how it works | what it is for |
 |---|---|---|
-| **Closed form** | An exact formula for a deliberately degenerate case | Kept as the exactness check |
-| **Constant policy** | One fixed action for every period and state | Surprisingly hard to beat |
-| **Backpropagation through the simulator** | The simulator is differentiable, so gradients are exact | **The main method** |
-| **Grid value iteration** | Enumerate a coarse grid of states, work backwards | Independent referee |
+| **Closed form** | An exact formula for a deliberately degenerate case | The exactness check. Holds to machine precision, so it catches what a convergence tolerance would hide |
+| **Constant policy** | One action, held fixed across every period and state — but the action itself is **optimised**, by gradient ascent, not assumed | The floor a learner must clear. Surprisingly hard to beat |
+| **Backpropagation through the simulator** | The simulator is differentiable end to end, so gradients are exact rather than sampled | **The main method** |
+| **Grid value iteration** | Enumerate a coarse grid of states, work backwards from the horizon | The independent referee — it shares only the dynamics, no gradients and no optimiser |
 
-**Truncated backpropagation with a critic** was also built and **rejected**. It
-exists to fix instability over long horizons and there was no instability to fix:
-it lost at every horizon tested, monotonically, and **never beat a constant
-policy at any horizon while costing 2.3× the compute.** The learned estimate was
-the problem — early in training it underestimates the value of continuing, which
-is exactly the input the firm uses to decide whether to continue.
+**Truncated backpropagation with a critic** is built and **parked**, on the
+`svg-critic` branch. It cuts the gradient chain every few steps and replaces the
+rest with a learned estimate, which is the standard remedy for instability over
+long horizons. Tested at horizons up to 32 steps it lost at every one, because
+there was no instability to fix: the learned estimate underestimates the value of
+continuing early in training, which is exactly the input the firm uses to decide
+whether to continue.
 
-### 4.5 Credit risk that did not depend on the loan book
+It is kept rather than discarded, for two reasons that have both strengthened
+since. The horizon is going to roughly triple, and backpropagation cost is linear
+in steps, so the problem the technique exists for is the one now approaching. And
+the learner *has* become unstable — see below.
 
-**The most serious error before the liability side.** Credit losses were drawn
-independently of how much the firm had lent — expected loss was the same whether
-it deployed 5 or 80. Expanding the balance sheet carried no additional risk,
-which inverts the central decision a bank makes.
+### Does a reactive policy earn its place?
 
-Fixed: credit loss is a rate on what is deployed. It forced the sequence within a
-period to change — a bank sets its book from the capital it has and defaults
-arrive on what it lent, so losses can no longer be computed before the lending
-decision.
+Is a policy that reacts to circumstances worth more than a fixed budget?
 
-At the time the fix changed almost nothing, because the firm was constrained by
-funding rather than by risk: it lent up to what it could fund either way. **That
-changed with the next section.** Deposits took funding-constrained quarters from
-71% to about 15%, so risk now prices the last stretch of the book rather than
-funding rationing all of it — which is the regime in which making credit loss
-depend on the book was supposed to matter.
+Measured across five seeds and scored out of sample, the answer is **no**:
+−0.50% over two years and +4.84% over eight, both inside the spread. Read the
+range rather than the median — at the long horizon one seed produced a firm worth
+**0.9 against a best of 32.7**. That is a failed solve, not variance, and it is
+new with the run channel.
 
-### 4.6 The firm had no liabilities at all
-
-**Found latest, and the largest structural gap.** The firm funded its book out
-of its own capital plus a costless multiple of it, borrowed and repaid inside
-the same period. It had no depositors — which deleted **leverage** (losses on an
-unlevered book cost capital their own size, so loan defaults could not threaten
-the firm), **the price of funding** ("how levered should we be" was not a
-question the model could pose), and **the funding leaving** (a liability repaid
-inside the period cannot run, so the hazard named *"depositors leave"* was a
-label on a constant).
-
-**Fixed:** deposits are a stock. They persist, pay interest whether or not the
-book earns, and the base a firm's capital can carry falls as that capital does.
-
-**The instructive part was what it broke.** Four parameters had been calibrated
-against a book of 25 and none moved on their own when the book went to 80:
-
-> The firm's *opportunity* stayed put while its funding capacity tripled, so it
-> stopped wanting what it could now fund. Funding-constrained quarters fell from
-> **71% to 0.0%** — the central Froot-Stein channel switching itself off — while
-> every other diagnostic stayed in range and the whole test suite stayed green.
-
-A model can lose its main mechanism and go on producing plausible numbers. That
-is the argument for a named regime check per channel rather than one overall
-verdict.
-
-Three bugs came out of the change, each caught by a test failing for a reason
-other than the one it was written for: reserve income computed from a capacity
-that is infinite when the cap is off (infinite income, then NaN everywhere); an
-optimiser whose lending control could not travel far enough in its step budget,
-which converged to a book of 58 and read as the firm's *choice* — and handed
-the state-feedback policy a spurious **7.4% advantage** over a baseline that had
-simply run out of steps; and a production function computing a 2% residue as the
-difference of two float32 numbers near 1.
-
-**Still assumed rather than derived.** The run hazard does not consult the
-deposit base — a firm funded four-to-one on demandable money faces the same
-assumed run rate as one funded entirely by its owners. §6 has the rest.
-
-### 4.7 The run that was asserted rather than modelled
-
-The hazard channel named *"an incident becomes public and depositors leave"* was
-an annual rate. It asserted three things in one parameter: that an incident
-becomes public, that depositors leave, and that the firm therefore dies. There
-were no depositors in the model to leave, so the middle claim had no
-representation and the third followed from a number.
-
-**Fixed:** depositors now leave for real. A run is a discrete event, likelier
-when operational controls are weak and when the quarter's losses have thinned
-the capital — drawn *after* losses, so a bad quarter draws the run that makes it
-worse. Withdrawals come out of reserves at par and out of the unmatured book at
-a 35% discount. A firm that cannot pay even after liquidating everything has
-failed at something the solvency channel does not describe, and a fourth hazard
-prices the share it could not meet. The old rate is retired, not kept alongside:
-both together would charge the firm twice for one event.
-
-**The result.** The same firm, before and after, each at its own steady state:
-
-| | credit | operational | compliance | **total** | reserves |
-|---|---|---|---|---|---|
-| asserted rate | 0.020 | **0.147** | 0.030 | **0.197** | 9% |
-| run modelled | 0.046 | **0.065** | 0.077 | **0.187** | 24% |
-
-**The asserted rate was overstating operational GRC by about 2.3×** — the
-channel that justified the largest line in the budget was the one asserting its
-own conclusion. But the budget does not disappear; it *moves*: total spend falls
-5% while credit and compliance each roughly double. And the firm starts holding
-a real liquidity buffer, 9% of the balance sheet to 24%.
-
-Sweeping how often runs happen separates the two defences. Introducing a run at
-all makes the firm buy **both** — operational GRC from 0.002 to 0.065, reserves
-from 10% to 24%. Past that it substitutes: at two runs a year reserves reach 38%
-while operational GRC falls back. **Cash is the certain defence and controls are
-the probabilistic one, so at the margin the cheaper certainty wins.** The useful
-reading is the middle: a firm facing occasional runs should do both; one facing
-frequent runs should hold capital and liquidity rather than buy its way out.
-
-**One near-miss worth recording.** The first measurement of this said the budget
-had collapsed from 0.191 to 0.043 — that retiring the hazard had destroyed the
-case for GRC. It had not. The firm's opening stock of controls is a *fixed point
-of the whole model*, and it had been solved while the retired channel was live,
-so the firm was starting six times above the level it would now choose and spent
-the horizon running it down. Re-solved, the fall is 5% rather than 78%. A stale
-fixed point does not error; it produces a plausible wrong answer, and this one
-would have been reported as a headline.
-
-### 4.8 Does a reactive policy earn its place?
-
-Is a policy that *reacts to circumstances* worth more than a fixed budget?
-
-Measured properly — five random seeds, scored on data it was not trained on — the
-answer at the default settings is **no**: −0.02% over two years and +0.12% over
-eight, bands overlapping in both. A single run calling it better is reporting its
-seed. That verdict survived the liability side unchanged, which is itself
-informative: a second state variable was added for the learner to observe and it
-still could not use it. At the long horizon the learner is six times noisier
-across seeds than the fixed policy — its best seed wins by 2.6% and its worst
-loses.
-
-The reason is not that the method is weak. **The firm's state barely moves**, and
+The reason is not that the method is weak: **the firm's state barely moves**, so
 a well-chosen fixed action is near-optimal everywhere it goes. The fix is not a
-better learner: raising the rate of cliff events — the one shock large enough to
-move the state sharply — takes the advantage from +0.04% to **+9.32%**,
+better learner either. Raising the rate of cliff events — the one shock large
+enough to move the state sharply — takes the advantage to **+9.32%**,
 monotonically. **A reactive policy pays when the state makes large discrete jumps
 worth responding to, not when it merely drifts.** (That sweep predates the
-liability side; the verdict it supports was re-measured and holds, the figure
-itself has not been.)
-
-### 4.9 How often the firm decides
-
-**Tried:** weekly decisions instead of quarterly, reasoning that a firm deciding
-quarterly has nothing to react to because its next decision is three months away.
-
-**Outcome:** no effect — +0.05% either way. The binding constraint is the one
-above: a state that does not move gives a reactive policy nothing to work with,
-however often it is consulted.
-
-The exercise was still worth it. It forced every parameter to be expressed as a
-rate per year rather than per period, and surfaced two real bugs that only a long
-horizon could expose — including one where a probability calculation silently
-underflowed to zero and produced a meaningless answer.
+liability side; the verdict holds, the figure has not been re-measured.)
 
 ---
 
@@ -337,7 +260,19 @@ of firm value and 1.1 points of annual failure probability.
 instead of them.** Introducing runs takes reserves from 10% to 24% of the
 balance sheet *and* operational GRC from 0.002 to 0.065. At two runs a year
 reserves reach 38% while operational GRC falls back. Cash is the certain
-defence, controls the probabilistic one.
+defence, controls the probabilistic one, so at the margin the cheaper certainty
+wins. The useful reading is the middle: a firm facing occasional runs should do
+both; one facing frequent runs should hold capital and liquidity rather than buy
+its way out with controls.
+
+**An assumed failure rate was overstating operational controls by about 2.3×.**
+The hazard channel named *"an incident becomes public and depositors leave"* was
+a single parameter asserting three things at once, with no depositors in the
+model to leave. Replacing it with a mechanism the firm can respond to cut the
+operational line of the budget from 0.147 to 0.065. The budget did not
+disappear, though — it *moved*: total spend fell 5% while credit and compliance
+each roughly doubled. **A channel that asserts its own conclusion will be paid
+for out of the budget of the channels that do not.**
 
 **Spend peaks at middling capitalisation.** 0.166 a quarter at equity 16 and
 0.126 at 8, against 0.018 at equity 4 and 0.003 at 64. A well-capitalised firm
@@ -363,8 +298,8 @@ the three where the loss-reduction threshold is arguable rather than absurd.
 ## 6. What is unresolved
 
 **A run damages the deposit base, but not the franchise.** This is the
-assumption doing most of the work in §4.7's conclusion, and it should be
-weakened before anyone acts on that conclusion. Deposits rebuild toward capacity
+assumption doing most of the work in the controls-versus-cash finding (§5), and
+it should be weakened before anyone acts on it. Deposits rebuild toward capacity
 at a four-month half-life whether they left in a panic or drifted away. Real
 deposit franchises do not come back that fast after a run — the reputational
 damage outlasts the outflow by years. A slower rebuild would make runs costlier
@@ -411,10 +346,15 @@ has **not** been re-run and should be: leverage already moved the
 survival-versus-loss-reduction split toward loss reduction (§5) and a longer
 horizon moves it further, so the two are confounded until it is.
 
-**No parameter is calibrated.** Failure rates, loss severities and recoveries
-have real external anchors — bank failure statistics, published exploit losses,
-bankruptcy recoveries. The effectiveness of GRC spending does not, which is why
-every output is a threshold rather than a recommendation.
+**No parameter is calibrated**, and only one of them is genuinely
+uncalibratable. Failure rates, loss severities, recoveries, leverage, charge-off
+rates and withdrawal fractions in a run all have real external anchors that have
+never been used. The effectiveness of GRC spending has none, which is why every
+output is a threshold rather than a recommendation.
+[`calibration.md`](calibration.md) sorts every parameter by which case it is in,
+names a source for each, and records which conclusions have survived four
+recalibrations — that last table being the only direct evidence available about
+what to believe here.
 
 ---
 
@@ -433,9 +373,8 @@ results, `static-model-debug-notes.md` records the reasoning behind design
 choices and the traps found along the way, `framework.md` covers the conceptual
 structure.
 
-**Code state:** everything through §4.5 is on `main`. The liability side of
-§4.6, and the recalibration it forced, are on `liability-side`. The rejected
+**Code state:** everything described here is on `main`. The parked
 truncated-backpropagation experiment is on `svg-critic` and deliberately not on
 `main`, so a reader chasing a number that moved does not have to rule out a
-solver that lost at every horizon tested; its verdict stays in the
-documentation.
+solver that has never yet earned its place. Its verdict, and the argument for
+keeping it, are in §4.

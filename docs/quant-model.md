@@ -289,7 +289,7 @@ exactly the one-period problem that benchmark solves.
 | — | Payout control: dividends out of profit, keeping capital scarce | **built** — `FirmAction.payout` |
 | 4 | Grid value iteration on a reduced config, and the agreement metric | **built** — `quant/solvers/gridvi.py` |
 | 5 | The learner: horizon scaling, multi-seed, out-of-sample | **built** — `quant/studies/seeds.py`; verdict in §6 |
-| 5b | Truncated BPTT with a critic, and a head-to-head against full BPTT | **built, then rejected** — on branch `svg-critic`, not on `main`; verdict in §6 |
+| 5b | Truncated BPTT with a critic, and a head-to-head against full BPTT | **built, then parked** — on branch `svg-critic`, not on `main`; verdict in §6, and see the note there on why it is kept |
 | 6a | The liability side: deposits as a priced, persistent, procyclical stock | **built** — `quant/params.py` `FundingParams`, `FirmState.deposits` |
 | 6b | Withdrawals, a liquidity buffer, and the fire-sale cost of meeting a run out of an unmatured book | **built** — `StandardDynamics.withdrawal`, `meet_withdrawal` |
 | 6c | The run hazard derived from deposit flight rather than assumed as a rate | **built** — `HazardParams.annual_operational_rate` retired; `quant/hazard.py` `liquidity_intensity` |
@@ -1164,6 +1164,16 @@ result.)
 ### Truncated BPTT with a critic, measured against full BPTT
 
 > **Pre-liability figures — not re-run.** Produced by a firm with no deposits, funding a book of about 25 out of its own capital. The shape of the finding is the part to trust; the levels are all from the earlier calibration.
+
+> **Parked, not rejected — and the case for re-testing has strengthened twice
+> since.** Everything below was measured at horizons of **at most 32 steps**,
+> and the technique exists for long horizons where full backpropagation, whose
+> cost is linear in the number of steps, becomes the binding constraint. The
+> horizon is going to roughly triple. Separately, the neural policy has since
+> become unstable at the longest horizon tested — one seed of five produced a
+> firm worth 0.9 against a best of 32.7 — which is the failure mode a critic is
+> meant to damp. The verdict below is sound about the regime it was measured in
+> and says nothing about the regime now approaching.
 
 
 `scripts/compare_learners.py` **on the `svg-critic` branch**, where the three

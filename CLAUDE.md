@@ -22,12 +22,19 @@ uv run python scripts/bench_profiles.py       # where the accelerator starts pay
 If `uv run pytest` fails to spawn, `./.venv/bin/python -m pytest` works; the
 suite takes about three and a half minutes.
 
-The rejected truncated-BPTT-with-a-critic experiment is not on this branch.
-It lives on `svg-critic` (`quant/solvers/svg.py`, `tests/test_svg.py`,
-`scripts/compare_learners.py`), because a solver that lost at every horizon
-tested should not be one of the things a reader has to rule out when a number
-moves. The verdict and the numbers behind it stay in `docs/quant-model.md`
-section 9 -- the finding is worth keeping even though the code is not.
+The truncated-BPTT-with-a-critic experiment is **parked, not rejected**, and is
+not on this branch. It lives on `svg-critic` (`quant/solvers/svg.py`,
+`tests/test_svg.py`, `scripts/compare_learners.py`), kept off `main` so that a
+solver which has not yet earned its place is not one of the things a reader has
+to rule out when a number moves. The verdict and the numbers behind it stay in
+`docs/quant-model.md` section 9.
+
+Two reasons to expect it back rather than gone: it was only ever tested to 32
+steps, and it exists precisely for long horizons where full backpropagation --
+whose cost is linear in steps -- becomes the binding constraint. And the neural
+policy has since become unstable at the longest horizon (one seed of five worth
+0.9 against a best of 32.7), which is the failure mode a critic is supposed to
+damp. Re-test it before concluding anything about long-horizon learners.
 
 Every entry point takes `--profile {reference,cpu-fast,fast}` and prints the
 profile, torch version and commit it ran under.
