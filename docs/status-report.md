@@ -278,26 +278,60 @@ underflowed to zero and produced a meaningless answer.
 
 ---
 
-## 5. What the model currently says
+## 5. What the model currently says, and how much to believe it
 
-Because none of the parameters are calibrated, the model deliberately **refuses
-to quote a budget**. It inverts the question into claims a reader can argue with.
+No parameter here is calibrated to real data, so the model **refuses to quote a
+budget** and inverts the question into claims a reader can argue with. That is
+necessary but not sufficient: a threshold computed from invented parameters is
+still computed from invented parameters.
 
-**The headline, with no uncalibrated parameter in it:**
+The honest way to answer "why believe any of this" is evidence rather than
+assurance. The model has been recalibrated **four times**, each for a defensible
+reason, and each time every underlying number moved. What that did to the
+conclusions:
+
+| claim | survived four recalibrations? |
+|---|---|
+| Spend peaks at middling capitalisation | **yes** — shape held, location moved |
+| GRC as a stock beats GRC as an expense | **yes** — sign held (+268%, +33%, +49%, +31%) |
+| A cheaper failure buys a smaller programme | **yes** (−41%, −41%, −27%) |
+| The firm is risk-averse near failure | **yes**, and strengthened |
+| State feedback does not beat a fixed policy | **yes** |
+| Hazard break-even, in basis points | no — 527 → 270 → 243 |
+| Survival vs loss-reduction spend ratio | **reversed** — 55× → 9× → 1.6× |
+| Cost of ignoring survival, as firm value | no — 0.3% → 4.9% → 2.1% → 0.5% |
+
+**So: trust the shapes, not the levels.** Every claim about a *direction* has
+survived changes that moved every number underneath it. No quoted level has.
+
+**And one headline reversed outright.** "GRC is paid for almost entirely by
+survival, hardly at all by loss reduction" was the sharpest claim this project
+made. It is now roughly even. The two corrections that did it were both the
+model becoming *more* honest — leverage, which makes ordinary losses far more
+expensive; and retiring an asserted death rate that had been crediting controls
+with preventing deaths never demonstrated. That reversal cuts both ways: it
+shows the framework catching its own error, and it shows the record of a
+confidently quoted level from this model.
+
+[`calibration.md`](calibration.md) has the full table, sorts every parameter by
+how calibratable it actually is, and names a data source for each. Most have
+real external anchors that have simply never been used. The exception is the
+effectiveness of GRC spending itself, which no public data can settle — which is
+precisely why the outputs below are thresholds.
+
+### The claims, at the current calibration
+
+**The headline, with no uncalibrated effectiveness parameter in it:**
 
 > A programme costing 0.66 a year, against a business worth 27.27 as a going
 > concern, must cut the annual probability of failure by at least **243 basis
 > points** to pay for itself.
 
-**GRC is bought about equally by survival and by smaller losses — and the
-project's original headline said otherwise.** A firm budgeting only for expected
-loss reduction spends 40% less than one budgeting for both, and the gap costs
-0.5% of firm value and 1.1 points of annual failure probability. That ratio has
-now moved twice, both times because the model was made more honest: it was
-*fifty times* before the balance sheet was levered, *nine times* after, and 1.6
-times once the asserted "depositors leave" death rate was replaced by a
-mechanism. The claim that GRC is paid for almost entirely by survival survived
-neither correction.
+Both inputs are things a board already has a view on.
+
+**GRC is bought about equally by survival and by smaller losses.** A firm
+budgeting only for expected loss reduction spends 40% less; the gap costs 0.5%
+of firm value and 1.1 points of annual failure probability.
 
 **Given a run, the firm buys liquidity as well as controls — and past a point,
 instead of them.** Introducing runs takes reserves from 10% to 24% of the
@@ -305,16 +339,16 @@ balance sheet *and* operational GRC from 0.002 to 0.065. At two runs a year
 reserves reach 38% while operational GRC falls back. Cash is the certain
 defence, controls the probabilistic one.
 
-**GRC spend peaks at middling capitalisation.** 0.166 a quarter at equity 16 and
+**Spend peaks at middling capitalisation.** 0.166 a quarter at equity 16 and
 0.126 at 8, against 0.018 at equity 4 and 0.003 at 64. A well-capitalised firm
 faces too little risk to bother; a nearly-failed one is too far gone for a
 programme to pull back.
 
 **Accumulation matters more than the annual number.** Treating GRC as a stock
-rather than an expense is worth **+31% of firm value**, and takes two-year
-survival from 74% to 92%. The firm buys *more* per quarter when it persists
-(0.013 to 0.187): a control that keeps working next quarter is worth much more
-than one that does not.
+rather than an expense is worth **+31% of firm value** and takes two-year
+survival from 74% to 92%. The firm buys *more* per period when it persists,
+because a control that still works next period is worth much more than one that
+does not.
 
 **The less a failure would destroy, the less a programme to avoid it is worth.**
 Spend falls 27% as recovery in failure rises from nothing to 80%.
@@ -323,15 +357,6 @@ Spend falls 27% as recovery in failure rises from nothing to 80%.
 spend removes about 12% of exposure, where pure loss-reduction arithmetic
 demands an impossible 992%. Credit's pair is 17% against 173% — the only one of
 the three where the loss-reduction threshold is arguable rather than absurd.
-Every one of these thresholds *rose* when the asserted hazard was retired: a
-programme now has to clear a higher bar, which is what removing a channel that
-credited GRC with preventing unproven deaths should do.
-
-**The firm is risk-averse everywhere.** The gambling-for-resurrection check now
-finds no convex region at all, where a trace survived before. The run channel
-removed it: a thinly capitalised firm faces a *higher* run probability, so
-taking more risk when weak makes a run likelier rather than just making the
-gamble bigger.
 
 ---
 
