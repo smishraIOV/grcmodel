@@ -491,43 +491,59 @@ $G' = (1-\delta)G + g$ with mitigation $e^{-\alpha G}$ applied to the stock;
 $\delta = 1$ recovers the static model's assumption that spend buys exactly
 one period of protection.
 
-| GRC decay | solver | value | spend/qtr | end stock | survives |
-|---|---|---|---|---|---|
-| 1.000 | constant | 25.7939 | 0.0126 | 0.0126 | 74.2% |
-| 1.000 | neural | *11.1987* | *3.7141* | *2.5768* | *0.0%* |
-| 1.000 | PI bound | 29.6321 | 0.1134 | 0.1435 | 80.0% |
-| 0.069 | constant | 33.7268 | 0.1873 | 2.5141 | 91.6% |
-| 0.069 | neural | 27.1737 | 0.5964 | 5.0934 | 91.2% |
-| 0.069 | PI bound | 35.8290 | 0.1881 | 2.2816 | 93.7% |
+Monthly decisions over five years:
 
-**The italicised row is an optimizer trap, not a valuation**, and the script
-now says so rather than letting it be averaged into a headline. 11.1987 is
+| GRC decay | solver | value | spend/period | end stock | survives |
+|---|---|---|---|---|---|
+| 1.000 | constant | 14.3982 | 0.0001 | 0.0001 | 39.9% |
+| 1.000 | neural | *11.1858* | — | — | *0.0%* |
+| 1.000 | PI bound | 22.5247 | 0.0124 | 0.0118 | 51.0% |
+| 0.024 | constant | 33.3223 | 0.0912 | 3.7350 | 85.8% |
+| 0.024 | neural | *11.1999* | — | — | *0.0%* |
+| 0.024 | PI bound | 36.5838 | 0.0665 | 2.2620 | 87.5% |
+
+**Both italicised rows are optimizer traps, not valuations**, and the script
+says so rather than letting them be averaged into a headline. 11.20 is
 $0.7 \times 16$: the neural policy has fallen into the absorbing wind-down,
 which is why survival is zero. The exit action is absorbing, so once the
 probability mass has left there is nothing still operating to generate a
 gradient for staying ([debug notes §8](static-model-debug-notes.md)).
 
-This mattered: the persistence headline below used to take the neural row
-unconditionally and printed **+203%** off that collapsed solve. It now takes
-whichever of the two implementable solvers is higher, which is both the better
-estimate and robust to one of them failing.
+**At five years the neural policy fails in every configuration tried.** It
+collapsed on both rows here and on one seed in five in the study below. That is
+a change of kind rather than degree — at two years it merely failed to beat a
+constant policy; at five it does not reliably produce a firm at all. The
+constant policy is untroubled (±0.222 across seeds), so this is the learner and
+not the problem.
+
+The detection threshold had to be made *relative*, having missed this twice on
+the third decimal place: the collapsed value is not exactly
+$0.7 \times 16$ because the exit probability is a sigmoid that never quite
+reaches one, so a solve lands a fraction of a percent away — 11.1858 against
+11.2 most recently.
 
 (The $\delta = 1$ rows start from the same opening stock but cannot keep it, so
 they describe a firm whose control function evaporates each quarter.)
 
-**Persistence is worth +31% of firm value** (25.79 → 33.73) and takes two-year
-survival from 74% to 92%. Per-quarter spend *rises* as it does so, 0.013 to
-0.187: at $\delta = 1$ a unit of spend buys one quarter of protection and is
-barely worth anything, while at $\delta = 0.069$ it protects every later quarter
-too, so much more of it is worth buying. That is the intertemporal content the
-static model could not express — it is not the one-period answer repeated.
+**Persistence is worth +131% of firm value** (14.40 → 33.32) and takes five-year
+survival from 40% to 86%. Per-period spend *rises* as it does so, from
+essentially nothing to 0.091: at $\delta = 1$ a unit of spend buys one month of
+protection and is barely worth anything, while at $\delta = 0.024$ it protects
+every later month too, so much more of it is worth buying. That is the
+intertemporal content the static model could not express — it is not the
+one-period answer repeated.
+
+**The longer the horizon, the larger this is**: +31% over two years, +131% over
+five. A control bought in month one is still working in month sixty, and a
+two-year window simply cannot see most of that. It is the sharpest statement of
+the horizon effect the model produces.
 
 (The direction of that last sentence has flipped twice across recalibrations,
 which is why the script now prints the measured direction rather than an
 asserted one. It printed "spends MORE" unconditionally once, over a pair of
 numbers that had gone the other way.)
 
-The value of perfect information is 2.10 at $\delta = 0.069$ against 3.84 at
+The value of perfect information is 3.26 at $\delta = 0.024$ against 8.13 at
 $\delta = 1$. Persistence narrows the gap a clairvoyant policy can exploit: a
 stock that carries across quarters is partly a substitute for knowing what is
 coming.
@@ -538,14 +554,20 @@ Both budgets scored in the *same* world — the one where GRC reduces failure
 intensity as well as expected loss. Comparing them in their own worlds would be
 meaningless, since a world without those channels is simply less dangerous.
 
-| budget set for | spend/qtr | annual failure | value |
+| budget set for | spend/period | annual failure | value |
 |---|---|---|---|
-| expected loss only | 0.1136 | 5.37% | 33.5543 |
-| loss **and** survival | 0.1873 | 4.29% | 33.7268 |
+| expected loss only | 0.0563 | 5.02% | 31.9839 |
+| loss **and** survival | 0.0912 | 3.03% | 33.3223 |
 
-Budgeting as though GRC only bought smaller losses gives a programme **40%
-smaller**, and costs 0.5% of firm value and 1.1 percentage points of annual
+Budgeting as though GRC only bought smaller losses gives a programme **38%
+smaller**, and costs 4.0% of firm value and 2.0 percentage points of annual
 failure probability.
+
+**This ratio has now stabilised.** It was 1.6× at quarterly over two years and
+is 1.62× at monthly over five — the first time in five calibrations that this
+number has stayed put. What did move is the *cost* of getting it wrong, from
+0.5% of firm value to 4.0%, which is the longer horizon giving the firm more
+time to die of a risk it under-insured.
 
 **This number has now moved twice, in the same direction, for two different
 reasons — and both of them were the model being made more honest.**
@@ -607,29 +629,45 @@ nothing to hold reserves against.
 
 Sweeping how often runs happen separates the two defences:
 
-| runs/year | GRC/qtr | of which operational | reserves | book | p(run)/qtr | annual failure | value |
+| runs/year | GRC/period | of which operational | reserves | book | p(run)/period | annual failure | value |
 |---|---|---|---|---|---|---|---|
-| 0.00 | 0.1635 | 0.0021 | 9.9% | 80.50 | 0.000% | 3.63% | 34.692 |
-| 0.45 | 0.1873 | 0.0651 | 24.2% | 68.23 | 2.043% | 4.29% | 33.727 |
-| 1.00 | 0.1730 | 0.0716 | 30.9% | 61.67 | 3.841% | 4.79% | 33.134 |
-| 2.00 | 0.1074 | 0.0386 | 37.7% | 55.20 | 7.757% | 6.13% | 32.108 |
+| 0.00 | 0.0782 | 0.0124 | 9.7% | 82.62 | 0.000% | 2.82% | 34.855 |
+| 0.45 | 0.0912 | 0.0278 | 21.6% | 76.93 | 0.898% | 3.03% | 33.322 |
+| 1.00 | 0.0912 | 0.0295 | 27.5% | 72.73 | 2.410% | 3.34% | 32.311 |
+| 2.00 | 0.0902 | **0.0301** | 32.5% | 69.25 | 6.020% | 3.88% | 30.923 |
 
-Introducing a run at all takes operational GRC from 0.0021 to 0.0651 and
-reserves from 10% to 24%: **the firm buys both defences.** Past that it
-substitutes — at two runs a year reserves reach 38% while operational GRC falls
-back to 0.0386. Cash is the certain defence and controls are the probabilistic
-one, so at the margin the cheaper certainty wins.
+Introducing a run at all takes operational GRC from 0.0124 to 0.0278 and
+reserves from 10% to 22%: **the firm buys both defences.** That part holds at
+every horizon tried.
 
-The decision-relevant reading is the middle of that table rather than either
-end. A firm facing occasional runs should do both; a firm facing frequent ones
-should hold capital and liquidity rather than buy its way out with controls.
+**But the substitution does not, and this is a reversal.** Over two years,
+operational GRC rose and then *fell back* as runs became frequent — 0.0021,
+0.0651, 0.0716, 0.0386 — and the conclusion drawn was that cash is the certain
+defence and wins at the margin. Over five years it rises monotonically all the
+way: 0.0124, 0.0278, 0.0295, 0.0301, while reserves also rise the whole way.
+**Controls and liquidity are complements here, not alternatives.**
+
+The two-year result was a horizon artifact. A buffer protects you now; a control
+stock has to be built before it protects you at all, and over two years a firm
+facing frequent runs does not have time to build one — so it holds cash instead.
+Give it five years and it does both.
+
+That makes the earlier decision-relevant reading wrong, and it is worth stating
+plainly because it was stated plainly the other way: *"a firm facing frequent
+runs should hold capital and liquidity rather than buy its way out with
+controls"* is true only of a firm with two years to live.
+
+The script now computes this direction from the rows rather than asserting it.
+It asserted the two-year direction and printed "operational GRC falls back to
+0.0301" over the largest number in its own column — the third hardcoded
+direction in that file to go stale, and they are all now measured.
 
 **What most drives this, and is not modelled.** Deposits rebuild toward capacity
 at a four-month half-life, whether they left in a panic or drifted away. Real
 deposit franchises do not come back that fast after a run, and a slower rebuild
-would make runs costlier in a way a buffer cannot offset — which is the most
-likely route to operational GRC being worth more than this. That is stage 6d
-(§5) and it is not built.
+would make runs costlier in a way a buffer cannot offset — pushing further in
+the direction the five-year result already points. That is stage 6d (§5) and it
+is not built.
 
 ### What failure costs, and what GRC cannot do about it
 
@@ -643,16 +681,17 @@ once it has happened. Losing a licence costs what it costs. A model in which
 GRC reduced both would let one parameter buy the same protection twice, and the
 second purchase would be free.
 
-| recovery | spend/qtr | annual failure | value | going-concern share |
+| recovery | spend/period | annual failure | value | going-concern share |
 |---|---|---|---|---|
-| 0.0 | 0.2136 | 4.00% | 33.343 | 1.000 |
-| 0.4 | 0.1873 | 4.29% | 33.727 | 0.810 |
-| 0.8 | 0.1562 | 4.68% | 34.195 | 0.626 |
+| 0.0 | 0.0969 | 2.79% | 32.702 | 1.000 |
+| 0.4 | 0.0912 | 3.03% | 33.322 | 0.808 |
+| 0.8 | 0.0865 | 3.35% | 34.075 | 0.624 |
 
 The comparative static is the cleanest the survival channel produces, and it is
 one an executive can argue with: **the less a failure would destroy, the less a
-programme to avoid it is worth.** Spend falls by 27% across the range (41%
-before the run channel, on different levels) while
+programme to avoid it is worth.** Spend falls by 11% across the range — 41%
+before the run channel and 27% after it, all on different levels, so the
+direction is the durable part and the magnitude is not — while
 the firm becomes more willing to die. Every unit of that spend is bought by the
 franchise at risk — the going-concern share is exactly the part of firm value
 that failure would destroy, and when nothing is recovered it is 1.000 by
@@ -718,23 +757,28 @@ wind-down recovers, so the exit option is dominated and the balance sheet can
 be emptied in a quarter. Measured, the thin-franchise firm's exit rate fell
 from 1.000 to 0.0005 before this constraint was added.
 
-| payout | value | spend/qtr | underinvestment | annual failure | end equity | dividend share |
+| payout | value | spend/period | underinvestment | annual failure | end equity | dividend share |
 |---|---|---|---|---|---|---|
-| retain all | 33.727 | 0.1873 | 0.012 | 4.29% | 22.45 | 0.000 |
-| optimized | 33.727 | 0.1873 | 0.012 | 4.29% | 22.45 | 0.000 |
+| retain all | 32.964 | 0.0912 | 0.014 | 2.21% | 32.20 | 0.000 |
+| optimized | 33.322 | 0.0912 | 0.021 | 3.03% | 23.87 | **0.192** |
 
-**The firm retains everything again, and the dividend it briefly paid has
-gone.** With deposits but no run it distributed 4.4% of value, because the
-funding constraint had stopped binding and the marginal retained unit was no
-longer worth much. Once a run is possible, retained capital buys something else:
-it is what reserves are held out of, and a larger buffer is the firm's main
-defence. So the marginal unit is valuable again and the firm keeps it.
+**Over five years the firm distributes 19% of its value**, and accepts a failure
+rate of 3.03% against 2.21% to do it. Retaining everything, equity would end at
+32.20 against an opening 16 — the firm out-grows its own investment opportunity,
+so the marginal retained unit has little left to buy and time value wins.
 
-Three configurations, three different answers, all from the same control:
-retain everything because funding is scarce (pre-deposits); distribute a little
-because it is not (deposits, no run); retain everything because capital is now
-liquidity (deposits and a run). The control is doing real work in each — what
-changes is what a retained unit is *for*.
+**Four configurations, four different answers, all from the same control:**
+
+| configuration | dividend share | because a retained unit… |
+|---|---|---|
+| no deposits | 0.000 | …relieves a funding constraint binding on 82% of paths |
+| deposits, no run | 0.044 | …relieves one binding on 15% — worth less |
+| deposits + run, 2 years | 0.000 | …is what the liquidity buffer is held out of |
+| deposits + run, 5 years | **0.192** | …has nowhere left to go; equity doubles regardless |
+
+The control is doing real work in every one. What changes is what a retained
+unit is *for*, and that is a property of the configuration rather than of the
+firm's patience.
 
 The control also responds to impatience — at a quarterly discount of 0.90 the
 same firm distributes more, and `test_impatience_raises_the_payout` asserts the
@@ -946,28 +990,33 @@ Trained on 512 paths, scored on 4096 **held out**, across five seeds. Both the
 scenario draw and the network initialization vary together, so the spread
 bounds both sources at once.
 
-| quarters | solver | median | 95% CI | range over seeds |
-|---|---|---|---|---|
-| 8 | constant | 33.602 | ±0.092 | [33.536, 33.782] |
-| 8 | neural | 33.435 | ±1.485 | [29.714, 33.739] |
-| 32 | constant | 31.148 | ±0.171 | [30.923, 31.438] |
-| 32 | neural | 32.657 | ±12.350 | [**0.908**, 32.747] |
+Monthly decisions over five years, five seeds:
 
-**State feedback is worth −0.50% at eight quarters and +4.84% at thirty-two,
-and both are inside the spread** — the second one overwhelmingly so. Read the
-range rather than the median: at thirty-two quarters one seed landed at
-**0.908**, against a best of 32.7. That is not variance, it is a solve that
+| solver | median | 95% CI | range over seeds | overfit |
+|---|---|---|---|---|
+| constant | 33.295 | ±0.222 | [32.925, 33.631] | 0.39% |
+| neural | 33.177 | **±12.799** | [**0.618**, 33.544] | 0.51% |
+
+**State feedback is worth −0.35% at the median, against measured seed noise of
+38.6%.** Read the range rather than the median: one seed in five landed at
+**0.618** against a best of 33.5. That is not variance, it is a solve that
 failed, and a median computed over it means nothing.
 
-The script previously called the +4.84% "clear of seed noise" because it
-compared against a hard-coded 2% rather than against the spread the run had
-actually measured (±37% of the median). It now compares against the measurement
-and warns when any seed lands below half the best.
+**The learner does not survive the five-year horizon.** It collapsed into the
+absorbing wind-down on *both* rows of the solver table above and on one seed in
+five here. At two years it merely failed to beat a constant policy; at five it
+does not reliably produce a firm at all. The constant policy is untroubled at
+±0.222, which locates the problem in the learner rather than the model.
 
-**The learner has become markedly less stable with the run channel**, from
-±0.351 to ±12.350 at thirty-two quarters. The verdict is unchanged and if
-anything firmer: a policy whose worst seed is worth 3% of its best has not
-earned its place over a fixed one, whatever its median says.
+That is the strongest argument yet for keeping the truncated-BPTT experiment on
+`svg-critic` alive rather than treating it as closed. A critic exists to damp
+exactly this, it was rejected on evidence gathered at horizons no longer than 32
+steps, and the horizon is now 60.
+
+The script previously called a +4.84% difference "clear of seed noise" by
+comparing against a hard-coded 2% rather than the spread the run had measured.
+It now compares against the measurement and warns when any seed lands below half
+the best — which it did here.
 
 Read this table against the one immediately above it too: at the old
 magnitudes state feedback was worth nothing at eight quarters and +11.5% at
@@ -997,8 +1046,8 @@ trap rather than economics (see the note below).
 A learner is a means, not a deliverable, and at every horizon currently
 trustworthy the simplest policy in the ladder is not measurably beaten.
 
-Overfitting is small and is measured rather than assumed: 0.11% to 0.43% at
-eight quarters, 1.3% to 1.6% at thirty-two.
+Overfitting is small and is measured rather than assumed: 0.39% for the constant
+policy and 0.51% for the neural one.
 
 ### Open: firm value is not comparable across horizons
 

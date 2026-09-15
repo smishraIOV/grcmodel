@@ -41,16 +41,16 @@ Froot-Stein premium — risk management that pays for itself only because capita
 is expensive to raise in bad states. It is the quantitative form of the claim
 above that GRC can increase firm value, and it is where this project started.
 
-**The model is now multi-period, and the firm can die.** It operates over eight
-quarters, funds a book of about 68 with 16 of capital and a deposit base four
-times that, holds roughly a quarter of its balance sheet liquid against a
+**The model is now multi-period, and the firm can die.** It decides monthly over
+five years, funds a book of about 77 with 16 of capital and a deposit base four
+times that, holds roughly a fifth of its balance sheet liquid against a
 depositor run, accumulates GRC as a depreciating capital stock, and faces
 competing failure hazards — thin capital, a lost licence, and being unable to
 pay depositors who ask — plus rare severe "cliff" events. The corresponding
 headline is a threshold rather than a budget:
 
-> A programme costing 0.66 a year, against a business worth 27.27 as a going
-> concern, must cut the annual probability of failure by at least **243 basis
+> A programme costing 0.95 a year, against a business worth 26.93 as a going
+> concern, must cut the annual probability of failure by at least **354 basis
 > points** to pay for itself.
 
 Parameters are illustrative and uncalibrated, which is why the outputs are

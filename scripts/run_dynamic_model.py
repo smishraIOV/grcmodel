@@ -131,11 +131,27 @@ def liquidity_defence(sampler, crn, steps: int, periods: int, params) -> None:
     print(
         f"  Introducing a run at all takes operational GRC from {quiet.grc[1]:.4f} to "
         f"{first.grc[1]:.4f}\n  and reserves from {quiet.reserve_ratio:.0%} to "
-        f"{first.reserve_ratio:.0%}: the firm buys both defences.\n"
-        f"  Past that it substitutes -- at {rows[-1][0]:.1f} runs a year reserves reach "
-        f"{riskiest.reserve_ratio:.0%} while\n  operational GRC falls back to "
-        f"{riskiest.grc[1]:.4f}. Cash is the certain defence and controls\n"
-        f"  are the probabilistic one, so the cheaper certainty wins at the margin."
+        f"{first.reserve_ratio:.0%}: the firm buys both defences."
+    )
+    # Whether it then SUBSTITUTES toward cash is the interesting part, and it is
+    # read off the rows rather than asserted. The previous version stated flatly
+    # that operational GRC falls back at high run rates -- true at quarterly
+    # over two years, false at monthly over five, where it rises the whole way.
+    # This is the third hardcoded direction in this script to go stale; they are
+    # all now computed.
+    substitutes = riskiest.grc[1] < first.grc[1]
+    print(
+        f"  At {rows[-1][0]:.1f} runs a year reserves reach "
+        f"{riskiest.reserve_ratio:.0%} and operational GRC "
+        f"{'falls back to' if substitutes else 'goes on rising to'} "
+        f"{riskiest.grc[1]:.4f}."
+    )
+    print(
+        "  So the firm substitutes cash for controls once runs are frequent: the\n"
+        "  certain defence is the cheaper one at the margin."
+        if substitutes else
+        "  So it does not substitute -- more run risk buys more of BOTH defences.\n"
+        "  Controls and liquidity are complements here, not alternatives."
     )
 
 
@@ -264,7 +280,17 @@ def main() -> None:
         # (docs/static-model-debug-notes.md section 8).
         collapsed = firm.orderly_recovery * firm.initial_equity
         for name, r in results.items():
-            if abs(r.value - collapsed) < 1e-2 and r.survival_rate < 1e-3:
+            # Relative, not absolute. An absolute tolerance has now missed this
+            # twice: the collapsed value is not exactly `orderly_recovery x
+            # initial_equity` because the exit probability is a sigmoid and
+            # never quite reaches one, so the solve lands a fraction of a
+            # percent away -- 11.1858 against 11.2 most recently. The whole
+            # point of the check is to catch a row that should not be read as a
+            # valuation, and it kept failing on the third decimal place.
+            if (
+                abs(r.value - collapsed) < 0.02 * collapsed
+                and r.survival_rate < 1e-3
+            ):
                 print(
                     f"{'':>11} | WARNING: {name} collapsed into the wind-down "
                     f"({collapsed:.3f}); its row is an optimizer trap, not a value"

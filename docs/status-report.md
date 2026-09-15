@@ -147,10 +147,10 @@ still protects in two years' time, which is what makes prevention worth
 anything), and **reserves**. It can also stop deliberately, recovering more than
 a disorderly failure would leave.
 
-Default configuration: **quarterly decisions over two years**, equity of 16, a
-book near 68, leverage about 4.9, and a **4.3%** annual probability of failure.
-The firm holds **24% of its balance sheet in reserves** against a run, funded by
-lending 15% less than it otherwise would.
+Default configuration: **monthly decisions over five years**, equity of 16, a
+book near 77, leverage about 4.9, and a **3.0%** annual probability of failure.
+The firm holds **22% of its balance sheet in reserves** against a run, funded by
+lending less than it otherwise would.
 
 ---
 
@@ -216,16 +216,22 @@ conclusions:
 | claim | survived four recalibrations? |
 |---|---|
 | Spend peaks at middling capitalisation | **yes** — shape held across five; the *peak's location* is inside the noise and should not be quoted |
-| GRC as a stock beats GRC as an expense | **yes** — sign held (+268%, +33%, +49%, +31%) |
-| A cheaper failure buys a smaller programme | **yes** (−41%, −41%, −27%) |
+| GRC as a stock beats GRC as an expense | **yes** — sign held, and it grows with the horizon (+268%, +33%, +49%, +31%, +131%) |
+| A cheaper failure buys a smaller programme | **yes** (−41%, −41%, −27%, −11%) |
 | The firm is risk-averse near failure | **yes**, and strengthened |
 | State feedback does not beat a fixed policy | **yes** |
-| Hazard break-even, in basis points | no — 527 → 270 → 243 |
-| Survival vs loss-reduction spend ratio | **reversed** — 55× → 9× → 1.6× |
-| Cost of ignoring survival, as firm value | no — 0.3% → 4.9% → 2.1% → 0.5% |
+| Hazard break-even, in basis points | no — 527 → 270 → 243 → 354 |
+| Survival vs loss-reduction spend ratio | **reversed** — 55× → 9× → 1.6×, then stable at 1.62× |
+| Cost of ignoring survival, as firm value | no — 0.3% → 4.9% → 2.1% → 0.5% → 4.0% |
 
 **So: trust the shapes, not the levels.** Every claim about a *direction* has
 survived changes that moved every number underneath it. No quoted level has.
+
+**A second reversed when the horizon changed, with no parameter touched.**
+"Given frequent runs the firm substitutes cash for controls" held over two years
+and fails over five, where it buys more of both. That was a claim about the
+horizon wearing the clothes of a claim about risk — a failure mode no amount of
+parameter calibration would catch.
 
 **And one headline reversed outright.** "GRC is paid for almost entirely by
 survival, hardly at all by loss reduction" was the sharpest claim this project
@@ -253,17 +259,24 @@ precisely why the outputs below are thresholds.
 Both inputs are things a board already has a view on.
 
 **GRC is bought about equally by survival and by smaller losses.** A firm
-budgeting only for expected loss reduction spends 40% less; the gap costs 0.5%
-of firm value and 1.1 points of annual failure probability.
+budgeting only for expected loss reduction spends 38% less; the gap costs
+**4.0%** of firm value and 2.0 points of annual failure probability. This ratio
+is the one the project got most wrong — 50× at one calibration, 9× at the next,
+1.6× at the third — and it has now held at 1.62 across the horizon change, the
+first time it has stayed put.
 
-**Given a run, the firm buys liquidity as well as controls — and past a point,
-instead of them.** Introducing runs takes reserves from 10% to 24% of the
-balance sheet *and* operational GRC from 0.002 to 0.065. At two runs a year
-reserves reach 38% while operational GRC falls back. Cash is the certain
-defence, controls the probabilistic one, so at the margin the cheaper certainty
-wins. The useful reading is the middle: a firm facing occasional runs should do
-both; one facing frequent runs should hold capital and liquidity rather than buy
-its way out with controls.
+**Given a run, the firm buys liquidity as well as controls.** Introducing runs
+takes reserves from 10% to 22% of the balance sheet *and* operational GRC from
+0.012 to 0.028. That holds at every horizon tried.
+
+**Whether it then substitutes cash for controls turns out to be a statement
+about the horizon, not about risk.** Over two years, operational GRC rose and
+then fell back as runs became frequent, and the conclusion drawn was that cash
+wins at the margin. Over five years it rises the whole way, alongside reserves:
+**controls and liquidity are complements, not alternatives.** A buffer protects
+you today; a control stock has to be built before it protects you at all, and a
+firm with two years to live does not have time — so it holds cash instead. The
+earlier reading was right about a two-year firm and wrong as general advice.
 
 **An assumed failure rate was overstating operational controls by about 2.3×.**
 The hazard channel named *"an incident becomes public and depositors leave"* was
@@ -285,14 +298,30 @@ At the thin end the disagreement is qualitative: one seed had the firm spend
 0.544 a year and another 0.001, which is winding down on one scenario and
 trading on through on another.
 
-**Accumulation matters more than the annual number.** Treating GRC as a stock
-rather than an expense is worth **+31% of firm value** and takes two-year
-survival from 74% to 92%. The firm buys *more* per period when it persists,
-because a control that still works next period is worth much more than one that
-does not.
+**Accumulation matters more than the annual number, and the longer you look the
+more it matters.** Treating GRC as a stock rather than an expense is worth
+**+131% of firm value** over five years and takes survival from 40% to 86%. Over
+two years the same comparison was worth +31%. A control bought in month one is
+still working in month sixty, and a short window cannot see most of that.
 
 **The less a failure would destroy, the less a programme to avoid it is worth.**
-Spend falls 27% as recovery in failure rises from nothing to 80%.
+Spend falls 11% as recovery in failure rises from nothing to 80% — it was 41%
+and 27% at earlier calibrations, so the direction is the durable part here and
+the magnitude is not.
+
+**Over five years the firm distributes 19% of its value**, accepting a 3.0%
+annual failure rate against 2.2% to do it. Retaining everything its equity would
+double — it out-grows its own investment opportunity, so the marginal retained
+unit has nowhere left to go. The same control has now given four different
+answers across four configurations, and what changes each time is not the firm's
+patience but what a retained unit is *for*.
+
+**The learner does not survive this horizon.** The state-feedback policy
+collapsed into an immediate wind-down on both rows of the solver table and on
+one seed in five. At two years it merely failed to beat a fixed policy; at five
+it does not reliably produce a firm at all, while the fixed policy is stable to
+±0.2. That is the strongest case yet for keeping the parked truncated-BPTT
+experiment (§4) available rather than closed.
 
 **As an effectiveness threshold**, a compliance programme pays if a unit of
 spend removes about 12% of exposure, where pure loss-reduction arithmetic

@@ -123,17 +123,22 @@ profitability, GRC as a stock) · **C2** the liability side (deposits, leverage)
 **C3** the run channel (withdrawals, buffer, fire sale; asserted operational
 hazard retired).
 
-| headline | C0 | C1 | C2 | C3 | verdict |
-|---|---|---|---|---|---|
-| Spend peaks at middling capitalisation | — | peak at 16 | peak at 8 | peak at 16 | **shape held**; location is inside the seed noise (§below) |
-| GRC as a stock beats GRC as an expense | +268% | +33% | +49% | +31% | **sign held**, magnitude unstable |
-| Less destroyed in failure → less spend | — | −41% | −41% | −27% | **held** |
-| Firm is risk-averse near failure | — | trace convex | trace convex | none | **held, and strengthened** |
-| State feedback beats a fixed policy | — | +0.03% | −0.02% | −0.50% | **held: it does not** |
-| Hazard break-even (basis points) | — | 527 | 270 | 243 | level halved |
-| Survival vs loss-reduction spend ratio | ~1.3× | ~55× | ~9× | **1.6×** | **reversed** |
-| Cost of ignoring survival (firm value) | 0.3% | 4.9% | 2.1% | 0.5% | level unstable |
-| Credit effectiveness break-even (α) | — | 0.383 | 0.098 | 0.168 | level unstable |
+**C4** is not a recalibration but a horizon change — monthly decisions over five
+years rather than quarterly over two — included because it moved results as much
+as any parameter change did, and because the two that it *reversed* were both
+claims the earlier columns had marked as stable.
+
+| headline | C0 | C1 | C2 | C3 | C4 | verdict |
+|---|---|---|---|---|---|---|
+| Spend peaks at middling capitalisation | — | peak at 16 | peak at 8 | peak at 16 | plateau 8–16 | **shape held**; location is inside the seed noise (§below) |
+| GRC as a stock beats GRC as an expense | +268% | +33% | +49% | +31% | **+131%** | **sign held**, and it grows with the horizon |
+| Less destroyed in failure → less spend | — | −41% | −41% | −27% | −11% | **held**, magnitude fading |
+| Firm is risk-averse near failure | — | trace convex | trace convex | none | none | **held, and strengthened** |
+| State feedback beats a fixed policy | — | +0.03% | −0.02% | −0.50% | −0.35%, 1 seed in 5 **failed** | **held: it does not** — and at C4 it does not run |
+| Hazard break-even (basis points) | — | 527 | 270 | 243 | 354 | level unstable |
+| Survival vs loss-reduction spend ratio | ~1.3× | ~55× | ~9× | **1.6×** | 1.62× | **reversed**, then finally stable |
+| Cost of ignoring survival (firm value) | 0.3% | 4.9% | 2.1% | 0.5% | 4.0% | level unstable |
+| Credit effectiveness break-even (α) | — | 0.383 | 0.098 | 0.168 | — | level unstable |
 
 ### How to read this
 
@@ -155,6 +160,14 @@ number. These are the claims the model is entitled to make.
 **Levels are not.** The headline break-even halved. The cost of ignoring
 survival moved by an order of magnitude in both directions. Any single quoted
 level is a statement about one calibration.
+
+**A second conclusion reversed at C4, and it was not a parameter that did it.**
+"Given frequent runs the firm substitutes cash for controls" held over two years
+and fails over five, where it buys more of both. A liquidity buffer protects you
+today; a control stock has to be built before it protects you at all, so a firm
+with two years to live cannot use one. That was a statement about the horizon
+wearing the clothes of a statement about risk — which is a failure mode no
+amount of parameter calibration would have caught.
 
 **And one conclusion reversed.** "GRC is paid for almost entirely by survival
 and hardly at all by loss reduction" was the project's sharpest claim at C1,
