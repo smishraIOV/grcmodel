@@ -168,6 +168,25 @@ independence behind it is worth.
 | **Backpropagation through the simulator** | The simulator is differentiable end to end, so gradients are exact rather than sampled | **The main method** |
 | **Grid value iteration** | Enumerate a coarse grid of states, work backwards from the horizon | The independent referee — it shares only the dynamics, no gradients and no optimiser |
 
+**None of this is reinforcement learning, and that is a choice rather than an
+omission.** "Learned" here means *fitted by an optimiser*, not *learned from
+experience by trial and error*. Because the simulator is differentiable end to
+end, the gradient of firm value with respect to the policy is computed exactly,
+by the same backpropagation used to train a neural network on data.
+
+Reinforcement learning's distinctive machinery — estimating gradients from
+sampled returns, bootstrapping a value function, exploring — exists to cope with
+*not* being able to differentiate the environment. This model can be
+differentiated, so reaching for that machinery would discard information already
+in hand, and would replace an exact gradient with an estimated one. It is also
+why the same method reproduces a known closed form to about fifteen decimal
+places elsewhere in the project.
+
+The constant policy is the plainest illustration: it is six numbers found by
+gradient descent. The one genuinely reinforcement-learning-shaped component is
+the parked critic above, which learns a value function to stand in for the
+future — and that estimation error is part of why it never earned its place.
+
 **Truncated backpropagation with a critic** is built and **parked**, on the
 `svg-critic` branch. It cuts the gradient chain every few steps and replaces the
 rest with a learned estimate, which is the standard remedy for instability over
