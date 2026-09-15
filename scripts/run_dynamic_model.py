@@ -39,9 +39,17 @@ from quant.solvers.neural import train_pathwise
 from quant.solvers.pathwise import optimize_constant, perfect_information_bound
 
 
-def annual_death(survival_rate: float, quarters: int) -> float:
-    """Survival over the horizon, re-expressed as a probability per year."""
-    return 1.0 - survival_rate ** (4.0 / quarters)
+def annual_death(survival_rate: float, periods: int, per_year: int = 4) -> float:
+    """Survival over the horizon, re-expressed as a probability per year.
+
+    `per_year` is a parameter rather than a literal 4 because it was a literal
+    4, and at any other decision frequency that silently reports the wrong
+    number everywhere it is printed -- the horizon is in periods, so treating
+    60 monthly periods as 60 quarters annualizes over fifteen years instead of
+    five. `EvalResult` computes its own version correctly from
+    `firm.periods_per_year` (quant/env/env.py); this is the script-local one.
+    """
+    return 1.0 - survival_rate ** (per_year / periods)
 
 
 def survival_channel(env, naive_env, crn, steps: int, quarters: int) -> None:

@@ -782,7 +782,11 @@ def test_default_quarterly_model_sits_in_a_usable_regime():
     env = FirmEnv(EnvConfig.quarterly(8), MonteCarloSampler(DEFAULTS.sampler))
     result = optimize_constant(env, CommonRandomNumbers(0, 8, 1024, REFERENCE), n_steps=2500)[1]
 
-    annual_death = 1.0 - result.survival_rate ** 0.5
+    # Annualized from the config rather than from a literal: `** 0.5` was the
+    # 4/8 case written out, and it silently reports the wrong number at any
+    # other frequency or horizon.
+    periods_per_year = env.config.firm.periods_per_year
+    annual_death = 1.0 - result.survival_rate ** (periods_per_year / env.config.horizon)
     assert 0.002 < annual_death < 0.15, f"degenerate survival regime: {annual_death:.2%}"
 
     # **Spend materiality, lowered from 0.10 to 0.02, and this needs its

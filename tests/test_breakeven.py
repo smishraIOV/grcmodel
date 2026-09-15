@@ -14,7 +14,7 @@ from quant.numerics import REFERENCE
 from quant.params import DEFAULTS
 from quant.studies.breakeven import (
     FAMILIES,
-    MATERIALITY,
+    is_material,
     alpha_breakeven,
     capitalization_band,
     franchise_breakeven,
@@ -53,7 +53,9 @@ def test_spend_peaks_at_intermediate_capitalization():
     )
     spend = [r.total_grc for _, r in rows]
     assert max(spend) > spend[0] and max(spend) > spend[-1], f"monotone: {spend}"
-    assert spend[-1] < MATERIALITY, "a very safe firm should stop paying for a programme"
+    assert not is_material(rows[-1][1], DEFAULTS.firm), (
+        "a very safe firm should stop paying for a programme"
+    )
 
 
 def test_a_thin_franchise_does_not_justify_a_programme():

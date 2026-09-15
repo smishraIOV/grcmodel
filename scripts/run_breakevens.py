@@ -22,7 +22,7 @@ from quant.params import DEFAULTS
 from quant.studies.breakeven import (
     solve,
     FAMILIES,
-    MATERIALITY,
+    is_material,
     alpha_breakeven,
     capitalization_band,
     franchise_breakeven,
@@ -65,18 +65,18 @@ def main() -> None:
     print("   " + hazard_breakeven(firm, crn, **kw).sentence())
 
     print("\n2. CAPITALIZATION BAND -- over what range is a programme a decision?")
-    print(f"   {'equity':>8} | {'spend/qtr':>10} | {'annual death':>13} | {'going-concern':>14} | {'verdict':>18}")
+    print(f"   {'equity':>8} | {'spend/prd':>10} | {'annual death':>13} | {'going-concern':>14} | {'verdict':>18}")
     for equity, r in capitalization_band(firm, crn, [4.0, 8.0, 16.0, 32.0, 64.0], **kw):
-        verdict = "worth running" if r.total_grc > MATERIALITY else "uneconomic"
+        verdict = "worth running" if is_material(r, firm) else "uneconomic"
         print(f"   {equity:>8.1f} | {r.total_grc:>10.4f} | {r.annual_death_probability:>12.2%} | "
               f"{r.going_concern_share:>14.3f} | {verdict:>18}")
     print("   Spend peaks in the middle. Well capitalized, the hazard is too small to be")
     print("   worth buying down; thinly capitalized, there is too little franchise left to protect.")
 
     print("\n3. FRANCHISE BREAK-EVEN -- how much business must be at stake?")
-    print(f"   {'going concern':>14} | {'spend/qtr':>10} | {'firm value':>11} | {'verdict':>18}")
+    print(f"   {'going concern':>14} | {'spend/prd':>10} | {'firm value':>11} | {'verdict':>18}")
     for franchise, r in franchise_breakeven(firm, crn, [0.0, 3.0, 8.0, 15.0], **kw):
-        verdict = "worth running" if r.total_grc > MATERIALITY else "uneconomic"
+        verdict = "worth running" if is_material(r, firm) else "uneconomic"
         print(f"   {franchise:>14.1f} | {r.total_grc:>10.4f} | {r.value:>11.3f} | {verdict:>18}")
 
     print("\n4. VALUE CURVATURE -- the gambling-for-resurrection check")

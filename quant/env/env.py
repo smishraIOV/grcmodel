@@ -30,6 +30,7 @@ from quant.env.state import N_FAMILIES, FirmState, Trajectory
 from quant.numerics import DEFAULT_PROFILE, NumericsProfile
 from quant.params import (
     DEFAULTS,
+    MONTHLY,
     WEEKLY,
     CliffParams,
     FirmParams,
@@ -186,6 +187,19 @@ class EnvConfig:
     def quarterly(cls, horizon: int, firm: FirmParams | None = None, **overrides) -> "EnvConfig":
         """Quarterly decisions. `horizon` counts quarters."""
         return cls.at_frequency(DEFAULTS, horizon, firm=firm, **overrides)
+
+    @classmethod
+    def monthly(cls, horizon: int, firm: FirmParams | None = None, **overrides) -> "EnvConfig":
+        """Monthly decisions. `horizon` counts months.
+
+        The frequency the long-horizon work runs at. Deciding monthly rather
+        than quarterly is not expected to change the answer -- measured, the
+        gap between quarterly and weekly was +0.05% -- but it makes a five-year
+        horizon affordable where a fortnightly one does not: backpropagation
+        cost is linear in the number of steps, and sixty steps against a
+        hundred and thirty is the whole difference.
+        """
+        return cls.at_frequency(MONTHLY, horizon, firm=firm, **overrides)
 
     @classmethod
     def weekly(cls, horizon: int, firm: FirmParams | None = None, **overrides) -> "EnvConfig":

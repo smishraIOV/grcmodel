@@ -667,6 +667,7 @@ def model_at(periods_per_year: int, rates: AnnualRates = ANNUAL) -> ModelParams:
 
 
 DEFAULTS = model_at(4)    # quarterly decisions
+MONTHLY = model_at(12)    # monthly decisions
 WEEKLY = model_at(52)     # weekly decisions
 
 # Pinned, and deliberately not shared with DEFAULTS.

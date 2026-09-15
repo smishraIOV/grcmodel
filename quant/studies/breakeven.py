@@ -40,7 +40,26 @@ from quant.solvers.pathwise import optimize_constant
 FAMILIES = ("credit", "operational", "compliance")
 # Below this much spend a programme is not a programme -- it is a rounding
 # error on someone's budget line, so treat it as "not worth running".
-MATERIALITY = 0.10
+#
+# **Stated per YEAR, and compared against annualized spend.** `EvalResult.grc`
+# is a per-*period* flow, so a threshold in per-period units silently means
+# something different at every decision frequency: the same programme, decided
+# monthly instead of quarterly, spends a third as much per period and would read
+# as immaterial. Every row of every sweep would flip to "uneconomic" and nothing
+# would error.
+#
+# 0.40 a year is the old 0.10 a quarter, so quarterly verdicts are unchanged.
+ANNUAL_MATERIALITY = 0.40
+
+
+def is_material(result, firm: FirmParams) -> bool:
+    """Is this programme large enough to be worth calling a programme?
+
+    Annualizes before comparing, which is the whole point -- see
+    ANNUAL_MATERIALITY. Takes the firm rather than a bare number of periods so
+    the caller cannot forget which frequency the result came from.
+    """
+    return result.total_grc * firm.periods_per_year > ANNUAL_MATERIALITY
 # A programme has to add at least this share of firm value to count as worth
 # running, which is the value-side counterpart of the spend threshold above.
 MATERIALITY_VALUE = 0.01

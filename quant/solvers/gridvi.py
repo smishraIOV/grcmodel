@@ -49,7 +49,6 @@ from quant.env.actions import FirmAction
 from quant.env.env import FirmEnv
 from quant.env.shocks import CommonRandomNumbers, MonteCarloSampler
 from quant.env.state import N_FAMILIES, FirmState
-from quant.params import DEFAULTS
 
 
 @dataclass(frozen=True)
@@ -68,10 +67,17 @@ class ReducedSpec:
     # side moved them again, and by more: the book went from 25 to 80, so an
     # investment ceiling of 30 would have confined the grid to a firm a third
     # the size of the one every other solver is scoring.
+    #
+    # `equity_max`, `stock_max` and `investment_max` are **stocks** and so mean
+    # the same thing at any decision frequency. `annual_spend_max` is a
+    # **flow**, and is stated per year for that reason: as a per-quarter figure
+    # it put the whole optimum inside the first grid cell the moment the firm
+    # decided monthly instead, and a grid whose action range does not cover the
+    # optimum reports a confident answer to a different problem.
     equity_max: float = 64.0
-    stock_max: float = 5.0         # per family; the steady state is 1.17
-    spend_max: float = 1.2         # total per quarter; the optimum is ~0.38
-    investment_max: float = 110.0  # I* is 97.6, and the funding cap binds near 80
+    stock_max: float = 5.0          # per family; the steady state is 0.79
+    annual_spend_max: float = 4.8   # total per year; the optimum is ~1.5
+    investment_max: float = 110.0   # I* is 97.6, and the funding cap binds near 80
     payout: float = 0.0           # the level the constant-policy solver settles on
     # 48 was the first value tried and it is badly too few: the severity
     # distributions are heavy-tailed, so a small sample misses the tail and the
@@ -89,8 +95,11 @@ class ReducedSpec:
     def stock_grid(self, profile):
         return profile.tensor(torch.linspace(0.0, self.stock_max, self.n_stock).tolist())
 
-    def actions(self, profile):
-        spend = torch.linspace(0.0, self.spend_max, self.n_spend).tolist()
+    def actions(self, profile, periods_per_year: int = 4):
+        """The action grid, with the spend axis converted to the caller's
+        decision frequency. Investment is a stock and needs no conversion."""
+        spend_max = self.annual_spend_max / periods_per_year
+        spend = torch.linspace(0.0, spend_max, self.n_spend).tolist()
         invest = torch.linspace(0.0, self.investment_max, self.n_investment).tolist()
         return [(s, i) for s in spend for i in invest]
 
@@ -103,14 +112,27 @@ class GridSolver:
         self.profile = env.config.profile
         self.equities = spec.equity_grid(self.profile)
         self.stocks = spec.stock_grid(self.profile)
-        self.action_list = spec.actions(self.profile)
+        self.action_list = spec.actions(
+            self.profile, env.config.firm.periods_per_year
+        )
 
         # One shock set, drawn once and reused at every node, action and step.
         # The same common-random-numbers discipline the rollouts use, and for
         # the same reason: it removes sampling noise from every comparison
         # made against this solver.
         crn = CommonRandomNumbers(spec.seed, 1, spec.n_shocks, self.profile)
-        self.shock = MonteCarloSampler(DEFAULTS.sampler)(crn.at(0), self.profile)
+        # Drawn from the environment's OWN sampler, not from DEFAULTS. It used
+        # to read `MonteCarloSampler(DEFAULTS.sampler)`, ignoring `env`
+        # entirely: harmless only because DEFAULTS happens to be quarterly and
+        # so is every caller. Point a monthly environment at this solver and it
+        # draws a quarter's losses per month -- three times the annual loss rate
+        # -- while everything else is monthly, and reports a confident answer.
+        #
+        # That is exactly the mistake `standard_env` (quant/env/env.py) exists
+        # to make unavailable: "a weekly config driven by a quarterly sampler
+        # hands the firm thirteen times its annual losses". The seam was closed
+        # there and left open here.
+        self.shock = env.sampler(crn.at(0), self.profile)
 
         grid_e, grid_g = torch.meshgrid(self.equities, self.stocks, indexing="ij")
         self.node_equity = grid_e.reshape(-1)
