@@ -1251,28 +1251,50 @@ failures, and the price of the D&O and cyber cover insuring the same risk.
 
 **1. Hazard break-even — the only one with no $\alpha$ in it.**
 
-> A programme costing **0.66 a year**, against a franchise of **27.27**, must
-> cut the annual probability of failure by at least **243 basis points** to pay
+> A programme costing **0.95 a year**, against a franchise of **26.93**, must
+> cut the annual probability of failure by at least **354 basis points** to pay
 > for itself.
+
+*(Monthly decisions over five years. At quarterly decisions over two it was
+243 basis points against a cost of 0.66 — the threshold rose because the longer
+horizon buys a larger programme, not because the business got riskier.)*
 
 Both inputs are things a board already has a view on, so the whole claim can be
 checked without touching an uncalibrated parameter.
 
 **2. Capitalization band — over what range is a programme a decision?**
 
-| equity | spend/qtr | annual failure | going-concern share | verdict |
-|---|---|---|---|---|
-| 4.0 | 0.0182 | 17.56% | 0.761 | uneconomic |
-| 8.0 | 0.1260 | 9.25% | 0.802 | worth running |
-| **16.0** | **0.1657** | 4.54% | 0.810 | worth running |
-| 32.0 | 0.0562 | 2.56% | 0.807 | uneconomic |
-| 64.0 | 0.0026 | 1.93% | 0.800 | uneconomic |
+Annualized spend, averaged over **three seeds**, with the spread across them —
+which at this horizon is the part that matters:
+
+| equity | 4 | 8 | 16 | 32 | 64 |
+|---|---|---|---|---|---|
+| mean GRC/year | 0.36 | **1.09** | **1.02** | 0.88 | 0.32 |
+| spread over seeds | 0.54 | 0.10 | 0.11 | 0.38 | 0.32 |
 
 **Optimal GRC spend is non-monotone in capitalization and peaks in the middle.**
 Well capitalized, the hazard is too small to be worth buying down; thinly
 capitalized, there is too little franchise left to protect. A model that made
 GRC monotone in capital would be saying something false about both ends, and
 this is the most decision-useful shape the model produces.
+
+**The shape is solid and the peak is not.** The middle of the band is about
+three times either end on every seed, so "spend peaks at middling
+capitalisation" holds. But the argmax landed at 32, 8 and 8 across three draws
+of the same experiment: equity 8 and 16 sit on a plateau a few percent wide and
+the sampling noise is wider than that. Quoting a peak from one run reports the
+draw.
+
+At the ends the spread is qualitative rather than quantitative. At equity 4 one
+seed spent 0.544 a year and another 0.001 — the firm winding down on one
+scenario draw and trading on through on another.
+
+**It is not an optimizer budget problem**, which was the cheaper candidate and
+was checked: tripling the budget to 6000 steps moves the answers by under a
+percent. It is scenario sampling, so the fix is seeds and not steps.
+
+Read against the two-year figures below, the whole band also shifted *up* — the
+longer horizon makes a persisting control stock worth more everywhere.
 
 **The peak moved down when the firm got a liability side**, from equity 16 to
 8, and the shape at the thin end changed character. Before, a firm at equity 4

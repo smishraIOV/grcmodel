@@ -138,6 +138,30 @@ def capitalization_band(firm, crn, equities, periods=60, steps=2000, params=DEFA
     down rather than spending; a firm with plenty faces so little hazard that
     the programme is uneconomic. The band between them is where GRC is a
     decision rather than a formality.
+
+    **Run this across several seeds before reading the peak off it.** At the
+    five-year horizon a single draw is not enough to locate the argmax.
+    Measured at 60 monthly periods, 1024 paths, three seeds, annualized:
+
+        equity     4       8      16      32      64
+        mean    0.36    1.09    1.02    0.88    0.32
+        spread  0.54    0.10    0.11    0.38    0.32
+
+    The *shape* is solid -- the middle is about three times either end, on every
+    seed. The *peak* is not: it landed at 32, 8 and 8 on three draws of the same
+    experiment, because 8 and 16 sit on a plateau a few percent wide and the
+    noise is wider than that.
+
+    The ends are where the spread explodes, and at equity 4 it is qualitative
+    rather than quantitative: one seed spent 0.544 and another 0.001, which is
+    the firm winding down on one scenario draw and trading on another. A single
+    run there reports whichever it drew.
+
+    **This is not an optimizer budget problem**, which was the other candidate
+    and is the cheaper one to fix. Tripling the budget to 6000 steps moves the
+    answers by less than a percent (1.018/0.952/1.032 against 1.024/0.953/1.029
+    at equity 8/16/32). It is scenario sampling, so more seeds is the fix and
+    more steps is not.
     """
     rows = []
     for equity in equities:

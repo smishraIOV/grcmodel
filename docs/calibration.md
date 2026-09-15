@@ -125,7 +125,7 @@ hazard retired).
 
 | headline | C0 | C1 | C2 | C3 | verdict |
 |---|---|---|---|---|---|
-| Spend peaks at middling capitalisation | — | peak at 16 | peak at 8 | peak at 16 | **shape held**, location moved |
+| Spend peaks at middling capitalisation | — | peak at 16 | peak at 8 | peak at 16 | **shape held**; location is inside the seed noise (§below) |
 | GRC as a stock beats GRC as an expense | +268% | +33% | +49% | +31% | **sign held**, magnitude unstable |
 | Less destroyed in failure → less spend | — | −41% | −41% | −27% | **held** |
 | Firm is risk-averse near failure | — | trace convex | trace convex | none | **held, and strengthened** |
@@ -136,6 +136,15 @@ hazard retired).
 | Credit effectiveness break-even (α) | — | 0.383 | 0.098 | 0.168 | level unstable |
 
 ### How to read this
+
+**A caveat on the band, found by re-running it across seeds.** The "location
+moved" column above is not a finding — it is sampling. At the five-year horizon
+the same experiment on three scenario draws put the peak at 32, 8 and 8, because
+equity 8 and 16 sit on a plateau narrower than the noise. The *shape* survives
+every seed (the middle is ~3x either end); the argmax survives none of them.
+Tripling the optimizer budget changes nothing, so this is scenario sampling
+rather than convergence. Any row of this table that reports a *location* rather
+than a shape deserves the same treatment before it is believed.
 
 **Directional findings are robust.** Every claim about a *shape* — that spend is
 non-monotone in capitalisation, that persistence is worth a lot, that a cheaper

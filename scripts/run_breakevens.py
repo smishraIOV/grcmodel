@@ -100,6 +100,9 @@ def main() -> None:
               f"{r.going_concern_share:>14.3f} | {verdict:>18}")
     print("   Spend peaks in the middle. Well capitalized, the hazard is too small to be")
     print("   worth buying down; thinly capitalized, there is too little franchise left to protect.")
+    print("   NOTE: one seed. The shape is solid across seeds but the argmax is not --")
+    print("   8 and 16 sit on a plateau narrower than the sampling noise, and at equity 4")
+    print("   the spread spans winding down and trading on. See capitalization_band().")
 
     print("\n3. FRANCHISE BREAK-EVEN -- how much business must be at stake?")
     print(f"   {'going concern':>14} | {'spend/prd':>10} | {'firm value':>11} | {'verdict':>18}")

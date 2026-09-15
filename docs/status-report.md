@@ -215,7 +215,7 @@ conclusions:
 
 | claim | survived four recalibrations? |
 |---|---|
-| Spend peaks at middling capitalisation | **yes** — shape held, location moved |
+| Spend peaks at middling capitalisation | **yes** — shape held across five; the *peak's location* is inside the noise and should not be quoted |
 | GRC as a stock beats GRC as an expense | **yes** — sign held (+268%, +33%, +49%, +31%) |
 | A cheaper failure buys a smaller programme | **yes** (−41%, −41%, −27%) |
 | The firm is risk-averse near failure | **yes**, and strengthened |
@@ -246,8 +246,8 @@ precisely why the outputs below are thresholds.
 
 **The headline, with no uncalibrated effectiveness parameter in it:**
 
-> A programme costing 0.66 a year, against a business worth 27.27 as a going
-> concern, must cut the annual probability of failure by at least **243 basis
+> A programme costing 0.95 a year, against a business worth 26.93 as a going
+> concern, must cut the annual probability of failure by at least **354 basis
 > points** to pay for itself.
 
 Both inputs are things a board already has a view on.
@@ -274,10 +274,16 @@ disappear, though — it *moved*: total spend fell 5% while credit and complianc
 each roughly doubled. **A channel that asserts its own conclusion will be paid
 for out of the budget of the channels that do not.**
 
-**Spend peaks at middling capitalisation.** 0.166 a quarter at equity 16 and
-0.126 at 8, against 0.018 at equity 4 and 0.003 at 64. A well-capitalised firm
-faces too little risk to bother; a nearly-failed one is too far gone for a
-programme to pull back.
+**Spend peaks at middling capitalisation — but it is a plateau, not a point.**
+Annualised and averaged over three seeds: 1.09 at equity 8 and 1.02 at 16,
+against 0.36 at equity 4 and 0.32 at 64. The middle is about three times either
+end on every seed, so the shape is solid. The *argmax* is not — it landed at 32,
+8 and 8 on three draws of the same experiment. Anyone quoting an optimal
+capitalisation from a single run is quoting the draw.
+
+At the thin end the disagreement is qualitative: one seed had the firm spend
+0.544 a year and another 0.001, which is winding down on one scenario and
+trading on through on another.
 
 **Accumulation matters more than the annual number.** Treating GRC as a stock
 rather than an expense is worth **+31% of firm value** and takes two-year
@@ -313,20 +319,26 @@ produced a firm worth 0.9 against a best of 32.7 — a failed solve, not varianc
 The verdict on state feedback is unchanged and if anything firmer, but the
 instability is new with the run channel and is not understood.
 
-**One number still carries too much weight.** The model stops after two years
-and values what is left with a constant standing in for "the business continues"
-— **45% of total firm value**. Conditional on surviving, nothing the firm does
-affects nearly half the objective, which inflates how important survival looks
-relative to operations. The liability side neither fixed nor much worsened it
-(44% before, 45% now): firm and franchise both grew. Nor can it be fixed by
-solving for it — setting the constant self-consistently *diverges*, because a
-larger franchise makes survival worth more, so the firm buys more GRC, so the
-failure rate falls, so the franchise grows. Successive passes ran 15 → 40 → 58
-with annual failure falling 5.5% → 3.1%: a model talking itself into being safe.
+**One number still carries too much weight, though less than it did.** The model
+values whatever is left at the horizon with a constant standing in for "the
+business continues", and conditional on surviving, nothing the firm does affects
+that part of the objective — which inflates how important survival looks
+relative to operations.
 
-The agreed fix is to compute the continuation value from the model itself and
-lengthen the horizon to ten years so it carries less weight; monthly rather than
-weekly decisions keep that affordable. **That fix has a cost.** The natural way
+Moving from two years to five took that constant's share of firm value from
+**47% to 34%**: the horizon is discounted harder and the firm has more operating
+life inside the window, so more of what it is worth is something its decisions
+reach. That was the point of lengthening it and it worked. A third of the
+objective is still too much.
+
+It also cannot be fixed by solving for it. Setting the constant
+self-consistently *diverges* — a larger franchise makes survival worth more, so
+the firm buys more GRC, so the failure rate falls, so the franchise grows.
+Successive passes ran 15 → 40 → 58 with annual failure falling 5.5% → 3.1%: a
+model talking itself into being safe.
+
+The remaining fix is to compute the continuation value from the model itself
+rather than assume one. **That has a cost.** The natural way
 to compute it uses the grid solver — currently the only check sharing nothing
 with the main method. Feeding its output into the objective ends its
 independence and the project loses its referee. Two replacements are open:
