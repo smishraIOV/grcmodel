@@ -509,12 +509,34 @@ which is why survival is zero. The exit action is absorbing, so once the
 probability mass has left there is nothing still operating to generate a
 gradient for staying ([debug notes §8](static-model-debug-notes.md)).
 
-**At five years the neural policy fails in every configuration tried.** It
-collapsed on both rows here and on one seed in five in the study below. That is
-a change of kind rather than degree — at two years it merely failed to beat a
-constant policy; at five it does not reliably produce a firm at all. The
-constant policy is untroubled (±0.222 across seeds), so this is the learner and
-not the problem.
+**At five years the neural policy fails, in two distinct ways, and the failure
+gets worse with more paths.** Holding everything else fixed and varying only the
+batch:
+
+| paths | value | survives | exit rate | what happened |
+|---|---|---|---|---|
+| 1024 | 33.37 | 84.6% | 0.0% | trains fine, beats the constant policy |
+| 2048 | 11.20 | 0.0% | 100.0% | winds down immediately |
+| 4096 | 1.12 | 0.0% | 0.0% | drives the firm to death on every path |
+
+**Monotone in the batch size, which rules out bad luck.** Sampling noise would
+improve with more paths, not degrade; the objective is a weighted mean and
+should be batch-invariant. Something in the training loop is not, and it is not
+yet known what. The constant policy on the same draws is untroubled (±0.222
+across seeds), so this is the learner rather than the problem.
+
+Removing the exit action prevents the wind-down variant but does not restore
+performance — 17.34 against the constant policy's 33.29 on the same draw. So
+the absorbing action is the *sink* the failure drains into rather than its
+cause.
+
+**This is a bug-shaped finding, not an algorithm-choice one**, and it is the
+reason the truncated-BPTT critic has not simply been reached for. A critic is
+the remedy for gradient pathology over a long chain, which would be
+batch-invariant. It is also, by that experiment's own verdict, the thing that
+makes the absorbing-exit trap *worse*. Both of the failures seen here point away
+from it. The learner numbers at this horizon should not be relied on until the
+batch-size dependence is explained.
 
 The detection threshold had to be made *relative*, having missed this twice on
 the third decimal place: the collapsed value is not exactly

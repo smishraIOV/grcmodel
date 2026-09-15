@@ -278,8 +278,23 @@ def main() -> None:
         # lands on exactly `orderly_recovery * initial_equity` with survival at
         # zero. That is an optimizer trap and not a valuation
         # (docs/static-model-debug-notes.md section 8).
+        # A solve has collapsed if nothing is left operating at the horizon,
+        # whatever value it landed on. Matching the wind-down value was too
+        # narrow twice over: it missed the value by a fraction of a percent
+        # (the exit probability is a sigmoid and never quite reaches one), and
+        # it missed the *other* failure entirely -- at 4096 paths the learner
+        # drove the firm to death on every path and landed at 1.12, nowhere
+        # near the wind-down figure, and was reported as a valuation.
         collapsed = firm.orderly_recovery * firm.initial_equity
         for name, r in results.items():
+            if r.survival_rate < 1e-3 and r.value < 0.5 * results["constant"].value:
+                how = (
+                    "wound down" if r.orderly_exit_rate > 0.5 else "died on every path"
+                )
+                print(
+                    f"{'':>11} | WARNING: {name} {how} ({r.value:.3f}); "
+                    f"its row is an optimizer failure, not a value"
+                )
             # Relative, not absolute. An absolute tolerance has now missed this
             # twice: the collapsed value is not exactly `orderly_recovery x
             # initial_equity` because the exit probability is a sigmoid and
@@ -287,14 +302,6 @@ def main() -> None:
             # percent away -- 11.1858 against 11.2 most recently. The whole
             # point of the check is to catch a row that should not be read as a
             # valuation, and it kept failing on the third decimal place.
-            if (
-                abs(r.value - collapsed) < 0.02 * collapsed
-                and r.survival_rate < 1e-3
-            ):
-                print(
-                    f"{'':>11} | WARNING: {name} collapsed into the wind-down "
-                    f"({collapsed:.3f}); its row is an optimizer trap, not a value"
-                )
 
         # The best *implementable* policy, not a fixed one of the two. The
         # persistence headline below used to take the neural row unconditionally

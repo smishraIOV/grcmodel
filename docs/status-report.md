@@ -316,12 +316,19 @@ unit has nowhere left to go. The same control has now given four different
 answers across four configurations, and what changes each time is not the firm's
 patience but what a retained unit is *for*.
 
-**The learner does not survive this horizon.** The state-feedback policy
-collapsed into an immediate wind-down on both rows of the solver table and on
-one seed in five. At two years it merely failed to beat a fixed policy; at five
-it does not reliably produce a firm at all, while the fixed policy is stable to
-±0.2. That is the strongest case yet for keeping the parked truncated-BPTT
-experiment (§4) available rather than closed.
+**The learner does not survive this horizon, and the reason is not what it
+looked like.** The state-feedback policy fails in two distinct ways, and the
+failure gets *worse* with more sample paths: at 1024 it trains fine and beats
+the fixed policy; at 2048 it winds the firm down immediately; at 4096 it drives
+it to death on every path. Sampling noise would improve with more paths, so this
+is a bug rather than variance, and it is not yet explained. Removing the exit
+action prevents one failure without restoring performance.
+
+That also settles what *not* to do next. The obvious reach is the parked
+truncated-BPTT critic (§4), since a critic is the standard remedy for long
+horizons — but gradient pathology over a long chain would not depend on batch
+size, and a critic is by that experiment's own verdict the thing that makes an
+absorbing-exit trap worse. Both symptoms point away from it. Find the bug first.
 
 **As an effectiveness threshold**, a compliance programme pays if a unit of
 spend removes about 12% of exposure, where pure loss-reduction arithmetic
