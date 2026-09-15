@@ -24,11 +24,37 @@ This prints the passes and the line to paste. It deliberately does **not**
 write to `quant/params.py`: the value is load-bearing enough that a human
 should see the regime diagnostics next to it before it lands.
 
+**What the map actually looks like**, measured at eight points on one draw at
+monthly/five years, 1024 paths and 2500 steps:
+
+    G     0.600  0.762  1.050  1.120  1.200  1.300  1.577  1.687
+    f(G)  1.687  1.577  1.374  1.117  1.061  0.997  0.833  0.762
+
+Three things follow, and each sets a default here.
+
+**The slope is about -0.9.** So plain iteration does converge, but it
+oscillates and contracts by only a tenth a pass. Hence `--damping 0.5`, which
+puts the effective slope near 0.05.
+
+**A single draw cannot locate the root.** Regressing those eight points leaves
+a residual RMS of 0.066 in stock units -- about 6% of spend -- against a root
+that sits somewhere near 1.17 and moves by only ~0.05 between plausible
+answers. Two *adjacent* points carried residuals of +0.098 and -0.096, which
+between them fake a kink in the map and a factor-of-four change in its slope.
+Hence `--seeds`, and hence the warning when it is 1.
+
+**The stopping rule has to know about that noise.** The first run of this
+script stopped after a single pass, on a move of 0.23%, and reported the value
+it started from -- which is what a 1% tolerance does against 6% noise. It is
+not a converged answer, it is a draw that happened to land nearby. Convergence
+is now judged against `max(tolerance, seed spread)` and the binding one is
+named.
+
 Usage:
 
-    uv run python scripts/solve_steady_state.py                    # monthly, 5y
+    uv run python scripts/solve_steady_state.py --seeds 3            # monthly, 5y
     uv run python scripts/solve_steady_state.py --frequency quarterly --periods 8
-    uv run python scripts/solve_steady_state.py --from 1.12 --passes 8
+    uv run python scripts/solve_steady_state.py --from 1.16 --seeds 3 --steps 4000
 """
 
 import argparse
@@ -64,6 +90,36 @@ DEATH_BAND = (0.002, 0.15)
 MINIMUM_STEPS = 1500
 
 
+def map_at(params, periods, profile, paths, steps, stock, seeds):
+    """`f(G) = g*(G) / delta`, averaged over scenario draws.
+
+    Averaged because a single draw is not accurate enough to locate this root,
+    which was measured rather than assumed. Evaluating the map at eight points
+    on one draw and regressing gives a residual RMS of 0.066 in stock units --
+    about 6% of spend -- against a root that moves by only ~0.05 between
+    plausible answers. Two adjacent points carried residuals of +0.098 and
+    -0.096, which is enough to fake a kink in the map and a factor-of-four
+    change in its slope.
+
+    Returns `(mean, spread, last result)`. The spread is what the caller needs
+    to know whether a pass actually moved.
+    """
+    sampler = MonteCarloSampler(params.sampler)
+    depreciation = params.firm.grc_depreciation()
+    firm = replace(params.firm, initial_grc_stock=stock)
+    env = FirmEnv(EnvConfig.at_frequency(params, periods, firm=firm), sampler)
+
+    implied, result = [], None
+    for seed in seeds:
+        crn = CommonRandomNumbers(seed, periods, paths, profile)
+        result = optimize_constant(env, crn, n_steps=steps)[1]
+        implied.append(implied_stock(result, depreciation))
+
+    mean = sum(implied) / len(implied)
+    spread = max(implied) - min(implied) if len(implied) > 1 else 0.0
+    return mean, spread, result
+
+
 def implied_stock(result, depreciation: float) -> float:
     """`g*(G) / delta`, the stock this much maintenance spend sustains.
 
@@ -75,55 +131,86 @@ def implied_stock(result, depreciation: float) -> float:
     return (sum(result.grc) / len(result.grc)) / depreciation
 
 
-def solve(params, periods, profile, paths, steps, start, passes, damping, tolerance):
+def solve(params, periods, profile, paths, steps, start, passes, damping,
+          tolerance, seeds):
     """Damped fixed-point iteration, printing every pass.
 
-    Damped because the map is not guaranteed to be a contraction and a value
-    that oscillates is worth seeing rather than averaging away. At `damping=1.0`
-    this is the plain iteration the comment in `quant/params.py` records:
-    0.79 -> 1.173 -> 1.128 -> 1.120 -> 1.119.
+    Damped because the measured slope is about -0.9: plain iteration converges,
+    but it oscillates and contracts by only ~10% a pass, so from a start half a
+    unit away it takes longer than anyone will wait. At `damping = 0.5` the
+    effective slope is `(1 - d) + d*f'` = 0.05 and two passes are enough.
+
+    **The stopping rule is the part that needs care.** A pass that moves the
+    stock less than the seed spread has not converged -- it has drawn a scenario
+    set that happened to land near where it started. Measured on one draw, the
+    noise in `f` is about 0.066 against a 1% tolerance of 0.011, so a
+    single-seed run stops on luck roughly whenever it feels like it. It did
+    exactly that the first time this script was run: it declared convergence
+    after one pass, on a move of 0.23%, at a value the regression later put
+    ~4% away. So convergence is judged against `max(tolerance, spread)` and the
+    reason it stopped is printed.
     """
-    sampler = MonteCarloSampler(params.sampler)
-    crn = CommonRandomNumbers(0, periods, paths, profile)
     depreciation = params.firm.grc_depreciation()
+    multi = len(seeds) > 1
 
     header = (
         f"  {'pass':>4} | {'opening G':>10} | {'spend/prd':>10} | {'implied G':>10} | "
-        f"{'move':>8} | {'annual death':>13} | {'going concern':>14}"
+        f"{'spread':>8} | {'move':>8} | {'annual death':>13} | {'going concern':>14}"
     )
     print(f"\nper-period depreciation {depreciation:.5f}, "
-          f"so a stock of G needs {depreciation:.5f} x G a period to hold it\n")
+          f"so a stock of G needs {depreciation:.5f} x G a period to hold it")
+    print(f"map evaluated over {len(seeds)} seed(s): {list(seeds)}\n")
     print(header)
     print("  " + "-" * (len(header) - 2))
 
-    stock, last = start, None
+    stock, last, stopped = start, None, None
     for index in range(passes):
-        firm = replace(params.firm, initial_grc_stock=stock)
-        env = FirmEnv(
-            EnvConfig.at_frequency(params, periods, firm=firm), sampler
+        implied, spread, result = map_at(
+            params, periods, profile, paths, steps, stock, seeds
         )
-        result = optimize_constant(env, crn, n_steps=steps)[1]
-        implied = implied_stock(result, depreciation)
         move = implied - stock
         print(
             f"  {index:>4} | {stock:>10.4f} | {result.total_grc:>10.4f} | "
-            f"{implied:>10.4f} | {move:>+8.4f} | "
-            f"{result.annual_death_probability:>12.2%} | "
+            f"{implied:>10.4f} | {spread if multi else float('nan'):>8.4f} | "
+            f"{move:>+8.4f} | {result.annual_death_probability:>12.2%} | "
             f"{result.going_concern_share:>14.3f}"
         )
         last = result
-        if abs(move) < tolerance * max(stock, 1e-9):
+
+        floor = max(tolerance * max(stock, 1e-9), spread)
+        if abs(move) < floor:
+            stopped = "the seed spread" if spread > tolerance * stock else "the tolerance"
             stock = implied
             break
         stock = stock + damping * move
 
-    return stock, last
+    return stock, last, stopped, multi
 
 
-def report(stock, result, params, periods, steps):
+def report(stock, result, params, periods, steps, stopped, multi):
     """The fixed point, the regime check, and the line to paste."""
-    print(f"\nFixed point: {stock:.4f}")
+    if stopped is None:
+        print(
+            f"\nDID NOT CONVERGE: {stock:.4f} is where the passes ran out, not a\n"
+            "  fixed point. Re-run with --from that value and more --passes."
+        )
+    else:
+        print(f"\nFixed point: {stock:.4f}   (stopped on {stopped})")
 
+    if not multi:
+        print(
+            "\n  ONE SCENARIO DRAW. The noise between draws is comparable to the\n"
+            "  distance between plausible answers here -- measured, about 6% of\n"
+            "  spend against a root that moves by ~4%. Re-run with --seeds 3\n"
+            "  before pasting anything."
+        )
+    if stopped == "the seed spread":
+        print(
+            "\n  STOPPED INSIDE THE NOISE: the last pass moved the stock by less\n"
+            "  than the spread across seeds, so this is where the iteration ran\n"
+            "  out of resolution rather than where it converged. Raise --steps or\n"
+            "  --paths to sharpen the map before believing the last digit."
+        )
     if steps < MINIMUM_STEPS:
         print(
             f"\n  NOT A SOLVE: {steps} optimizer steps, against a floor of "
@@ -184,8 +271,17 @@ def main() -> None:
     )
     parser.add_argument("--passes", type=int, default=6)
     parser.add_argument(
-        "--damping", type=float, default=1.0,
-        help="fraction of each step to take; below 1 for an oscillating map",
+        "--seed", type=int, default=0, help="base scenario seed"
+    )
+    parser.add_argument(
+        "--seeds", type=int, default=1,
+        help="how many consecutive seeds to average the map over. One draw is\n"
+             "not enough to locate this root -- see map_at()",
+    )
+    parser.add_argument(
+        "--damping", type=float, default=0.5,
+        help="fraction of each step to take. The measured slope is about -0.9, "
+             "so 0.5 gives an effective slope near 0.05 and 1.0 oscillates",
     )
     parser.add_argument(
         "--tolerance", type=float, default=0.01,
@@ -215,11 +311,12 @@ def main() -> None:
         f"{args.steps} steps, starting from {start}"
     )
 
-    stock, result = solve(
+    seeds = tuple(range(args.seed, args.seed + max(1, args.seeds)))
+    stock, result, stopped, multi = solve(
         params, periods, profile, args.paths, args.steps,
-        start, args.passes, args.damping, args.tolerance,
+        start, args.passes, args.damping, args.tolerance, seeds,
     )
-    report(stock, result, params, periods, args.steps)
+    report(stock, result, params, periods, args.steps, stopped, multi)
 
     print(
         "\nThis is a fixed point of the whole model, so it is invalidated by any\n"

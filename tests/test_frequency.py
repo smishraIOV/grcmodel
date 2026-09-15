@@ -168,6 +168,31 @@ def test_an_unsolved_configuration_is_refused_rather_than_guessed():
         steady_state_firm(MONTHLY, 24)
 
 
+def test_the_steady_state_is_solved_per_family_not_on_total_spend():
+    """`G = g*(G) / delta` is a statement about one family, not about the budget.
+
+    `FirmEnv.reset` opens every family at `initial_grc_stock`, so the fixed
+    point is the stock the *average* family's maintenance sustains. Reading it
+    off total spend instead is a silent factor of three -- at the monthly
+    steady state that is 1.12 against 3.4, which is inside no band anyone
+    checks and would simply produce a firm opening three times too rich.
+
+    Pinned here rather than in the script because it is a modelling decision,
+    and the script is the thing that could quietly change it.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from scripts.solve_steady_state import implied_stock
+
+    class Result:
+        grc = (0.02, 0.03, 0.04)   # total 0.09, mean 0.03
+
+    assert implied_stock(Result(), depreciation=0.02) == pytest.approx(1.5)
+    # ...and emphatically not 4.5, which is what dividing the total would give.
+
+
 def test_every_entry_point_still_imports():
     """The scripts are the project's published interface and **nothing else
     imports them**, so a syntax error in one survives a fully green suite.
