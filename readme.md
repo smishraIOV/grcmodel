@@ -37,7 +37,7 @@ uv run python scripts/run_static_model.py   # the original two-period model
 uv run python -m quant.simulate             # Monte Carlo, reported across seeds
 uv run python scripts/bench_profiles.py     # where the accelerator starts paying
 uv run python scripts/solve_steady_state.py # the opening GRC stock a config supports
-uv run pytest                               # 134 tests, about four and a half minutes
+uv run pytest                               # 141 tests, about four and a half minutes
 ```
 
 `solve_steady_state.py` is maintenance rather than a result. `initial_grc_stock`
@@ -91,8 +91,10 @@ sheet. Annual probability of failure: 3.0%.
 > points** to pay for itself.
 
 Both inputs are things a board already has a view on. As an effectiveness
-threshold, a compliance programme pays if a unit of spend removes about 12% of
-exposure, where pure loss-reduction arithmetic demands an impossible 992%.
+threshold, a compliance programme pays if a unit of spend removes about **11% of
+its exposure**, where pure loss-reduction arithmetic would need it to remove
+essentially all of it — which no programme does. That gap is the Froot-Stein
+premium, expressed as something a risk owner can disagree with.
 
 - **Accumulation matters more than the annual number.** Treating GRC as a stock
   rather than an expense is worth **+131% of firm value** and takes survival

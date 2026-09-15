@@ -1600,11 +1600,30 @@ falls and a very effective programme needs little spending on. Testing budget
 materiality reports "no $\alpha$ works" for a programme that is enormously
 worthwhile, which is what it did here before being corrected.
 
-| family | risk-neutral $1/X$ | with survival | ratio |
-|---|---|---|---|
-| credit | 1.725 | 0.1684 | 10× |
-| operational | 5.694 | 0.1215 | 47× |
-| compliance | 9.924 | 0.1215 | 82× |
+$\alpha$ is a **rate in 1/money**, not a percentage. Mitigation is
+$e^{-\alpha G}$, so a unit of spend removes $1 - e^{-\alpha}$ of the family's
+exposure, and that column is given alongside so the numbers can be read
+directly:
+
+| family | channels $\alpha$ drives | risk-neutral $1/X$ | removes | with survival | removes | ratio |
+|---|---|---|---|---|---|---|
+| credit | 1 | 1.725 | 82% | 0.1684 | 16% | 10× |
+| operational | 3 | 5.694 | 99.7% | 0.1215 | 11% | 47× |
+| compliance | 2 | 9.924 | 100.0% | 0.1215 | 11% | 82× |
+
+**The three rows are not like-for-like, and the "channels" column is why.** One
+$\alpha$ per family buys a different number of things in each: credit's drives
+the loss mean alone; compliance's drives the breach probability *and* the
+licence intensity; operational's drives the loss severity, the cliff frequency
+*and* the run frequency. So the operational figure is the effectiveness at
+which three mitigations together pay for themselves, and reading it beside
+credit's as though both described one control is the same conflation this
+project retired the asserted operational hazard for — three claims in one
+parameter.
+
+Reusing one $\alpha$ per family is deliberate and stays: nothing here can
+calibrate one, let alone three (§8). What changed is that the table now says so.
+`tests/test_alphas.py` pins the counts, so they cannot drift from the code.
 
 Credit's exposure is a *rate on the book*, so the comparison needs the book the
 firm funds rather than the bare draw. Read as money it gave a risk-neutral
@@ -1617,16 +1636,23 @@ applies to is now four times larger, so the same effectiveness buys back four
 times as much money. Operational and compliance did not move at all: their
 exposures are per-event magnitudes that do not scale with the balance sheet.
 **Leverage is what makes loan-default risk worth managing on expected-loss
-grounds alone**, and it is why credit's ratio is 15× where the other two are
-above 100×.
+grounds alone**, and it is why credit's ratio is 10× where the other two are 47×
+and 82×.
 
 Read the compliance row as: *this programme pays provided you believe a unit of
-spend removes about 12% of exposure, where pure expected-loss reduction would
-demand 992%* — which is to say, on expected-loss grounds alone it could never
-pay at all. Credit's equivalent pair is 17% against 173%: still a gap, but the
-only one of the three where the expected-loss threshold is a number a
-practitioner could argue about rather than dismiss. The gap is the Froot-Stein
-premium expressed as a threshold.
+spend removes about 11% of its exposure, where pure expected-loss reduction
+would need it to remove essentially all of it* — which is to say, on
+expected-loss grounds alone it could never plausibly pay. Credit's equivalent
+pair is 16% against 82%: still a gap, but the only one of the three where the
+expected-loss threshold is a number a practitioner could argue about rather than
+dismiss. The gap is the Froot-Stein premium expressed as a threshold.
+
+(An earlier version of this passage read $\alpha$ as a percentage — "about 12%
+of exposure, where pure loss-reduction arithmetic demands an impossible 992%".
+It is a rate in 1/money, so $\alpha = 9.924$ is a unit of spend removing
+99.995% of exposure: implausible rather than impossible, and the rhetorical gap
+was an artifact of the units. The two readings agree to about a point while
+$\alpha$ is small, which is why it survived four recalibrations unnoticed.)
 
 **Every threshold rose when the asserted operational hazard was retired** —
 operational from 0.043 to 0.122, compliance from 0.086 to 0.122, credit from

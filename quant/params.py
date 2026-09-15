@@ -18,12 +18,38 @@ from dataclasses import dataclass, field, replace
 
 @dataclass(frozen=True)
 class GrcAlphas:
-    """Mitigation effectiveness per risk family: how much of the family's
-    exposure one unit of GRC spend removes.
+    """Mitigation effectiveness per risk family, as a rate in 1/money.
 
     These are the parameters nothing in this repo can currently calibrate,
     which is why quant/threshold.py reports break-even values for them rather
     than trusting a point estimate.
+
+    **A rate, not a percentage.** Mitigation is `exp(-alpha * G)`, so a unit of
+    stock removes `1 - exp(-alpha)` of the family's exposure -- 11% at alpha =
+    0.12, not 12%, and 82% at alpha = 1.7, not 170%. The two readings agree to
+    about a point while alpha is small, which is why quoting alpha as a
+    percentage went unnoticed, and diverge completely once it is not.
+
+    **One alpha per family, but the families do not buy the same bundle.** A
+    unit of stock drives a different number of channels in each:
+
+        credit        1  the loss mean                (env/dynamics.py)
+        compliance    2  the breach probability, and the licence intensity
+                         (env/dynamics.py, hazard.py)
+        operational   3  the loss severity, the cliff frequency, and the run
+                         frequency (env/dynamics.py x3)
+
+    So the three break-evens in docs/quant-model.md section 6.5 are not
+    like-for-like, and the operational one is the effectiveness at which *three*
+    mitigations together pay for themselves. Reusing one alpha per family is
+    deliberate -- nothing here can calibrate one, let alone three -- but the
+    asymmetry has to be stated rather than left for a reader to find.
+
+    There is a fourth operational channel in hazard.py, reduced by this same
+    alpha and currently inert because its rate is zero: it was replaced by the
+    run mechanism rather than deleted.
+
+    tests/test_alphas.py pins this map, so it cannot drift from the code.
     """
 
     # Units of 1/money, so this moves with the loss scale. It was 0.3 when a
