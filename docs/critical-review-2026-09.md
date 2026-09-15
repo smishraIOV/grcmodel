@@ -3,6 +3,53 @@
 Review date: 2026-09-15. Reviewed at commit `53f29f9` on `main`, with
 `svg-critic` at `30398aa` + 4.
 
+> **Status: partly addressed.** Kept unedited below as the record of what was
+> found and how, in the same way `docs/critical-review.md` was on the
+> `svg-critic` branch. Every "current" statement describes `53f29f9`, not the
+> code today. This block is the only thing that moves.
+>
+> **Landed.**
+>
+> | finding | commit |
+> |---|---|
+> | C1 — losses never reached the liquidity buffer | `6a2ffe4` |
+> | C2 — the "expected loss only" comparison was not that | `fd0c3fa` |
+> | C5 — one α, three different channel counts | `fc903ac` |
+> | §5 — α read as a percentage ("an impossible 992%") | `fc903ac` |
+> | C6 — the entry-point import test globbed only `run_*.py` | `f6c1b73` |
+>
+> **Open, needing no compute.** C3 (two definitions of annual failure), C4
+> (`value_curvature` carries the confound `capitalization_band` fixes), C6a–c
+> (the `DEFAULTS.alphas` leak, the grid's reward discount, the "barrier at 0"
+> line), C6e (two parallel lineages, both advertised flat in the readme), D1–D8
+> (the dangling and stale cross-references, and the two senses of "franchise"),
+> and D9 — the history-free page, which is the largest single fix for the
+> reader question in §5.
+>
+> **Open, needing compute.** The re-run of every liability-side table, now that
+> C1 and C2 have moved them; the franchise sweep attached to the headline
+> break-even (§7 item 3); and seeds on the remaining single-draw sweeps.
+> Measured since: a full re-run is ~2.5h at current settings, ~7.2h across three
+> seeds.
+>
+> **Deferred.** `svg-critic` (§6), which C1 and C2 have made slightly harder to
+> port rather than easier.
+>
+> **Where this document was itself wrong or short.** C2 is described here as a
+> *narrow* comparison; it was also a *biased* one — switching off the hazard
+> rates handed the loss-only firm a safer world, so it took more balance-sheet
+> risk, spent twice as much and survived less. C1's entry did not anticipate
+> that the closed-form run boundary would need re-deriving, which turned out to
+> be the most useful part of the fix.
+>
+> **Found while acting on this review, and not in it.** At 1024 paths and 2500
+> steps the optimal GRC budget varies by **10% across scenario draws** — larger
+> than several effects §6 reports from a single draw, and the sharpest available
+> form of this document's own §4 warning. `GRC_STEADY_STATE[(12, 60)]` is
+> ~4% stale (≈1.17 against 1.12), unresolved to better than ±0.04 and not yet
+> pasted. And §6.5's prose puts credit's risk-neutral break-even at 1.462 where
+> its own table says 1.725.
+
 Scope: `readme.md`, `docs/framework.md`, `docs/quant-model.md`,
 `docs/calibration.md`, the `quant/` package, `tests/`, `scripts/`, and the
 `svg-critic` branch.
