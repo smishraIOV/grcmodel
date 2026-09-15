@@ -73,3 +73,32 @@ def test_a_single_run_cannot_separate_the_solvers_at_a_short_horizon():
         f"edge {advantage:.3%} vs seed noise {noise:.3%} -- if this now separates "
         "cleanly the short-horizon verdict in docs/quant-model.md needs revisiting"
     )
+
+
+def test_the_learner_clips_its_gradient():
+    """Guards a measured failure, not a precaution.
+
+    At the five-year horizon one run in six used to destroy itself: 500 steps of
+    normal convergence with the gradient norm falling, then a single step at
+    2.7e5 -- four hundred thousand times the previous -- and a worthless policy
+    eight steps later. The amplifier is the run channel's straight-through
+    relaxation, and Adam makes it worse rather than better, because a spike
+    against a small running variance produces a step far larger than the
+    learning rate.
+
+    The threshold is where the distributions separate: steady-state norms are
+    0.6-2, the cold start peaks near 82, the pathology is 2.7e5. On a healthy
+    seed the clip fires zero times in 600 steps.
+    """
+    import inspect
+
+    from quant.solvers.neural import train_pathwise
+
+    source = inspect.getsource(train_pathwise)
+    assert "clip_grad_norm_" in source, "the learner has lost its gradient clip"
+
+    signature = inspect.signature(train_pathwise)
+    clip = signature.parameters["grad_clip"].default
+    assert clip is not None, "clipping must be on by default"
+    # Well above the cold start's ~82, far below the 2.7e5 pathology.
+    assert 82.0 < clip < 1e4, f"clip {clip} does not separate the two regimes"

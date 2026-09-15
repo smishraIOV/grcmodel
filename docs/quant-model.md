@@ -546,17 +546,42 @@ which rules out the unguarded `logit(0)` in `cliff_loss` as the cause. The
 effective sample size is 0.47–0.50 on healthy runs, which exonerates the
 self-normalised weights in `path_weights` — the only place paths couple.
 
-So a converged policy walks off a cliff in the objective. **Gradient clipping at
-norm 2.0 prevents it completely and costs nothing**: 33.46 on the failing seed,
-against 33.47 and 33.53 on the seeds that never failed. A smaller learning rate
-also prevents it but converges to less (28.2). Neither is applied yet.
+**The amplifier is the run channel.** Switching it off drops the peak gradient
+norm from 2.7 × 10⁵ to 82 and the failure disappears. Its straight-through
+relaxation differentiates $(\text{logit}\,p - \text{logit}\,u)/\tau$, and
+$d\,\text{logit}(p)/dp = 1/(p(1-p))$ is about 147 at a run probability near
+0.7%; the temperature $\tau = 0.1$ multiplies that by another ten.
 
-**This remains a bug-shaped finding rather than an algorithm-choice one**, and
-it is why the truncated-BPTT critic has not been reached for. A critic addresses
-gradient pathology accumulated along a long chain; what happens here is a single
-step off a cliff from an otherwise healthy trajectory, and a one-line clip
-catches it. The learner numbers below were produced without that clip and should
-not be relied on.
+**What follows the spike is a runaway, not a stumble**, because
+`run_probability` is exponential in the capital ratio. Leverage up, ratio down,
+runs likelier, fire sales, capital down:
+
+| step | 498–503 | 504 | 508 | 512 | 515 |
+|---|---|---|---|---|---|
+| reserves | 32.8% | 30.1% | 22.0% | 10.6% | 10.0% |
+| leverage | 4.98 | 5.06 | 5.56 | 9.42 | **13.60** |
+| p(run) | 0.69% | 1.30% | 5.29% | 19.07% | **41.71%** |
+| survives | 85.5% | 85.0% | 74.8% | 17.5% | **0%** |
+
+The exit rate stays at zero throughout: the firm levers itself to death rather
+than winding down. And both endings are absorbing, so none of it is recoverable.
+
+**Adam makes this worse rather than better.** Its update is $lr \cdot
+g/\sqrt{\hat v}$, and after 500 steps of small steady gradients $\hat v$ is
+tiny, so a sudden enormous $g$ produces a step far larger than the learning
+rate — the variance estimate only catches up afterwards. That is why clipping is
+the right tool and a smaller learning rate is not.
+
+**Fixed: the gradient is now clipped at norm 100**, chosen where the two
+distributions separate rather than as the first value that worked. Steady-state
+norms are 0.6–2, the cold start peaks near 82, the pathology is 2.7 × 10⁵. On
+the failing seed the clip fires on 2 steps of 600 and turns 0.77 into 33.25; on
+a healthy seed it fires on 0 of 600 and the result is unchanged.
+
+The truncated-BPTT critic was not the answer, for a better reason than before: a
+critic addresses pathology accumulated along a long chain, and this was a single
+step off a cliff from an otherwise healthy trajectory. **The learner figures
+below predate the clip and have not been re-run.**
 
 The detection threshold had to be made *relative*, having missed this twice on
 the third decimal place: the collapsed value is not exactly

@@ -393,3 +393,27 @@ def test_operational_grc_still_buys_survival_through_the_balance_sheet():
         fire = sum(float(i["fire_sale_loss"].mean()) for i in trajectory.infos)
         outcomes.append(fire)
     assert outcomes[1] < outcomes[0], outcomes
+
+
+def test_switching_the_cliff_off_does_not_poison_the_gradient():
+    """`torch.logit(0)` is -inf with an infinite derivative, so a cliff rate of
+    zero -- the natural way to switch the channel off -- returned NaN from the
+    *backward* pass while the forward pass stayed correct.
+
+    Third instance of this trap in `dynamics.py`: the compliance likelihood
+    ratio at p0 = 0, then `run_probability`, and this. The run channel was
+    floored when its version was found; this one was not, and the asymmetry
+    survived until an ablation set the rate to zero and NaN'd from step one.
+    """
+    cliff = replace(DEFAULTS.cliff, period_probability=0.0)
+    env = run_env(cliff=cliff)
+    crn = CommonRandomNumbers(0, 1, 512, REFERENCE)
+    shock = env.sampler(crn.at(0), REFERENCE)
+    state = env.reset(512)
+
+    scalar = REFERENCE.tensor(1.0, requires_grad=True)
+    stock = torch.stack([scalar] * 3).expand(512, 3)
+    loss = env.dynamics.cliff_loss(state, stock, shock)
+    assert torch.count_nonzero(loss) == 0, "a zero rate must never fire"
+    loss.sum().backward()
+    assert torch.isfinite(scalar.grad).all(), "zero cliff rate poisoned the gradient"

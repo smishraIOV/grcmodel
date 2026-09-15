@@ -119,6 +119,18 @@ class StandardDynamics:
             stock[..., 1],  # operational GRC: the crypto rails are its pillar
             self.alphas.operational,
         )
+        # Floored for the same reason `run_probability` is: `torch.logit` of
+        # zero is -inf with an infinite derivative, so a cliff rate of zero --
+        # the natural way to switch the channel off -- returns NaN from the
+        # *backward* pass while the forward pass stays correct. Nothing looks
+        # wrong until a whole solve comes back NaN.
+        #
+        # The run channel got this guard when the bug was found there; this one
+        # did not, and the asymmetry survived until an ablation set
+        # `period_probability = 0.0` and NaN'd from the first step. Third
+        # instance of the same trap in this file.
+        tiny = torch.finfo(self.profile.dtype).tiny
+        probability = probability.clamp(min=tiny, max=1.0 - 1e-9)
         uniform = shock.cliff_uniform.clamp(1e-9, 1.0 - 1e-9)
         occurs = (uniform < probability).to(self.profile.dtype)
 

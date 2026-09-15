@@ -91,6 +91,7 @@ def train_pathwise(
     lr: float = 3e-3,
     seed: int = 0,
     record_every: int = 100,
+    grad_clip: float = 100.0,
 ) -> TrainResult:
     """Maximize firm value by gradient ascent through the differentiable rollout.
 
@@ -104,33 +105,51 @@ def train_pathwise(
     policy = NeuralPolicy(env, hidden=hidden)
     optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
 
-    # **This loop has no gradient clipping, and measurably needs one.** At the
-    # five-year horizon roughly one run in six destroys itself: training
-    # converges normally for ~500 steps with the gradient norm *falling* the
-    # whole way (value 32.97, norm 0.64 at step 500), then the norm jumps 35x in
-    # a single step and the policy is worthless eight steps later. Peak norm on
-    # a failing run is 2.7e5 against ~81 on a healthy one -- three orders of
-    # magnitude, and the cleanest signal available for detecting it.
+    # **The gradient is clipped, and the reason is measured rather than
+    # precautionary.** At the five-year horizon roughly one run in six used to
+    # destroy itself: training converged normally for ~500 steps with the
+    # gradient norm *falling* the whole way (value 32.97, norm 0.64 at step
+    # 500), then a single step produced a norm of 2.7e5 -- four hundred thousand
+    # times the previous one -- and the policy was worthless eight steps later.
     #
-    # No NaN is involved; every parameter gradient stays finite throughout. It
-    # is a converged policy stepping off a cliff in the objective, not an
-    # accumulation of pathology along the chain -- which is why the truncated
-    # BPTT critic on `svg-critic` is not the remedy for it.
+    # The amplifier is the run channel's straight-through relaxation. It
+    # differentiates `(logit(p) - logit(u)) / 0.1`, and `d logit(p)/dp` is
+    # `1/(p(1-p))`, about 147 at a run probability near 0.7%; the temperature
+    # multiplies that by another ten. Switching the run channel off drops the
+    # peak norm from 2.7e5 to 82 and the failure disappears.
     #
-    # Measured fixes, none applied yet: `clip_grad_norm_` at 2.0 prevents it
-    # completely and costs nothing (33.46 on the failing seed against 33.47 and
-    # 33.53 on seeds that never failed); lr 1e-3 also prevents it but converges
-    # to 28.2. Deliberately left undone so the choice is made explicitly --
-    # every learner figure in docs/ was produced without it.
+    # What follows the spike is a runaway rather than a stumble, because
+    # `run_probability` is exponential in the capital ratio: leverage up, ratio
+    # down, runs likelier, fire sales, capital down. Measured over eleven steps,
+    # leverage 4.98 -> 13.60 and run probability 0.7% -> 41.7%, ending at zero
+    # survival. Death and wind-down are both absorbing, so none of it is
+    # recoverable.
     #
-    # Note also that this is the only solver in the repo with a **cold start**.
-    # `perfect_information_bound` warm-starts from the constant policy and its
-    # docstring calls that mandatory once the barrier is on.
+    # Adam does not protect against this -- it makes it worse. The update is
+    # `lr * g / sqrt(v)`, and after 500 steps of small steady gradients `v` is
+    # tiny, so a sudden enormous `g` produces a step far larger than `lr`; the
+    # variance estimate only catches up afterwards. Clipping caps `g` *before*
+    # that ratio is formed, which is why it is the right tool and a smaller `lr`
+    # is not.
+    #
+    # 100 is chosen where the two distributions separate, not as the first value
+    # that worked. Steady-state norms are 0.6-2, the cold start peaks near 82,
+    # and the pathology is 2.7e5. Measured at the failing seed it fires on 2
+    # steps of 600 and turns 0.77 into 33.25; on a healthy seed it fires on 0 of
+    # 600 and the result is unchanged to three decimals. Set `grad_clip=None` to
+    # disable.
+    #
+    # Note this is still the only solver in the repo with a **cold start** --
+    # it begins at a firm value near 0.5. `perfect_information_bound`
+    # warm-starts from the constant policy and its docstring calls that
+    # mandatory once the barrier is on. That remains unaddressed.
     history = []
     for step in range(n_steps):
         optimizer.zero_grad()
         value = env.value_of(env.rollout(policy, crn, differentiable=True))
         (-value).backward()
+        if grad_clip is not None:
+            torch.nn.utils.clip_grad_norm_(policy.parameters(), grad_clip)
         optimizer.step()
         if step % record_every == 0:
             history.append(value.item())

@@ -320,8 +320,15 @@ patience but what a retained unit is *for*.
 explosion out of a converged state.** One run in six: training converges
 normally for 500 steps with the gradient norm *falling* the whole way, then the
 norm jumps 35× in a single step and the policy is worthless eight steps later.
-No NaN is involved. Gradient clipping prevents it completely and costs nothing —
-the clipped run matches the seeds that never failed.
+No NaN is involved.
+
+The amplifier is the **run channel**: its indicator is differentiated through a
+logit divided by a temperature of 0.1, which multiplies the sensitivity of a
+rare event by roughly 1500. What follows is a runaway rather than a stumble,
+because run probability is *exponential* in the capital ratio — leverage rises
+4.98 → 13.60 and run probability 0.7% → 41.7% over eleven steps, ending at zero
+survival. **Fixed** by clipping the gradient at a norm of 100, which fires twice
+in six hundred steps on the failing seed and not at all on a healthy one.
 
 **An earlier version of this report blamed the sample count**, saying the
 failure got worse with more paths. That was wrong and is withdrawn: changing the
