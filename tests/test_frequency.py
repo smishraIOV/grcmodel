@@ -166,3 +166,24 @@ def test_an_unsolved_configuration_is_refused_rather_than_guessed():
 
     with pytest.raises(KeyError, match="no GRC steady state"):
         steady_state_firm(MONTHLY, 24)
+
+
+def test_every_entry_point_still_imports():
+    """The scripts are the project's published interface and **nothing else
+    imports them**, so a syntax error in one survives a fully green suite.
+
+    That is not hypothetical: a multi-line string in `run_seed_study.py` was
+    left unterminated for two commits, through several full test runs, because
+    no test had ever loaded the module. Importing is a weak check, but it is
+    exactly the check that was missing.
+    """
+    import importlib
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root))
+    scripts = sorted(p.stem for p in (root / "scripts").glob("run_*.py"))
+    assert scripts, "no entry points found -- has the directory moved?"
+    for name in scripts:
+        importlib.import_module(f"scripts.{name}")

@@ -34,7 +34,7 @@ from quant.env.env import EnvConfig, FirmEnv, evaluate
 from quant.env.reward import PerpetuityValue
 from quant.env.shocks import CommonRandomNumbers, MonteCarloSampler
 from quant.numerics import DEFAULT_PROFILE, NumericsProfile
-from quant.params import DEFAULTS, FirmParams, GrcAlphas
+from quant.params import DEFAULTS, FirmParams, GrcAlphas, ModelParams
 from quant.solvers.pathwise import optimize_constant
 
 FAMILIES = ("credit", "operational", "compliance")
@@ -70,14 +70,31 @@ MATERIALITY_VALUE = 0.01
 DEFAULT_FRANCHISE = 20.0
 
 
-def solve(firm: FirmParams, crn, quarters: int, steps: int, alphas=None, **config):
+def solve(
+    firm: FirmParams,
+    crn,
+    periods: int,
+    steps: int,
+    params: ModelParams = DEFAULTS,
+    alphas=None,
+    **config,
+):
     """One constant-policy solve. The right policy class for a budget question:
-    it answers "how much should we spend", not "how should we react"."""
+    it answers "how much should we spend", not "how should we react".
+
+    The config and the sampler are both built from `params`, which is the seam
+    `standard_env` exists to close: this function used to pin
+    `EnvConfig.quarterly` and `MonteCarloSampler(DEFAULTS.sampler)`
+    independently, so pointing it at any other decision frequency would have
+    given the firm a quarter's losses per period while everything else
+    converted correctly.
+    """
     settings = dict(firm=firm, **config)
     if alphas is not None:
         settings["alphas"] = alphas
     env = FirmEnv(
-        EnvConfig.quarterly(quarters, **settings), MonteCarloSampler(DEFAULTS.sampler)
+        EnvConfig.at_frequency(params, periods, **settings),
+        MonteCarloSampler(params.sampler),
     )
     return optimize_constant(env, crn, n_steps=steps)[1]
 
@@ -96,7 +113,7 @@ class HazardBreakeven:
         )
 
 
-def hazard_breakeven(firm, crn, quarters=8, steps=2500) -> HazardBreakeven:
+def hazard_breakeven(firm, crn, periods=60, steps=2500, params=DEFAULTS) -> HazardBreakeven:
     """The headline, and the only one with no alpha in it.
 
         delta_h* = annual cost / franchise value
@@ -107,13 +124,13 @@ def hazard_breakeven(firm, crn, quarters=8, steps=2500) -> HazardBreakeven:
     worth -- so the whole claim can be argued with without touching the model's
     uncalibrated parameters.
     """
-    result = solve(firm, crn, quarters, steps)
+    result = solve(firm, crn, periods, steps, params)
     annual_cost = result.total_grc * firm.periods_per_year
     franchise = result.value * result.going_concern_share
     return HazardBreakeven(annual_cost, franchise, 1e4 * annual_cost / franchise)
 
 
-def capitalization_band(firm, crn, equities, quarters=8, steps=2000):
+def capitalization_band(firm, crn, equities, periods=60, steps=2000, params=DEFAULTS):
     """Over what range of capitalization does a programme earn its keep?
 
     Non-monotone by construction, and that is the useful part. A firm with
@@ -141,13 +158,13 @@ def capitalization_band(firm, crn, equities, quarters=8, steps=2000):
         # being a second-order confound.
         rows.append((
             equity,
-            solve(scaled, crn, quarters, steps,
+            solve(scaled, crn, periods, steps, params,
                   terminal=PerpetuityValue(franchise=DEFAULT_FRANCHISE * ratio)),
         ))
     return rows
 
 
-def franchise_breakeven(firm, crn, franchises, quarters=8, steps=2000):
+def franchise_breakeven(firm, crn, franchises, periods=60, steps=2000, params=DEFAULTS):
     """How much business must be at stake before the programme pays?
 
     Swept through the going-concern value itself rather than through the
@@ -164,13 +181,14 @@ def franchise_breakeven(firm, crn, franchises, quarters=8, steps=2000):
     for franchise in franchises:
         rows.append((
             franchise,
-            solve(firm, crn, quarters, steps, terminal=PerpetuityValue(franchise=franchise)),
+            solve(firm, crn, periods, steps, params, terminal=PerpetuityValue(franchise=franchise)),
         ))
     return rows
 
 
 def alpha_breakeven(
-    firm, crn, family: str, low=0.02, high=1.0, iterations=8, quarters=8, steps=1500
+    firm, crn, family: str, low=0.02, high=1.0, iterations=8, periods=60,
+    steps=1500, params=DEFAULTS,
 ) -> float | None:
     """Smallest effectiveness at which this family's programme earns its keep.
 
@@ -189,13 +207,13 @@ def alpha_breakeven(
     Value added is monotone in alpha, which is what a bisection needs.
     """
     baseline = solve(
-        firm, crn, quarters, steps, alphas=replace(DEFAULTS.alphas, **{family: 0.0})
+        firm, crn, periods, steps, params, alphas=replace(params.alphas, **{family: 0.0})
     ).value
     threshold = MATERIALITY_VALUE * baseline
 
     def gain(alpha: float) -> float:
         alphas = replace(DEFAULTS.alphas, **{family: alpha})
-        return solve(firm, crn, quarters, steps, alphas=alphas).value - baseline
+        return solve(firm, crn, periods, steps, params, alphas=alphas).value - baseline
 
     if gain(high) < threshold:
         return None
@@ -210,7 +228,7 @@ def alpha_breakeven(
     return high
 
 
-def value_curvature(firm, crn, equities, quarters=8, steps=2000):
+def value_curvature(firm, crn, equities, periods=60, steps=2000, params=DEFAULTS):
     """Second difference of firm value in opening equity.
 
     The diagnostic to run before quoting any comparative static. A survival
@@ -222,7 +240,7 @@ def value_curvature(firm, crn, equities, quarters=8, steps=2000):
 
     Positive entries mark the convex region.
     """
-    values = [solve(replace(firm, initial_equity=e), crn, quarters, steps).value for e in equities]
+    values = [solve(replace(firm, initial_equity=e), crn, periods, steps, params).value for e in equities]
     curvature = []
     for index in range(1, len(equities) - 1):
         left, middle, right = equities[index - 1], equities[index], equities[index + 1]

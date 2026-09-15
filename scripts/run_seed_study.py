@@ -6,7 +6,7 @@ and one optimizer start. This reports a median, a confidence interval and the
 range, so a difference between solvers can be told apart from a difference
 between runs.
 
-Usage: uv run python scripts/run_seed_study.py [--quarters 8] [--seeds 5]
+Usage: uv run python scripts/run_seed_study.py [--frequency monthly] [--seeds 5]
 """
 
 import argparse
@@ -19,14 +19,24 @@ from quant.cli import print_header
 from quant.env.env import EnvConfig, FirmEnv
 from quant.env.shocks import MonteCarloSampler
 from quant.numerics import DEFAULT_PROFILE, PROFILES, get_profile
-from quant.params import DEFAULTS
+from quant.params import DEFAULTS, MONTHLY, steady_state_firm
+# Decision frequencies with a solved GRC steady state.
+FREQUENCIES = {"quarterly": DEFAULTS, "monthly": MONTHLY}
+
 from quant.studies.seeds import edge, header, run_seeds
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--profile", default=DEFAULT_PROFILE.name, choices=sorted(PROFILES))
-    parser.add_argument("--quarters", type=int, nargs="+", default=[8, 32])
+    parser.add_argument(
+        "--frequency", default="monthly", choices=sorted(FREQUENCIES),
+        help="how often the firm decides (default: monthly, the main line)",
+    )
+    parser.add_argument(
+        "--periods", type=int, nargs="+", default=None,
+        help="horizons in periods (default: the solved configuration)",
+    )
     parser.add_argument("--seeds", type=int, default=5)
     parser.add_argument("--train-paths", type=int, default=512)
     parser.add_argument("--test-paths", type=int, default=4096)
@@ -34,16 +44,19 @@ def main() -> None:
 
     profile = get_profile(args.profile)
     print_header(profile)
-    sampler = MonteCarloSampler(DEFAULTS.sampler)
+    sampler = MonteCarloSampler(FREQUENCIES[args.frequency].sampler)
     seeds = tuple(range(args.seeds))
 
-    for quarters in args.quarters:
-        env = FirmEnv(EnvConfig.quarterly(quarters), sampler)
+    params = FREQUENCIES[args.frequency]
+    horizons = args.periods or [5 * params.firm.periods_per_year]
+    for periods in horizons:
+        firm = steady_state_firm(params, periods)
+        env = FirmEnv(EnvConfig.at_frequency(params, periods, firm=firm), sampler)
         studies = run_seeds(
             env, seeds=seeds, train_paths=args.train_paths, test_paths=args.test_paths
         )
         print(
-            f"\n{quarters} quarters, {len(seeds)} seeds, trained on {args.train_paths} paths "
+            f"\n{periods} {args.frequency} periods, {len(seeds)} seeds, trained on {args.train_paths} paths "
             f"and scored on {args.test_paths} held out"
         )
         print("  " + header())
@@ -68,10 +81,9 @@ def main() -> None:
         worst = min(min(s.held_out) for s in studies.values())
         if worst < 0.5 * max(max(s.held_out) for s in studies.values()):
             print(
-                f"  WARNING: a seed landed at {worst:.3f}, less than half the best. "
-                "One solve
-  failed rather than merely varied; read the range, not "
-                "the median."
+                f"  WARNING: a seed landed at {worst:.3f}, less than half the "
+                "best. One solve failed rather than merely varied; read the "
+                "range, not the median."
             )
 
     print(

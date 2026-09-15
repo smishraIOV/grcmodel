@@ -18,7 +18,7 @@ from quant.cli import print_header
 from quant.env.shocks import CommonRandomNumbers, MonteCarloSampler
 from quant.solvers.analytic import family_exposures
 from quant.numerics import DEFAULT_PROFILE, PROFILES, get_profile
-from quant.params import DEFAULTS
+from quant.params import DEFAULTS, MONTHLY, steady_state_firm
 from quant.studies.breakeven import (
     solve,
     FAMILIES,
@@ -30,23 +30,38 @@ from quant.studies.breakeven import (
     value_curvature,
 )
 
-def exposures(profile, book: float):
-    """Base-probability-weighted expected loss per family, per quarter.
+FREQUENCIES = {"quarterly": DEFAULTS, "monthly": MONTHLY}
+
+
+def exposures(profile, book: float, params=DEFAULTS):
+    """Base-probability-weighted expected loss per family, **per period**.
 
     Computed rather than hardcoded. They were written in as 4.0 / 3.5 / 1.5,
     which were the static model's magnitudes; after the recalibration the true
     values are about twenty-five times smaller, so the risk-neutral break-even
     1/X was being compared against the wrong denominator entirely.
+
+    Drawn from `params.sampler` rather than `DEFAULTS.sampler`, so the exposures
+    are per period *at the frequency being studied*. Pinned to DEFAULTS they
+    would have been quarterly magnitudes divided into a monthly optimum, which
+    moves every risk-neutral break-even by the frequency ratio.
     """
     crn = CommonRandomNumbers(0, 1, 1 << 16, profile)
-    shock = MonteCarloSampler(DEFAULTS.sampler)(crn.at(0), profile)
+    shock = MonteCarloSampler(params.sampler)(crn.at(0), profile)
     return family_exposures(shock, book=book)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--profile", default=DEFAULT_PROFILE.name, choices=sorted(PROFILES))
-    parser.add_argument("--quarters", type=int, default=8)
+    parser.add_argument(
+        "--frequency", default="monthly", choices=sorted(FREQUENCIES),
+        help="how often the firm decides (default: monthly, the main line)",
+    )
+    parser.add_argument(
+        "--periods", type=int, default=None,
+        help="horizon in periods (default: five years at the chosen frequency)",
+    )
     parser.add_argument("--paths", type=int, default=1024)
     parser.add_argument("--steps", type=int, default=2000)
     parser.add_argument(
@@ -57,9 +72,22 @@ def main() -> None:
 
     profile = get_profile(args.profile)
     print_header(profile)
-    firm = DEFAULTS.firm
-    crn = CommonRandomNumbers(0, args.quarters, args.paths, profile)
-    kw = dict(quarters=args.quarters, steps=args.steps)
+
+    params = FREQUENCIES[args.frequency]
+    periods = args.periods or 5 * params.firm.periods_per_year
+    # The opening GRC stock is a fixed point of the *configuration*, not of the
+    # firm, so it is looked up rather than inherited. An unsolved combination
+    # raises here instead of silently using whichever default is nearest --
+    # which would hand the firm a control stock it would never have built and
+    # report the result as a budget.
+    firm = steady_state_firm(params, periods)
+    print(
+        f"{args.frequency} decisions, {periods} periods "
+        f"({periods / params.firm.periods_per_year:.0f} years), "
+        f"opening GRC stock {firm.initial_grc_stock}"
+    )
+    crn = CommonRandomNumbers(0, periods, args.paths, profile)
+    kw = dict(periods=periods, steps=args.steps, params=params)
 
     print("1. HAZARD BREAK-EVEN -- the headline, and the only one with no alpha in it")
     print("   " + hazard_breakeven(firm, crn, **kw).sentence())
@@ -101,7 +129,7 @@ def main() -> None:
         print(f"   {'family':>12} | {'risk-neutral 1/X':>17} | {'with survival':>14} | {'ratio':>7}")
         # Credit exposure is a rate on the book, so the comparison needs the
         # book the firm actually funds, not a bare draw.
-        exposure = exposures(profile, book=solve(firm, crn, **kw).book)
+        exposure = exposures(profile, book=solve(firm, crn, **kw).book, params=params)
         for family in FAMILIES:
             alpha = alpha_breakeven(firm, crn, family, low=0.0005, iterations=8, **kw)
             neutral = 1.0 / exposure[family]

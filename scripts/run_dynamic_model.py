@@ -19,7 +19,7 @@ check available: a learner above the bound has an information leak, a
 mis-signed discount or a death that failed to absorb, none of which shows up
 in the value on its own.
 
-Usage: uv run python scripts/run_dynamic_model.py [--quarters 8] [--paths 2048]
+Usage: uv run python scripts/run_dynamic_model.py [--frequency monthly] [--paths 2048]
 """
 
 import argparse
@@ -34,9 +34,14 @@ from quant.cli import print_header
 from quant.env.env import EnvConfig, FirmEnv, evaluate
 from quant.env.shocks import CommonRandomNumbers, MonteCarloSampler
 from quant.numerics import DEFAULT_PROFILE, PROFILES, get_profile
-from quant.params import DEFAULTS
+from quant.params import DEFAULTS, MONTHLY, steady_state_firm
 from quant.solvers.neural import train_pathwise
 from quant.solvers.pathwise import optimize_constant, perfect_information_bound
+
+# The decision frequencies with a solved GRC steady state. Monthly is the
+# main line; quarterly is kept so the published two-year numbers stay
+# reproducible.
+FREQUENCIES = {"quarterly": DEFAULTS, "monthly": MONTHLY}
 
 
 def annual_death(survival_rate: float, periods: int, per_year: int = 4) -> float:
@@ -52,7 +57,7 @@ def annual_death(survival_rate: float, periods: int, per_year: int = 4) -> float
     return 1.0 - survival_rate ** (per_year / periods)
 
 
-def survival_channel(env, naive_env, crn, steps: int, quarters: int) -> None:
+def survival_channel(env, naive_env, crn, steps: int, periods: int, params) -> None:
     """What it costs to budget as though GRC only reduced expected loss.
 
     Both policies are scored in the same world -- the one where GRC also
@@ -64,22 +69,22 @@ def survival_channel(env, naive_env, crn, steps: int, quarters: int) -> None:
     naive_result = evaluate(naive, env, crn)
 
     print("\nWhere GRC acts: budgeting for losses only, vs for losses and survival")
-    header = f"  {'budget set for':>16} | {'spend/qtr':>10} | {'annual death':>13} | {'value':>8}"
+    header = f"  {'budget set for':>16} | {'spend/prd':>10} | {'annual death':>13} | {'value':>8}"
     print(header)
     print("  " + "-" * (len(header) - 2))
     for label, r in (("expected loss", naive_result), ("loss + survival", aware_result)):
         print(
-            f"  {label:>16} | {r.total_grc:>10.4f} | {annual_death(r.survival_rate, quarters):>12.2%} | "
+            f"  {label:>16} | {r.total_grc:>10.4f} | {annual_death(r.survival_rate, periods, params.firm.periods_per_year):>12.2%} | "
             f"{r.value:>8.4f}"
         )
     print(
         f"  Ignoring the survival channel costs {1 - naive_result.value / aware_result.value:.1%} of firm "
         f"value and raises\n  the annual failure probability by "
-        f"{annual_death(naive_result.survival_rate, quarters) - annual_death(aware_result.survival_rate, quarters):.2%}."
+        f"{annual_death(naive_result.survival_rate, periods, params.firm.periods_per_year) - annual_death(aware_result.survival_rate, periods, params.firm.periods_per_year):.2%}."
     )
 
 
-def liquidity_defence(sampler, crn, steps: int, quarters: int) -> None:
+def liquidity_defence(sampler, crn, steps: int, periods: int, params) -> None:
     """Controls or cash? What the firm buys when a run is a mechanism.
 
     The run replaced a hazard rate that asserted an incident kills the firm.
@@ -89,20 +94,20 @@ def liquidity_defence(sampler, crn, steps: int, quarters: int) -> None:
     likelier run would buy more of them.
     """
     from quant.env.env import EnvConfig, FirmEnv
-    from quant.params import DEFAULTS as D
 
+    firm = steady_state_firm(params, periods)
     print("\nDefending against a run: controls, or cash?")
     header = (
-        f"  {'runs/year':>10} | {'GRC/qtr':>8} {'operational':>12} | {'reserves':>9} "
-        f"{'book':>7} | {'p(run)/qtr':>11} {'annual death':>13} | {'value':>8}"
+        f"  {'runs/year':>10} | {'GRC/prd':>8} {'operational':>12} | {'reserves':>9} "
+        f"{'book':>7} | {'p(run)/prd':>11} {'annual death':>13} | {'value':>8}"
     )
     print(header)
     print("  " + "-" * (len(header) - 2))
     rows = []
     for rate in (0.0, 0.45, 1.0, 2.0):
-        funding = replace(D.funding, annual_run_rate=rate)
+        funding = replace(params.funding, annual_run_rate=rate)
         env = FirmEnv(
-            EnvConfig.quarterly(quarters, funding=funding), sampler
+            EnvConfig.at_frequency(params, periods, firm=firm, funding=funding), sampler
         )
         policy, r = optimize_constant(env, crn, n_steps=steps)
         trajectory = env.rollout(policy, crn, differentiable=False)
@@ -113,7 +118,7 @@ def liquidity_defence(sampler, crn, steps: int, quarters: int) -> None:
         print(
             f"  {rate:>10.2f} | {r.total_grc:>8.4f} {r.grc[1]:>12.4f} | "
             f"{r.reserve_ratio:>8.1%} {r.book:>7.2f} | {runs:>10.3%} "
-            f"{annual_death(r.survival_rate, quarters):>12.2%} | {r.value:>8.3f}"
+            f"{annual_death(r.survival_rate, periods, params.firm.periods_per_year):>12.2%} | {r.value:>8.3f}"
         )
 
     # Read off the measured rows rather than asserted. An earlier version of
@@ -134,7 +139,7 @@ def liquidity_defence(sampler, crn, steps: int, quarters: int) -> None:
     )
 
 
-def recovery_sweep(sampler, crn, steps: int, quarters: int) -> None:
+def recovery_sweep(sampler, crn, steps: int, periods: int, params) -> None:
     """What the firm does as failure becomes less destructive.
 
     The cleanest comparative static the survival channel produces, and the one
@@ -144,20 +149,20 @@ def recovery_sweep(sampler, crn, steps: int, quarters: int) -> None:
     failure.
     """
     print("\nHow much of the firm survives failure, and what that does to the budget")
-    header = f"  {'recovery':>9} | {'spend/qtr':>10} | {'annual death':>13} | {'value':>8} | {'going-concern':>14}"
+    header = f"  {'recovery':>9} | {'spend/prd':>10} | {'annual death':>13} | {'value':>8} | {'going-concern':>14}"
     print(header)
     print("  " + "-" * (len(header) - 2))
     for recovery in (0.0, 0.4, 0.8):
-        firm = replace(DEFAULTS.firm, failure_recovery=recovery)
-        env = FirmEnv(EnvConfig.quarterly(quarters, firm=firm), sampler)
+        firm = replace(steady_state_firm(params, periods), failure_recovery=recovery)
+        env = FirmEnv(EnvConfig.at_frequency(params, periods, firm=firm), sampler)
         r = optimize_constant(env, crn, n_steps=steps)[1]
         print(
-            f"  {recovery:>9.1f} | {r.total_grc:>10.4f} | {annual_death(r.survival_rate, quarters):>12.2%} | "
+            f"  {recovery:>9.1f} | {r.total_grc:>10.4f} | {annual_death(r.survival_rate, periods, params.firm.periods_per_year):>12.2%} | "
             f"{r.value:>8.3f} | {r.going_concern_share:>14.3f}"
         )
 
 
-def balance_sheet(sampler, crn, steps: int, quarters: int) -> None:
+def balance_sheet(sampler, crn, steps: int, periods: int, params) -> None:
     """What distributing earnings does to a firm whose funding is scarce.
 
     Retaining everything, capital compounds until the funding constraint stops
@@ -167,25 +172,35 @@ def balance_sheet(sampler, crn, steps: int, quarters: int) -> None:
     there were dividends, every reward was zero and beta was a scalar
     multiplier on a terminal value.
     """
+    firm = steady_state_firm(params, periods)
     print("\nRetaining earnings versus distributing them")
-    header = (f"  {'payout':>10} | {'value':>8} | {'spend/qtr':>10} | {'underinvest':>12} | "
+    header = (f"  {'payout':>10} | {'value':>8} | {'spend/prd':>10} | {'underinvest':>12} | "
               f"{'annual death':>13} | {'end equity':>11} | {'div share':>10}")
     print(header)
     print("  " + "-" * (len(header) - 2))
     for label, allow in (("retain all", False), ("optimized", True)):
-        env = FirmEnv(EnvConfig.quarterly(quarters, allow_payout=allow), sampler)
+        env = FirmEnv(
+            EnvConfig.at_frequency(params, periods, firm=firm, allow_payout=allow), sampler
+        )
         policy, r = optimize_constant(env, crn, n_steps=steps)
         final = env.rollout(policy, crn, False).states[-1].equity.median().item()
         print(
             f"  {label:>10} | {r.value:>8.3f} | {r.total_grc:>10.4f} | {r.underinvestment_fraction:>12.3f} | "
-            f"{annual_death(r.survival_rate, quarters):>12.2%} | {final:>11.2f} | {r.payout_share:>10.3f}"
+            f"{annual_death(r.survival_rate, periods, params.firm.periods_per_year):>12.2%} | {final:>11.2f} | {r.payout_share:>10.3f}"
         )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--profile", default=DEFAULT_PROFILE.name, choices=sorted(PROFILES))
-    parser.add_argument("--quarters", type=int, default=8)
+    parser.add_argument(
+        "--frequency", default="monthly", choices=sorted(FREQUENCIES),
+        help="how often the firm decides (default: monthly, the main line)",
+    )
+    parser.add_argument(
+        "--periods", type=int, default=None,
+        help="horizon in periods (default: five years at the chosen frequency)",
+    )
     parser.add_argument("--paths", type=int, default=2048)
     parser.add_argument("--steps", type=int, default=3000)
     parser.add_argument(
@@ -197,28 +212,34 @@ def main() -> None:
     profile = get_profile(args.profile)
     print_header(profile)
 
-    firm = DEFAULTS.firm
-    sampler = MonteCarloSampler(DEFAULTS.sampler)
-    crn = CommonRandomNumbers(0, args.quarters, args.paths, profile)
+    params = FREQUENCIES[args.frequency]
+    periods = args.periods or 5 * params.firm.periods_per_year
+    # A fixed point of the configuration, not of the firm -- looked up, and an
+    # unsolved combination raises rather than inheriting a stale default.
+    firm = steady_state_firm(params, periods)
+    sampler = MonteCarloSampler(params.sampler)
+    crn = CommonRandomNumbers(0, periods, args.paths, profile)
 
+    per_year = params.firm.periods_per_year
     print(
-        f"{args.quarters} quarters, {args.paths} paths, discount {firm.discount():.4f}/quarter, "
-        f"insolvency barrier at 0"
+        f"{periods} {args.frequency} periods ({periods / per_year:.0f} years), "
+        f"{args.paths} paths, discount {firm.discount():.4f}/period, "
+        f"opening GRC stock {firm.initial_grc_stock}, insolvency barrier at 0"
     )
     print(
         "GRC decay 1.000 charges spend as a one-period expense (the static model's\n"
-        f"assumption); {firm.grc_depreciation():.3f} is the quarterly rate implied by "
+        f"assumption); {firm.grc_depreciation():.3f} is the per-period rate implied by "
         f"{firm.annual_grc_depreciation:.0%} a year.\n"
     )
 
-    header = f"{'GRC decay':>11} | {'solver':>9} | {'value':>8} | {'spend/qtr':>10} | {'end stock':>10} | {'survives':>9}"
+    header = f"{'GRC decay':>11} | {'solver':>9} | {'value':>8} | {'spend/prd':>10} | {'end stock':>10} | {'survives':>9}"
     print(header)
     print("-" * len(header))
 
     summary = {}
     for delta in (1.0, firm.grc_depreciation()):
         env = FirmEnv(
-            EnvConfig.quarterly(args.quarters, grc_depreciation=delta), sampler, 
+            EnvConfig.at_frequency(params, periods, firm=firm, grc_depreciation=delta), sampler
         )
         results = {
             "constant": optimize_constant(env, crn, n_steps=args.steps)[1],
@@ -260,22 +281,22 @@ def main() -> None:
         print("-" * len(header))
         summary[delta] = results[best]
 
-    env = FirmEnv(EnvConfig.quarterly(args.quarters), sampler)
+    env = FirmEnv(EnvConfig.at_frequency(params, periods, firm=firm), sampler)
     naive_env = FirmEnv(
-        EnvConfig.quarterly(
-            args.quarters,
-            hazard=replace(DEFAULTS.hazard, annual_operational_rate=0.0, annual_licence_rate=0.0),
+        EnvConfig.at_frequency(
+            params, periods, firm=firm,
+            hazard=replace(params.hazard, annual_operational_rate=0.0, annual_licence_rate=0.0),
         ),
         sampler,
     )
-    survival_channel(env, naive_env, crn, args.steps, args.quarters)
+    survival_channel(env, naive_env, crn, args.steps, periods, params)
 
-    balance_sheet(sampler, crn, args.steps, args.quarters)
+    balance_sheet(sampler, crn, args.steps, periods, params)
 
-    liquidity_defence(sampler, crn, args.steps, args.quarters)
+    liquidity_defence(sampler, crn, args.steps, periods, params)
 
     if args.recovery_sweep:
-        recovery_sweep(sampler, crn, args.steps, args.quarters)
+        recovery_sweep(sampler, crn, args.steps, periods, params)
 
     flow, stock = summary[1.0], summary[firm.grc_depreciation()]
     print(
@@ -289,7 +310,7 @@ def main() -> None:
     # gone the other way.
     rose = stock.total_grc > flow.total_grc
     print(
-        f"Per-quarter spend {'rises' if rose else 'falls'} "
+        f"Per-period spend {'rises' if rose else 'falls'} "
         f"({flow.total_grc:.3f} -> {stock.total_grc:.3f}). "
         + (
             "Each unit now protects every later quarter too, so more of it is worth buying."
