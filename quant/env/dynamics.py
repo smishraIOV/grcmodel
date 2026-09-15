@@ -31,6 +31,36 @@ from quant.numerics import NumericsProfile
 from quant.params import CliffParams, FirmParams, FundingParams, GrcAlphas, HazardParams
 
 
+@dataclass(frozen=True)
+class LossComponents:
+    """The period's mitigated loss, split by where on the balance sheet it lands.
+
+    Summed, this is the charge to equity and nothing else changes. Split, it is
+    the difference between a loss that *leaves* the firm and one that impairs an
+    asset it still holds -- which is what decides whether the liquidity buffer
+    can still pay a run, and is the one thing the single total could not say.
+
+    Until this existed, reserves were computed from equity *before* the
+    quarter's losses, so a loss never touched the buffer a run is met out of.
+    The run's probability was evaluated after the losses and its meetability was
+    not: the firm became likelier to face a run after a bad quarter and no less
+    able to pay one, which is half of the loop `run_probability` calls the whole
+    mechanism.
+    """
+
+    credit: torch.Tensor       # impairs the book; nothing walks out of the door
+    operational: torch.Tensor  # cash out
+    compliance: torch.Tensor   # cash out
+
+    def total(self) -> torch.Tensor:
+        """The charge to equity, which is the whole of it and is taken once."""
+        return self.credit + self.operational + self.compliance
+
+    def cash(self) -> torch.Tensor:
+        """The part paid out of the reserve balance rather than off the book."""
+        return self.operational + self.compliance
+
+
 class FirmDynamics(Protocol):
     differentiable: bool
 
@@ -229,6 +259,17 @@ class StandardDynamics:
     def mitigated_loss(
         self, stock: torch.Tensor, shock: Shock, book: torch.Tensor
     ) -> torch.Tensor:
+        """The charge to equity: `loss_components(...).total()`.
+
+        Kept as the tensor-valued entry point because that is what every caller
+        outside `step` wants and what the regression tests measure. `step` needs
+        the split, and takes `loss_components` directly.
+        """
+        return self.loss_components(stock, shock, book).total()
+
+    def loss_components(
+        self, stock: torch.Tensor, shock: Shock, book: torch.Tensor
+    ) -> LossComponents:
         """Loss after GRC, each family acting on its own moment.
 
         Takes the GRC *stock*, not the period's spend. Compliance is absent
@@ -246,6 +287,12 @@ class StandardDynamics:
         Operational and compliance losses do *not* scale with the book. An
         incident costs what it costs, and a regulator's penalty is not
         proportional to the loan portfolio.
+
+        Returned split rather than summed because the three land in different
+        places on the balance sheet. A default impairs the book; a penalty and
+        an incident are paid out, so they come out of the reserve balance. Only
+        the second kind can leave the firm unable to meet a run -- see
+        `LossComponents` and `step`.
         """
         rate = exponential_mitigation(shock.credit_loss, stock[..., 0], self.alphas.credit)
         credit = rate * book if self.credit_scales_with_book else rate
@@ -253,7 +300,9 @@ class StandardDynamics:
             shock.op_severity, stock[..., 1], self.alphas.operational
         )
         compliance = shock.compliance_occurs * shock.compliance_severity
-        return credit + operational + compliance
+        return LossComponents(
+            credit=credit, operational=operational, compliance=compliance
+        )
 
     def path_weight(self, stock: torch.Tensor, shock: Shock) -> torch.Tensor:
         """Likelihood ratio for the compliance budget's effect on breach odds.
@@ -379,6 +428,13 @@ class StandardDynamics:
         Priced below the deposit rate, so idle funding carries a small negative
         spread. That spread is the entire reason a liquidity buffer will be a
         decision rather than a free good once withdrawals exist.
+
+        **`step` does not call this.** It inlines the same rate against the
+        buffer that actually survived the period -- net of the quarter's cash
+        losses and of anything paid to depositors -- because neither of those is
+        knowable here. What is left of this method is the opening balance, which
+        is the right quantity for a test asking what idle funding earns and the
+        wrong one for the transition.
 
         Computed from the **balance sheet**, not from the funding capacity, and
         the difference is not cosmetic. With `funding_constrained=False` the
@@ -572,14 +628,23 @@ class StandardDynamics:
         capacity = self.funding_capacity(state, fundable)
         investment = torch.minimum(action.investment, capacity)
 
-        loss = self.mitigated_loss(stock, shock, investment)
+        losses = self.loss_components(stock, shock, investment)
         cliff = (
             self.cliff_loss(state, stock, shock)
             if self.cliff is not None
-            else torch.zeros_like(loss)
+            else torch.zeros_like(fundable)
         )
-        loss = loss + cliff
+        loss = losses.total() + cliff
         wealth = fundable - loss
+
+        # The same loss, read off the liquidity side rather than the capital
+        # side. A penalty or an incident is money paid out, so it leaves the
+        # reserve balance smaller; a default or a drained bridge impairs an
+        # asset the firm still holds, so it shrinks what a fire sale could
+        # raise. Neither is a new charge -- `wealth` above has already taken
+        # the whole of it, once.
+        cash_loss = losses.cash()
+        asset_loss = losses.credit + cliff
 
         # The run is drawn on equity *after* the quarter's losses, so a bad
         # quarter draws the run that then makes it worse. Everything from here
@@ -588,9 +653,23 @@ class StandardDynamics:
         # find the rest.
         if self.funding is not None:
             held = self.reserves_held(state, fundable, investment)
+            # What the buffer is actually worth by the time depositors ask.
+            # Cash losses come out of it first; what they overrun has to be
+            # found from the book, so it is not there to be sold either.
+            #
+            # Floored at zero with `clamp` rather than `softplus`, and that is
+            # not the appendix A1 mistake: these are balance-sheet quantities,
+            # not controls, and a cash balance genuinely cannot go negative.
+            # The flat region is real and is listed with the model's other dead
+            # gradients in docs/quant-model.md section 3 -- once the buffer is
+            # exhausted it stops responding to the lending decision, and the
+            # same loss still reaches equity through `wealth`.
+            liquid = torch.clamp(held - cash_loss, min=0.0)
+            spill = torch.clamp(cash_loss - held, min=0.0)
+            saleable = torch.clamp(investment - asset_loss - spill, min=0.0)
             run_probability, demanded = self.withdrawal(state, stock, wealth, shock)
             from_reserves, liquidated = self.meet_withdrawal(
-                demanded, held, investment
+                demanded, liquid, saleable
             )
             raised = liquidated * (1.0 - self.funding.fire_sale_haircut)
             paid = from_reserves + raised
@@ -606,15 +685,17 @@ class StandardDynamics:
             unmet = torch.clamp(demanded - paid, min=0.0)
             unmet_share = unmet / torch.clamp(demanded, min=1e-12)
             interest = self.deposit_interest(state.deposits)
-            # Earned on what is left after depositors have been paid, not on
-            # the opening balance: reserves that walked out mid-period did not
-            # sit there earning for the firm.
+            # Earned on what is left after the quarter's cash losses have been
+            # paid and depositors have been met, not on the opening balance:
+            # money that was spent or walked out mid-period did not sit there
+            # earning for the firm.
             reserves = self.funding.period_reserve_rate(
                 self.firm.periods_per_year
-            ) * torch.clamp(held - from_reserves, min=0.0)
+            ) * torch.clamp(liquid - from_reserves, min=0.0)
         else:
             zero = torch.zeros_like(wealth)
-            held = run_probability = demanded = from_reserves = zero
+            held = liquid = spill = saleable = zero
+            run_probability = demanded = from_reserves = zero
             liquidated = raised = paid = fire_sale = zero
             book = investment
             interest = reserves = zero
@@ -729,7 +810,19 @@ class StandardDynamics:
                 "hazard": intensity,
                 "interest": interest,
                 "reserve_income": reserves,
+                # The holding *decision*: funding the firm chose not to lend,
+                # before anything happened to it. `EvalResult.reserve_ratio`
+                # reads this, and it is a decision variable by design.
                 "reserves": held,
+                # ...and what was left of that decision when depositors asked,
+                # after the quarter's cash losses had been paid out of it.
+                "liquid_reserves": liquid,
+                # Cash loss the buffer could not absorb, which had to be found
+                # from the book and so is not available to sell either.
+                "reserve_spill": spill,
+                # The book a fire sale could actually raise against, net of
+                # impairment and of the spill above.
+                "saleable_book": saleable,
                 "run_probability": run_probability,
                 "withdrawal": demanded,
                 "withdrawal_paid": paid,

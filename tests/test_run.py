@@ -64,6 +64,23 @@ def forced(shock, fraction: float, occurs: bool = True):
     )
 
 
+def quiet(shock):
+    """The same shock with every loss channel switched off.
+
+    For isolating the liquidity boundary from the quarter's losses: the closed
+    form `hB <= E` is a statement about a loss-free quarter, and what losses do
+    to it is a separate claim worth testing separately. A cliff uniform of 1.0
+    never fires, which is the same convention FourStateSampler uses.
+    """
+    return replace(
+        shock,
+        credit_loss=torch.zeros_like(shock.credit_loss),
+        op_occurs=torch.zeros_like(shock.op_occurs),
+        compliance_occurs=torch.zeros_like(shock.compliance_occurs),
+        cliff_uniform=torch.ones_like(shock.cliff_uniform),
+    )
+
+
 def step(env, policy, shock_fn=None, seed=0, batch=BATCH):
     crn = CommonRandomNumbers(seed, 1, batch, REFERENCE)
     state = env.reset(batch)
@@ -140,12 +157,52 @@ def test_a_withdrawal_past_the_buffer_costs_the_haircut():
     info = result.info
     haircut = DEFAULTS.funding.fire_sale_haircut
 
-    shortfall = torch.clamp(info["withdrawal"] - info["reserves"], min=0.0)
+    # Against the buffer that was actually there when depositors asked, not the
+    # holding decision: `reserves` is what the firm chose not to lend, and the
+    # quarter's cash losses come out of it before anyone is paid.
+    shortfall = torch.clamp(info["withdrawal"] - info["liquid_reserves"], min=0.0)
     assert torch.all(shortfall > 0), "test needs the buffer to be exhausted"
     assert torch.allclose(info["liquidated"], shortfall / (1.0 - haircut), atol=1e-9)
     assert torch.allclose(
         info["fire_sale_loss"], shortfall * haircut / (1.0 - haircut), atol=1e-9
     )
+
+
+def test_a_cash_loss_drains_the_buffer_and_an_asset_loss_does_not():
+    """Where a loss lands decides whether the firm can still pay depositors.
+
+    A penalty or an incident is money out of the door, so it comes out of the
+    reserve balance and what it overruns has to be found from the book. A
+    default impairs an asset the firm is still holding: the book is worth less,
+    the cash position is untouched.
+
+    Both are the same charge to equity. Only the first can turn a met
+    withdrawal into a gated one, which is why the loss is split at all.
+    """
+    env = run_env()
+    policy = Deploy(0.1, 40.0)  # lend enough to leave a real buffer
+
+    def one(**channels):
+        return step(
+            env, policy, lambda s: replace(quiet(forced(s, 0.30)), **channels)
+        )[1].info
+
+    none = one()
+    cash = one(
+        compliance_occurs=torch.ones(BATCH, dtype=torch.float64),
+        compliance_severity=REFERENCE.full((BATCH,), 12.0),
+    )
+    asset = one(credit_loss=REFERENCE.full((BATCH,), 12.0 / 40.0))
+
+    # Both are real charges to equity...
+    assert torch.all(cash["loss"] > 1.0) and torch.all(asset["loss"] > 1.0)
+
+    # ...landing in opposite places on the balance sheet.
+    assert torch.all(cash["liquid_reserves"] < none["liquid_reserves"] - 1.0)
+    assert torch.allclose(asset["liquid_reserves"], none["liquid_reserves"])
+
+    assert torch.all(asset["saleable_book"] < none["saleable_book"] - 1.0)
+    assert torch.allclose(cash["saleable_book"], none["saleable_book"])
 
 
 def test_a_bigger_buffer_costs_less_to_run_on():
@@ -323,27 +380,71 @@ def test_a_full_run_is_survivable_exactly_below_equity_over_the_haircut():
     """What stops liquidity being a complete substitute for controls, stated as
     the boundary it actually is rather than as a number that happened to work.
 
-    Everything the firm can raise is reserves plus the discounted book,
-    `E + D - hB`. Meeting a full withdrawal `D` needs `hB <= E`, so the book
-    below which a run is always survivable is exactly `E / h` -- independent of
-    the deposit base, which cancels.
+    In a quarter with no losses, everything the firm can raise is its reserves
+    plus the discounted book, `E + D - hB`. Meeting a full withdrawal `D` needs
+    `hB <= E`, so the book below which a run is always survivable is exactly
+    `E / h` -- independent of the deposit base, which cancels.
 
     At a 20% haircut that boundary is 80 against equity of 16, which is where
     the leverage limit already puts the firm: no run was ever quite unmeetable,
     and the model concluded operational controls are worthless and one should
     hold cash instead. True, but only because the buffer was a complete defence.
+
+    Asserted on a loss-free quarter because that is the quarter the closed form
+    describes. What losses do to it is the test below.
+    """
+    env = run_env()
+    boundary = DEFAULTS.firm.initial_equity / DEFAULTS.funding.fire_sale_haircut
+
+    def at(lent):
+        return step(
+            env, Deploy(0.0, lent), lambda s: quiet(forced(s, 1.0))
+        )[1].info["unmet_withdrawal"]
+
+    assert torch.count_nonzero(at(boundary * 0.98)) == 0
+    assert torch.count_nonzero(at(boundary * 1.02)) == BATCH
+
+
+def test_a_loss_moves_that_boundary_down_by_more_than_its_own_size():
+    """The correction that closes the loop the run channel is named after.
+
+    Reserves used to be computed on equity *before* the quarter's losses, so a
+    loss never touched the buffer a run is met out of. The run's probability was
+    already evaluated after the losses, so the firm became likelier to face a
+    run and no less able to pay one -- half a mechanism.
+
+    With the loss landing on the balance sheet, the raisable total is
+    `liquid + (1 - h) * saleable`, and a run is met exactly when that covers the
+    demand. Rearranged, the boundary is
+
+        hB <= (E - g) - cash_loss - (1 - h) * asset_loss
+
+    so **a cash loss costs more liquidity than an asset loss of the same size,
+    by exactly the haircut**. Money paid out is gone at par; an impaired book
+    was only ever worth `(1 - h)` in a fire sale to begin with.
     """
     env = run_env()
     haircut = DEFAULTS.funding.fire_sale_haircut
     boundary = DEFAULTS.firm.initial_equity / haircut
 
-    safe = step(env, Deploy(0.0, boundary * 0.9), lambda s: forced(s, 1.0))[1]
-    assert torch.count_nonzero(safe.info["unmet_withdrawal"]) == 0
+    # Comfortably inside the loss-free boundary, so anything unmet here is the
+    # quarter's losses and nothing else.
+    info = step(env, Deploy(0.0, boundary * 0.875), lambda s: forced(s, 1.0))[1].info
+    assert torch.count_nonzero(info["unmet_withdrawal"]) > 0, (
+        "losses no longer reach the buffer at all"
+    )
 
-    exposed = step(env, Deploy(0.0, boundary * 1.5), lambda s: forced(s, 1.0))[1]
-    assert torch.all(exposed.info["unmet_share"] > 0)
+    # And the criterion is exact, path by path, rather than approximate.
+    raisable = info["liquid_reserves"] + (1.0 - haircut) * info["saleable_book"]
+    met = info["unmet_withdrawal"] <= 1e-9
+    assert torch.equal(met, raisable >= info["withdrawal"] - 1e-9)
 
-    # And it is monotone in the book either side of it.
+
+def test_the_unmet_share_is_monotone_in_the_book():
+    """Lending more leaves less to sell at par and more to sell at a discount,
+    so the share of a full run the firm cannot meet rises with the book."""
+    env = run_env()
+    boundary = DEFAULTS.firm.initial_equity / DEFAULTS.funding.fire_sale_haircut
     unmet = [
         step(env, Deploy(0.0, lent), lambda s: forced(s, 1.0))[1]
         .info["unmet_share"].mean().item()

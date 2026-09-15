@@ -108,9 +108,9 @@ of an obligation rather than by an asset going wrong, and it is what makes an
 idle reserve worth holding — reserves earn less than the book and still cost
 deposit interest, so a firm ignoring runs would hold none.
 
-**Whether it is fatal, in closed form.** Everything the firm can raise is
-$E + D - hB$, so a withdrawal of $\omega D$ is meetable exactly when
-$hB \le E + D(1-\omega)$, and a *full* run when
+**Whether it is fatal, in closed form.** In a quarter with no losses, everything
+the firm can raise is $E + D - hB$, so a withdrawal of $\omega D$ is meetable
+exactly when $hB \le E + D(1-\omega)$, and a *full* run when
 
 $$B \le E/h$$
 
@@ -121,6 +121,29 @@ quite unmeetable, and the model concluded that operational controls are
 worthless and one should simply hold cash. True, but only because the buffer
 was a complete defence. $h = 0.35$ puts the boundary at 46, inside the firm's
 actual balance sheet.
+
+**And the quarter's losses move that boundary, by different amounts depending on
+where they land.** Reserves are what the firm chose not to lend, less whatever
+the quarter's *cash* losses — a penalty, an incident — took out of them; what
+those overrun has to be found from the book, and an *asset* loss impairs the
+book directly. Writing $L_{\text{cash}}$ for the first and $L_{\text{asset}}$
+for the second, the raisable total is
+$(E - g) + D - hB - L_{\text{cash}} - (1-h)L_{\text{asset}}$ and a full run is
+meetable exactly when
+
+$$hB \le (E - g) - L_{\text{cash}} - (1-h)\,L_{\text{asset}}$$
+
+So **a cash loss costs more liquidity than an asset loss of the same size, by
+exactly the haircut.** Money paid out is gone at par; an impaired book was only
+ever worth $(1-h)$ in a fire sale to begin with. Asserted path-by-path in
+`tests/test_run.py`, where the criterion predicts the met/unmet split exactly
+rather than approximately.
+
+This closes a loop that was previously half-open. Reserves used to be computed
+on equity *before* the quarter's losses, while the run's probability was already
+evaluated after them — so a bad quarter made a run likelier and left the firm
+just as able to pay one. The fire sale could not thin the capital that drew the
+run, which is the feedback the channel exists to represent.
 
 **Convex cost of external finance.** With internal wealth $w$ and desired
 investment $I$, the firm raises $e = \max(0,\ I - w)$ externally at
@@ -314,6 +337,13 @@ unqualified, and the quiet regions are known:
   reweighting does not fully disappear under the relaxation — what disappears
   is the *compounding* of that variance along the trajectory, which is the
   trade actually being made.
+- **An exhausted liquidity buffer.** `liquid` and `saleable` are floored at zero
+  with `clamp`, because a cash balance genuinely cannot go negative — these are
+  balance-sheet quantities rather than controls, so appendix A1's softplus rule
+  does not apply. Once the quarter's cash losses have exhausted the buffer,
+  `liquid` stops responding to the lending decision. The same loss still reaches
+  equity through `wealth`, and the capital hazard prices it there, so the
+  gradient is redundant rather than lost.
 - **A quarter that made no profit has no payout gradient.** Dividends come out
   of `clamp(gross − equity, min=0)`, so when the firm did not earn, the control
   is flat. Necessary (without it the payout control is a way to strip the firm)
