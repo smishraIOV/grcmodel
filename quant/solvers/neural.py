@@ -134,7 +134,7 @@ def train_pathwise(
     #
     # 100 is chosen where the two distributions separate, not as the first value
     # that worked. Steady-state norms are 0.6-2, the cold start peaks near 82,
-    # and the pathology is 2.7e5. Measured at the failing seed it fires on 2
+    # and the failing spike is 2.7e5. Measured at the failing seed it fires on 2
     # steps of 600 and turns 0.77 into 33.25; on a healthy seed it fires on 0 of
     # 600 and the result is unchanged to three decimals. Set `grad_clip=None` to
     # disable.

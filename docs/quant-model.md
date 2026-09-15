@@ -314,8 +314,9 @@ numbers either way.
 
 Survival moved ahead of the grid solver after stage 2: the hard insolvency
 barrier turned out to be required for the multi-period problem to be finite at
-all, and a grid solver's inner maximization would inherit its gradient
-pathology.
+all, and a grid solver's inner maximization would inherit the same dead
+gradient — a failed firm is worth a constant, so nothing about it responds to
+what the firm did.
 
 Stages 1–3 keep the convex financing cost as scaffolding so each step has an
 exact regression target; stage 4 is where it is replaced and where §6 is
@@ -491,7 +492,12 @@ $G' = (1-\delta)G + g$ with mitigation $e^{-\alpha G}$ applied to the stock;
 $\delta = 1$ recovers the static model's assumption that spend buys exactly
 one period of protection.
 
-Monthly decisions over five years:
+Monthly decisions over five years. `constant` is the best single action, with
+the *level* learned by gradient ascent and only its shape held fixed — the same
+action every period and every state. `PI bound` is the **perfect-information**
+bound: it gives every control a free parameter per path, chosen knowing that
+path's whole future, so it is not an implementable policy at all but an upper
+bound on what any policy could achieve. A learner scoring above it has a bug.
 
 | GRC decay | solver | value | spend/period | end stock | survives |
 |---|---|---|---|---|---|
@@ -582,15 +588,16 @@ the right tool and a smaller learning rate is not.
 
 **Fixed: the gradient is clipped at norm 100**, chosen where the two
 distributions separate rather than as the first value that worked. Steady-state
-norms are 0.6–2, the cold start peaks near 82, the pathology is 2.7 × 10⁵. On
+norms are 0.6–2, the cold start peaks near 82, the spike is 2.7 × 10⁵. On
 the failing seed the clip fires on 2 steps of 600 and turns 0.77 into 33.25; on
 a healthy seed it fires on 0 of 600 and the result is unchanged to three
-decimals — provably inert except on the pathology.
+decimals — provably inert except on the spike.
 
 Everything above and below has been re-run with it. The truncated-BPTT critic
 was not the answer, for a better reason than before: a critic addresses
-pathology accumulated along a long chain, and this was a single step off a cliff
-from an otherwise healthy trajectory.
+gradients that explode or vanish as they are multiplied back through many
+timesteps, and this was a single step off a cliff from an otherwise healthy
+trajectory.
 
 The detection threshold had to be made *relative*, having missed this twice on
 the third decimal place: the collapsed value is not exactly
@@ -619,8 +626,9 @@ which is why the script now prints the measured direction rather than an
 asserted one. It printed "spends MORE" unconditionally once, over a pair of
 numbers that had gone the other way.)
 
-The value of perfect information is 3.26 at $\delta = 0.024$ against 8.13 at
-$\delta = 1$. Persistence narrows the gap a clairvoyant policy can exploit: a
+The **value of perfect information** — the gap between the bound and the best
+implementable policy, i.e. what clairvoyance would be worth — is 3.26 at
+$\delta = 0.024$ against 8.13 at $\delta = 1$. Persistence narrows the gap a clairvoyant policy can exploit: a
 stock that carries across quarters is partly a substitute for knowing what is
 coming.
 

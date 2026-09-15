@@ -533,7 +533,7 @@ def test_the_convex_cost_needs_a_barrier_to_stay_finite():
     # is a property of that premium. funding_constrained=False because the cap
     # is what now *prevents* it: a firm that cannot deploy more than it can
     # fund never reaches the shortfall that makes the premium run away. The
-    # pathology is structurally fixed, not parameterized away.
+    # divergence is structurally fixed, not parameterized away.
     # funding=None as well: the runaway is a property of the convex premium on
     # a firm financing itself, and a deposit-funded firm holding 69 of idle
     # reserves earns enough on them to arrest it on some paths. That would make

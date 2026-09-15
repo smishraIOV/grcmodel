@@ -180,8 +180,8 @@ It is kept rather than discarded, though the case is now weaker than it looked.
 The horizon has roughly tripled and backpropagation cost is linear in steps, so
 the problem the technique exists for is closer. But the instability that seemed
 to argue for it turned out to be a single step off a cliff, fixed by a gradient
-clip, rather than pathology accumulating along the chain — which is what a
-critic addresses.
+clip, rather than gradients exploding as they are multiplied back through sixty
+timesteps, which is what a critic addresses.
 
 ### Does a reactive policy earn its place?
 
@@ -347,8 +347,9 @@ and varying the seed shows an ordinary lottery, not a trend.
 
 It also settles what *not* to do next. The obvious reach is the parked
 truncated-BPTT critic (§4), since a critic is the standard remedy for long
-horizons. But a critic addresses pathology accumulated along a long chain, and
-what happens here is a single step off a cliff from an otherwise healthy
+horizons. But a critic addresses gradients that explode or vanish as they are
+multiplied back through many timesteps, and what happens here is a single step
+off a cliff from an otherwise healthy
 trajectory, caught by a one-line clip. Fix the cliff before changing the
 algorithm.
 
@@ -378,9 +379,11 @@ clipping the gradient fixes it. Across five seeds the interval fell 51-fold, fro
 ±12.8 to ±0.25, and no solve fails. §5 has the mechanism.
 
 What remains open is milder: `train_pathwise` is still the only **cold-started**
-solver in the repo, beginning at a firm value near 0.5, where the
-perfect-information bound's own docstring calls warm-starting mandatory once the
-failure barrier is on. That has not been addressed and is the obvious next
+solver in the repo, beginning at a firm value near 0.5. The clairvoyant
+upper-bound solver — which gets to choose each control knowing the future, and
+so brackets what any real policy could achieve — is warm-started from the
+constant policy, and its own docstring calls that mandatory once the failure
+barrier is on. That has not been addressed and is the obvious next
 robustness step for the learner.
 
 **One number still carries too much weight, though less than it did.** The model

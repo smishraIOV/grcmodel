@@ -87,7 +87,7 @@ def test_the_learner_clips_its_gradient():
     learning rate.
 
     The threshold is where the distributions separate: steady-state norms are
-    0.6-2, the cold start peaks near 82, the pathology is 2.7e5. On a healthy
+    0.6-2, the cold start peaks near 82, the spike is 2.7e5. On a healthy
     seed the clip fires zero times in 600 steps.
     """
     import inspect
@@ -100,5 +100,5 @@ def test_the_learner_clips_its_gradient():
     signature = inspect.signature(train_pathwise)
     clip = signature.parameters["grad_clip"].default
     assert clip is not None, "clipping must be on by default"
-    # Well above the cold start's ~82, far below the 2.7e5 pathology.
+    # Well above the cold start's ~82, far below the 2.7e5 spike.
     assert 82.0 < clip < 1e4, f"clip {clip} does not separate the two regimes"
