@@ -36,8 +36,15 @@ uv run python scripts/run_seed_study.py     # is a reactive policy worth its kee
 uv run python scripts/run_static_model.py   # the original two-period model
 uv run python -m quant.simulate             # Monte Carlo, reported across seeds
 uv run python scripts/bench_profiles.py     # where the accelerator starts paying
-uv run pytest                               # 130 tests, about four minutes
+uv run python scripts/solve_steady_state.py # the opening GRC stock a config supports
+uv run pytest                               # 134 tests, about four and a half minutes
 ```
+
+`solve_steady_state.py` is maintenance rather than a result. `initial_grc_stock`
+is a fixed point of the whole model, so any change to a hazard, a loss channel
+or the horizon invalidates it — and a stale value does not error, it produces a
+firm that spends the horizon running down controls it would never have built.
+Re-solve before quoting a budget.
 
 Each entry point takes `--profile {reference,cpu-fast,fast}` and prints the
 profile, torch version and commit it ran under. Numbers quoted in `docs/` come

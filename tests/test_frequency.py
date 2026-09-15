@@ -183,7 +183,11 @@ def test_every_entry_point_still_imports():
 
     root = Path(__file__).resolve().parent.parent
     sys.path.insert(0, str(root))
-    scripts = sorted(p.stem for p in (root / "scripts").glob("run_*.py"))
+    # Every script, not just `run_*`. The narrower glob left `bench_profiles.py`
+    # uncovered while the readme advertised it, and would have left
+    # `solve_steady_state.py` uncovered the moment it was added -- which is
+    # exactly the hole this test exists to close.
+    scripts = sorted(p.stem for p in (root / "scripts").glob("[!_]*.py"))
     assert scripts, "no entry points found -- has the directory moved?"
     for name in scripts:
         importlib.import_module(f"scripts.{name}")
