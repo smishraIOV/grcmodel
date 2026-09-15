@@ -13,7 +13,7 @@ recommendation (docs/quant-model.md section 8).
 """
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 
 @dataclass(frozen=True)
@@ -123,6 +123,11 @@ class FirmParams:
     # model*, so any change that moves optimal spend invalidates it, and a stale
     # value degrades gracefully into a plausible wrong answer rather than an
     # error. Re-solve it after anything that touches a hazard or a loss channel.
+    #
+    # **And it depends on the HORIZON, not only on the hazards** -- which makes
+    # it badly named as a property of the firm. Re-solved at monthly decisions
+    # over five years it is 1.12, against 0.79 at quarterly decisions over two.
+    # See GRC_STEADY_STATE below; that gap is a result rather than a nuisance.
     initial_grc_stock: float = 0.79
 
     # What creditors and shareholders recover when the firm fails, as a
@@ -669,6 +674,47 @@ def model_at(periods_per_year: int, rates: AnnualRates = ANNUAL) -> ModelParams:
 DEFAULTS = model_at(4)    # quarterly decisions
 MONTHLY = model_at(12)    # monthly decisions
 WEEKLY = model_at(52)     # weekly decisions
+
+# The self-consistent opening GRC stock, per (periods_per_year, horizon).
+#
+# `FirmParams.initial_grc_stock` carries one of these as a default, which is a
+# lie of convenience: the level at which optimal maintenance spend exactly
+# replaces depreciation is a fixed point of the *configuration*, not a property
+# of the firm, and it moves with the horizon as well as with the hazards.
+#
+# **The gap between these two entries is a result.** A firm looking five years
+# ahead maintains a control stock 42% larger than one looking two years ahead,
+# and spends 27% more a year to do it -- 0.95 against 0.75. GRC is capital that
+# takes time to build and then keeps working, so a short horizon truncates the
+# payback and understates the programme. docs/quant-model.md infers that from a
+# credit-share sweep; this measures it directly.
+#
+# Solved by damped iteration on G = g*(G) / delta. Converges in four passes:
+# 0.79 -> 1.173 -> 1.128 -> 1.120 -> 1.119.
+GRC_STEADY_STATE = {
+    (4, 8): 0.79,     # quarterly, two years
+    (12, 60): 1.12,   # monthly, five years
+}
+
+
+def steady_state_firm(params: ModelParams, horizon: int) -> FirmParams:
+    """`params.firm` with the opening GRC stock this configuration supports,
+    rather than whichever one happens to be the dataclass default.
+
+    Raises on an unsolved configuration instead of falling back to a stale
+    value. A stale value here does not error -- it produces a firm that spends
+    the whole horizon running down controls it would never have built, and
+    reports the result as a budget. That has already happened once and read as
+    a headline finding.
+    """
+    key = (params.firm.periods_per_year, horizon)
+    if key not in GRC_STEADY_STATE:
+        raise KeyError(
+            f"no GRC steady state solved for {key[0]} periods/year over "
+            f"{key[1]} periods; solve it before quoting a budget "
+            f"(known: {sorted(GRC_STEADY_STATE)})"
+        )
+    return replace(params.firm, initial_grc_stock=GRC_STEADY_STATE[key])
 
 # Pinned, and deliberately not shared with DEFAULTS.
 #

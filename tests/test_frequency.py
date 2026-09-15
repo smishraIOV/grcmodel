@@ -140,3 +140,29 @@ def test_a_year_of_economics_is_the_same_at_any_frequency():
             torch.tensor(firm.production_scale, dtype=torch.float64)
         )
         assert istar.item() == pytest.approx(97.6, rel=0.02), ppy
+
+
+def test_the_grc_steady_state_is_a_property_of_the_configuration():
+    """`initial_grc_stock` is named as a property of the firm and is not one.
+
+    It is the level at which optimal maintenance spend replaces depreciation,
+    which is a fixed point of the whole model -- so it moves with the horizon as
+    well as with the hazards. A firm looking five years ahead maintains a
+    materially larger control stock than the same firm looking two years ahead.
+    """
+    from quant.params import GRC_STEADY_STATE, steady_state_firm
+
+    two_year = steady_state_firm(DEFAULTS, 8).initial_grc_stock
+    five_year = steady_state_firm(MONTHLY, 60).initial_grc_stock
+    assert five_year > two_year * 1.2, (two_year, five_year)
+
+
+def test_an_unsolved_configuration_is_refused_rather_than_guessed():
+    """The failure mode this guards is silent: a stale opening stock does not
+    error, it produces a firm that spends the horizon running down controls it
+    would never have built and reports that as its budget. That has happened
+    once already and read as a headline finding."""
+    from quant.params import steady_state_firm
+
+    with pytest.raises(KeyError, match="no GRC steady state"):
+        steady_state_firm(MONTHLY, 24)
