@@ -496,21 +496,29 @@ Monthly decisions over five years:
 | GRC decay | solver | value | spend/period | end stock | survives |
 |---|---|---|---|---|---|
 | 1.000 | constant | 14.3982 | 0.0001 | 0.0001 | 39.9% |
-| 1.000 | neural | *11.1858* | — | — | *0.0%* |
+| 1.000 | neural | 12.9874 | 0.0428 | 0.0428 | 32.3% |
 | 1.000 | PI bound | 22.5247 | 0.0124 | 0.0118 | 51.0% |
 | 0.024 | constant | 33.3223 | 0.0912 | 3.7350 | 85.8% |
-| 0.024 | neural | *11.1999* | — | — | *0.0%* |
+| 0.024 | neural | 33.3068 | 0.0913 | 3.7369 | 85.7% |
 | 0.024 | PI bound | 36.5838 | 0.0665 | 2.2620 | 87.5% |
 
-**Both italicised rows are optimizer traps, not valuations**, and the script
-says so rather than letting them be averaged into a headline. 11.20 is
-$0.7 \times 16$: the neural policy has fallen into the absorbing wind-down,
-which is why survival is zero. The exit action is absorbing, so once the
+**Re-run with the gradient clip in place.** Both neural rows previously read
+11.2 with zero survival — the absorbing wind-down. The learner now lands within
+0.05% of the constant policy at the real depreciation rate, with a spend of
+0.0913 against 0.0912 and an end stock of 3.7369 against 3.7350: it converges to
+essentially the same policy. That is the "state feedback earns nothing" verdict
+demonstrated rather than obscured by a failed solve.
+
+The constant and PI-bound rows are unchanged to four decimals, as they must be —
+the clip touches `train_pathwise` and nothing else.
+
+**How those rows used to read, and why.** Both carried 11.20 — exactly
+$0.7 \times 16$, the absorbing wind-down — with zero survival. The script still
+detects and flags that shape, since the exit action is absorbing: once the
 probability mass has left there is nothing still operating to generate a
 gradient for staying ([debug notes §8](static-model-debug-notes.md)).
 
-**At five years the neural policy sometimes destroys itself, and it is a
-gradient explosion out of a converged state.**
+**The cause was a gradient explosion out of a converged state, now fixed.**
 
 An earlier version of this section reported the failure as a *batch-size* effect
 — 33.4 at 1024 paths, 11.2 at 2048, 1.1 at 4096, "monotone in the batch, which
@@ -572,16 +580,17 @@ tiny, so a sudden enormous $g$ produces a step far larger than the learning
 rate — the variance estimate only catches up afterwards. That is why clipping is
 the right tool and a smaller learning rate is not.
 
-**Fixed: the gradient is now clipped at norm 100**, chosen where the two
+**Fixed: the gradient is clipped at norm 100**, chosen where the two
 distributions separate rather than as the first value that worked. Steady-state
 norms are 0.6–2, the cold start peaks near 82, the pathology is 2.7 × 10⁵. On
 the failing seed the clip fires on 2 steps of 600 and turns 0.77 into 33.25; on
-a healthy seed it fires on 0 of 600 and the result is unchanged.
+a healthy seed it fires on 0 of 600 and the result is unchanged to three
+decimals — provably inert except on the pathology.
 
-The truncated-BPTT critic was not the answer, for a better reason than before: a
-critic addresses pathology accumulated along a long chain, and this was a single
-step off a cliff from an otherwise healthy trajectory. **The learner figures
-below predate the clip and have not been re-run.**
+Everything above and below has been re-run with it. The truncated-BPTT critic
+was not the answer, for a better reason than before: a critic addresses
+pathology accumulated along a long chain, and this was a single step off a cliff
+from an otherwise healthy trajectory.
 
 The detection threshold had to be made *relative*, having missed this twice on
 the third decimal place: the collapsed value is not exactly
@@ -1062,28 +1071,28 @@ Monthly decisions over five years, five seeds:
 | solver | median | 95% CI | range over seeds | overfit |
 |---|---|---|---|---|
 | constant | 33.295 | ±0.222 | [32.925, 33.631] | 0.39% |
-| neural | 33.177 | **±12.799** | [**0.618**, 33.544] | 0.51% |
+| neural | 33.417 | ±0.251 | [32.911, 33.632] | 0.35% |
 
-**State feedback is worth −0.35% at the median, against measured seed noise of
-38.6%.** Read the range rather than the median: one seed in five landed at
-**0.618** against a best of 33.5. That is not variance, it is a solve that
-failed, and a median computed over it means nothing.
+Before the gradient clip these rows read `33.177, ±12.799, [0.618, 33.544]`. The
+interval fell **51-fold** and the worst seed went from a failed solve to a
+healthy one. The constant policy is unchanged, which is the control: the clip
+touches only the learner.
 
-**The learner does not survive the five-year horizon.** It collapsed into the
-absorbing wind-down on *both* rows of the solver table above and on one seed in
-five here. At two years it merely failed to beat a constant policy; at five it
-does not reliably produce a firm at all. The constant policy is untroubled at
-±0.222, which locates the problem in the learner rather than the model.
+**State feedback is worth +0.37% at the median, against measured seed noise of
+0.75% — within it.** The verdict is unchanged from every earlier horizon and
+calibration, but this is the first time it has been measured on five solves that
+all worked. Previously it read −0.35% against noise of 38.6%, a number produced
+by averaging over a wreck.
 
-That is the strongest argument yet for keeping the truncated-BPTT experiment on
-`svg-critic` alive rather than treating it as closed. A critic exists to damp
-exactly this, it was rejected on evidence gathered at horizons no longer than 32
-steps, and the horizon is now 60.
+**The learner is stable now and still does not earn its place**, which are two
+separate findings and were previously entangled. At the five-year horizon it
+converges to within 0.05% of a policy that cannot see the state at all, with a
+near-identical spend and control stock — so the state genuinely carries little
+the firm can act on, rather than the learner being unable to find it.
 
-The script previously called a +4.84% difference "clear of seed noise" by
-comparing against a hard-coded 2% rather than the spread the run had measured.
-It now compares against the measurement and warns when any seed lands below half
-the best — which it did here.
+The script now compares the advantage against the spread it measured rather than
+a hard-coded 2%, and warns when any seed lands below half the best. It fired on
+the pre-clip run and does not fire now.
 
 Read this table against the one immediately above it too: at the old
 magnitudes state feedback was worth nothing at eight quarters and +11.5% at

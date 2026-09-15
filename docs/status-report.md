@@ -176,20 +176,22 @@ there was no instability to fix: the learned estimate underestimates the value o
 continuing early in training, which is exactly the input the firm uses to decide
 whether to continue.
 
-It is kept rather than discarded, for two reasons that have both strengthened
-since. The horizon is going to roughly triple, and backpropagation cost is linear
-in steps, so the problem the technique exists for is the one now approaching. And
-the learner *has* become unstable — see below.
+It is kept rather than discarded, though the case is now weaker than it looked.
+The horizon has roughly tripled and backpropagation cost is linear in steps, so
+the problem the technique exists for is closer. But the instability that seemed
+to argue for it turned out to be a single step off a cliff, fixed by a gradient
+clip, rather than pathology accumulating along the chain — which is what a
+critic addresses.
 
 ### Does a reactive policy earn its place?
 
 Is a policy that reacts to circumstances worth more than a fixed budget?
 
 Measured across five seeds and scored out of sample, the answer is **no**:
-−0.50% over two years and +4.84% over eight, both inside the spread. Read the
-range rather than the median — at the long horizon one seed produced a firm worth
-**0.9 against a best of 32.7**. That is a failed solve, not variance, and it is
-new with the run channel.
++0.37% at the five-year horizon against measured seed noise of 0.75%. The
+learner converges to within 0.05% of the fixed policy, buying an almost
+identical budget — so the two are finding the same answer rather than one
+beating the other.
 
 The reason is not that the method is weak: **the firm's state barely moves**, so
 a well-chosen fixed action is near-optimal everywhere it goes. The fix is not a
@@ -330,6 +332,13 @@ because run probability is *exponential* in the capital ratio — leverage rises
 survival. **Fixed** by clipping the gradient at a norm of 100, which fires twice
 in six hundred steps on the failing seed and not at all on a healthy one.
 
+Both learner studies have been re-run with it. The five-seed interval fell from
+±12.8 to **±0.25** and the worst seed from 0.618 to 32.9; the learner now lands
+within 0.05% of a policy that cannot see the state at all, with a near-identical
+budget and control stock. **That makes the long-standing verdict cleaner rather
+than different**: state feedback still earns nothing here, but now because the
+state carries little worth acting on, not because the solver fell over.
+
 **An earlier version of this report blamed the sample count**, saying the
 failure got worse with more paths. That was wrong and is withdrawn: changing the
 path count silently changes the *scenario set*, so those were three different
@@ -363,10 +372,16 @@ operational controls being worth more than the model currently says. Until it is
 built, read "cash beats controls" as conditional on runs being survivable events
 rather than franchise-ending ones.
 
-**The learner has become unstable.** At the eight-year horizon one seed of five
-produced a firm worth 0.9 against a best of 32.7 — a failed solve, not variance.
-The verdict on state feedback is unchanged and if anything firmer, but the
-instability is new with the run channel and is not understood.
+**The learner's instability is resolved** — it was a gradient explosion out of a
+converged state, caused by the run channel's straight-through estimator, and
+clipping the gradient fixes it. Across five seeds the interval fell 51-fold, from
+±12.8 to ±0.25, and no solve fails. §5 has the mechanism.
+
+What remains open is milder: `train_pathwise` is still the only **cold-started**
+solver in the repo, beginning at a firm value near 0.5, where the
+perfect-information bound's own docstring calls warm-starting mandatory once the
+failure barrier is on. That has not been addressed and is the obvious next
+robustness step for the learner.
 
 **One number still carries too much weight, though less than it did.** The model
 values whatever is left at the horizon with a constant standing in for "the
