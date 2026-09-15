@@ -721,6 +721,44 @@ def test_credit_grc_has_no_direct_hazard_channel():
     )
 
 
+def test_the_loss_only_firm_cannot_buy_survival_but_faces_the_same_danger():
+    """What `grc_buys_survival=False` is, stated as the two properties it needs.
+
+    It has to remove *every* route by which GRC reaches survival -- the licence
+    hazard and the run probability, which are in different modules and were
+    easy to treat as one -- while leaving both dangers at full strength. A firm
+    whose world got safer is not a firm that stopped believing in its controls.
+    """
+    sampler = MonteCarloSampler(DEFAULTS.sampler)
+    real = FirmEnv(EnvConfig.quarterly(1), sampler)
+    blind = FirmEnv(EnvConfig.quarterly(1, grc_buys_survival=False), sampler)
+    equity = REFERENCE.tensor([16.0, 16.0])
+
+    def channels(env, g):
+        stock = REFERENCE.full((2, 3), g)
+        licence = intensity_components(
+            equity, env.dynamics.hazard_stock(stock), 16.0,
+            DEFAULTS.hazard, DEFAULTS.alphas, 4,
+        )["licence"]
+        return env.dynamics.run_probability(stock, equity)[0], licence[0]
+
+    bare_run, bare_licence = channels(real, 0.0)
+
+    for g in (1.0, 4.0):
+        # The real firm buys survival with both...
+        live_run, live_licence = channels(real, g)
+        assert live_run < bare_run
+        assert live_licence < bare_licence
+
+        # ...and the blind one buys neither, at the *unmitigated* rate.
+        off_run, off_licence = channels(blind, g)
+        assert torch.isclose(off_run, bare_run)
+        assert torch.isclose(off_licence, bare_licence)
+
+    # Still dangerous, which is the half that makes the comparison fair.
+    assert bare_run > 0.0 and bare_licence > 0.0
+
+
 def test_grc_spend_rises_when_it_buys_survival():
     """The economics of this bite, measured two ways.
 
@@ -740,28 +778,42 @@ def test_grc_spend_rises_when_it_buys_survival():
     real = FirmEnv(EnvConfig.quarterly(6), sampler)
 
     naive, _ = optimize_constant(
-        FirmEnv(EnvConfig.quarterly(6, hazard=no_grc_hazard()), sampler), crn, n_steps=2500
+        FirmEnv(EnvConfig.quarterly(6, grc_buys_survival=False), sampler),
+        crn,
+        n_steps=2500,
     )
     aware, aware_result = optimize_constant(real, crn, n_steps=2500)
 
     naive_result = evaluate(naive, real, crn)
-    assert aware_result.total_grc > naive_result.total_grc * 1.05, (
-        f"spend barely moved: {naive_result.total_grc:.3f} -> {aware_result.total_grc:.3f}"
+
+    # **What is removed is GRC's reach into survival, not the danger itself.**
+    # Every hazard rate is identical in the two worlds. This used to
+    # zero `annual_operational_rate` and `annual_licence_rate`, which is a
+    # different and much weaker experiment: the first has been 0.0 since the run
+    # replaced it, so only the licence channel was removed; operational GRC
+    # reaches survival through `run_probability`, which was left live; and
+    # removing a hazard *rate* hands the naive firm a safer world to optimize
+    # in. Measured, that showed up as the naive firm spending twice as much
+    # (0.057 against 0.029) and surviving *less* (0.917 against 0.921) -- it was
+    # taking more balance-sheet risk because its world was gentler, which is the
+    # confound rather than the finding.
+    ratio = aware_result.total_grc / naive_result.total_grc
+    assert ratio > 2.0, (
+        f"a survival-aware budget should be much larger: "
+        f"{naive_result.total_grc:.4f} -> {aware_result.total_grc:.4f} ({ratio:.2f}x)"
     )
     assert aware_result.survival_rate > naive_result.survival_rate
 
-    # **The value gap has collapsed, and that is the finding rather than a
-    # weakened test.** It was 2.1% of firm value while an asserted rate claimed
-    # that operational incidents kill the firm outright. With that rate retired
-    # and depositors actually leaving instead, the only GRC-to-hazard path left
-    # is the licence channel, and budgeting for survival is worth 0.003% --
-    # inside the noise of two 1024-path evaluations.
-    #
-    # So the direction is no longer assertable and the magnitude is pinned
-    # instead. A gap back above a percent would mean the retired channel had
-    # crept back in somewhere.
-    gap = abs(aware_result.value - naive_result.value) / naive_result.value
-    assert gap < 0.01, f"survival-aware budgeting is worth {gap:.2%}, expected ~0"
+    # The *value* cost of getting it wrong stays small at this horizon, and that
+    # is a statement about six quarters rather than about GRC. A control stock
+    # has to accumulate before it protects anything, so a short window cannot
+    # see most of what the survival channel buys -- docs/quant-model.md section 6
+    # measures the same gap widening with the horizon. Pinned as a band rather
+    # than a bound so that either end moving is a signal.
+    gap = (aware_result.value - naive_result.value) / naive_result.value
+    assert 0.0005 < gap < 0.02, (
+        f"survival-aware budgeting is worth {gap:.3%} of firm value here"
+    )
 
 
 def test_default_quarterly_model_sits_in_a_usable_regime():

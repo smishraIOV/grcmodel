@@ -61,8 +61,17 @@ def survival_channel(env, naive_env, crn, steps: int, periods: int, params) -> N
     """What it costs to budget as though GRC only reduced expected loss.
 
     Both policies are scored in the same world -- the one where GRC also
-    reduces failure intensity. Comparing them in their own worlds would be
-    meaningless, since the loss-only world is simply less dangerous.
+    reduces failure intensity. The naive firm's world differs in exactly one
+    respect: its controls do not reach survival. Every hazard rate is identical,
+    which is the point. Optimising the naive budget in a world with the rates
+    *switched off* would be comparing against a firm that simply faced less
+    danger, and the gap would be measuring the danger rather than the budget.
+
+    One caveat the flag cannot remove: GRC still reaches survival indirectly
+    through the capital channel, by leaving more equity behind. That is a
+    consequence of reducing losses rather than a separate purchase, so this
+    bounds the naive firm's survival motive rather than eliminating it -- the
+    true loss-only budget is a little smaller than the one reported here.
     """
     naive = optimize_constant(naive_env, crn, n_steps=steps)[0]
     aware, aware_result = optimize_constant(env, crn, n_steps=steps)
@@ -316,10 +325,15 @@ def main() -> None:
 
     env = FirmEnv(EnvConfig.at_frequency(params, periods, firm=firm), sampler)
     naive_env = FirmEnv(
-        EnvConfig.at_frequency(
-            params, periods, firm=firm,
-            hazard=replace(params.hazard, annual_operational_rate=0.0, annual_licence_rate=0.0),
-        ),
+        # Same hazard, same rates, same world -- the naive firm simply does not
+        # believe its controls buy survival. This used to zero two hazard rates
+        # instead, which optimised the naive policy in a strictly safer world
+        # and then scored it in this one; and one of the two
+        # (annual_operational_rate) has been 0.0 since the run replaced it,
+        # while operational GRC reaches survival through the run probability
+        # rather than through the hazard at all. So it removed one route of
+        # three and made the comparison unfair in the bargain.
+        EnvConfig.at_frequency(params, periods, firm=firm, grc_buys_survival=False),
         sampler,
     )
     survival_channel(env, naive_env, crn, args.steps, periods, params)

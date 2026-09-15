@@ -94,6 +94,10 @@ class EnvConfig:
     allow_payout: bool = False
     cliff: CliffParams | None = None
     credit_scales_with_book: bool = True
+    # False builds the loss-only firm: it faces exactly this world and budgets
+    # as though GRC bought nothing but smaller losses. See StandardDynamics for
+    # why switching off the hazard rates instead is not the same thing.
+    grc_buys_survival: bool = True
     # None is a firm with no liabilities, which is every reduced configuration:
     # the closed form, the static regression, and the grid's restriction.
     funding: FundingParams | None = None
@@ -229,6 +233,7 @@ class FirmEnv:
             grc_depreciation=config.grc_depreciation,
             hazard=config.hazard,
             credit_scales_with_book=config.credit_scales_with_book,
+            grc_buys_survival=config.grc_buys_survival,
             allow_abandonment=config.allow_abandonment,
             funding_constrained=config.funding_constrained,
             allow_payout=config.allow_payout,

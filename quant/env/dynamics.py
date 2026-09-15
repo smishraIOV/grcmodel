@@ -110,6 +110,30 @@ class StandardDynamics:
     # (four states, no hazard, no funding constraint) and this is one more
     # restriction of the same kind.
     credit_scales_with_book: bool = False
+    # False builds the **loss-only firm**: one that budgets as though GRC bought
+    # nothing but smaller losses. Its controls stop reaching survival -- the
+    # hazard's reducible channels see a zero stock and the run probability drops
+    # its mitigation term -- while every rate stays at its true value, so the
+    # world it decides in is exactly as dangerous as the real one. It is what
+    # `survival_channel` in scripts/run_dynamic_model.py measures the real firm
+    # against.
+    #
+    # Both halves matter. Switching off the hazard *rates* instead -- which is
+    # what that script used to do -- sets the loss-only budget in a gentler
+    # world and then scores it in this one, so the comparison picks up the
+    # change in danger as well as the change in budget. Measured, the firm built
+    # that way spent twice as much and survived *less*: it was taking more
+    # balance-sheet risk because its world was safer, which is a confound and
+    # not a finding. And it missed two of the three routes anyway -- one of the
+    # rates it zeroed (annual_operational_rate) has been 0.0 since the run
+    # replaced it, and operational GRC reaches survival through
+    # `run_probability` rather than through the hazard at all.
+    #
+    # The capital channel is deliberately still live. GRC reaches it only
+    # indirectly, by leaving more equity behind, and that is a consequence of
+    # reducing losses rather than a second thing the budget buys -- so this
+    # bounds the loss-only firm's survival motive rather than removing it.
+    grc_buys_survival: bool = True
     # None leaves the firm with no liabilities: it funds its book out of equity
     # plus a multiple of equity that costs nothing and is settled inside the
     # period. That is what every result before the liability stage was produced
@@ -218,7 +242,7 @@ class StandardDynamics:
         intensity = (
             failure_intensity(
                 equity,
-                stock,
+                self.hazard_stock(stock),
                 self.firm.initial_equity,
                 self.hazard,
                 self.alphas,
@@ -253,6 +277,20 @@ class StandardDynamics:
         identical to the static model's.
         """
         return (1.0 - self.grc_depreciation) * state.grc_stock + action.grc
+
+    def hazard_stock(self, stock: torch.Tensor) -> torch.Tensor:
+        """The GRC stock the survival channels are allowed to see.
+
+        Zero for the loss-only firm, so `exp(-alpha * 0)` is one and every
+        reducible channel fires at its full rate. The rates themselves are
+        untouched: that firm faces exactly the same world, it simply does not
+        believe its controls protect it in it.
+
+        `zeros_like` severs the gradient rather than zeroing it through an
+        in-graph multiply, which is what is wanted here -- and it preserves
+        dtype and device, which `grc_reduced_intensity` reads off the stock.
+        """
+        return stock if self.grc_buys_survival else torch.zeros_like(stock)
 
     # -- sub-steps -------------------------------------------------------
 
@@ -478,7 +516,14 @@ class StandardDynamics:
         base = self.profile.tensor(
             self.funding.period_run_rate(self.firm.periods_per_year)
         )
-        mitigated = exponential_mitigation(base, stock[..., 1], self.alphas.operational)
+        # The only place operational GRC still buys survival, so the loss-only
+        # firm has to lose this route too -- switching off the hazard's
+        # reducible channels alone would leave it live.
+        mitigated = (
+            exponential_mitigation(base, stock[..., 1], self.alphas.operational)
+            if self.grc_buys_survival
+            else base
+        )
         kappa = equity / self.firm.initial_equity
         stress = torch.exp(
             torch.clamp(
@@ -744,7 +789,7 @@ class StandardDynamics:
         intensity = (
             intensity_components(
                 equity,
-                stock,
+                self.hazard_stock(stock),
                 self.firm.initial_equity,
                 self.hazard,
                 self.alphas,
