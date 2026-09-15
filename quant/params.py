@@ -51,7 +51,7 @@ class FirmParams:
     rest are rate-based, changing `periods_per_year` does not rescale the
     economics and the model cannot be checked for time-scale invariance --
     the same class of silent bug as the dimensional one in
-    docs/static-model-debug-notes.md section 4, one axis over.
+    docs/quant-model.md appendix A4, one axis over.
     """
 
     initial_equity: float = 16.0
@@ -100,7 +100,7 @@ class FirmParams:
     # events while it does. Above about 9 it has inherited so much capital that
     # optimal spend collapses to ~0.002 per quarter and the model has nothing
     # to say about budgets at all -- a "never binds" regime of the kind
-    # docs/static-model-debug-notes.md section 6 warns about, in a new place.
+    # docs/quant-model.md appendix A6 warns about, in a new place.
     # Re-solved at the recalibrated loss and production scales: the fixed
     # point moved from 5.18 to 0.650 when a quarter's expected loss went from
     # 9.00 to 0.475. Same construction as before -- the level at which the
@@ -445,7 +445,7 @@ class HazardParams:
     A logistic in the capital ratio rather than a power law. Every argument to
     the exponential must be dimensionless, and a ratio over a dimensionless
     scale is that by construction; a power of a money quantity is how the
-    financing cost acquired its units bug (docs/static-model-debug-notes.md
+    financing cost acquired its units bug (docs/quant-model.md appendix
     section 4).
 
     The base rate is the intensity a maximally distressed firm faces, not the
@@ -538,7 +538,7 @@ class CliffParams:
     period_probability: float = 0.025      # at zero operational GRC stock
     mean_severity_fraction: float = 0.35   # of opening equity, exponential, capped at 1
     # Temperature of the straight-through relaxation used to differentiate the
-    # occurrence probability (docs/static-model-debug-notes.md section 7).
+    # occurrence probability (docs/quant-model.md appendix A7).
     #
     # Chosen by measuring the gradient against the exact analytic mixture,
     # which is affordable at one period. Bias in dE[loss]/dG, large-sample:

@@ -95,7 +95,7 @@ class StandardDynamics:
 
         The occurrence probability depends on the operational GRC stock, and a
         drawn Bernoulli has no gradient in its probability -- the problem
-        docs/static-model-debug-notes.md section 5 met for compliance. The
+        docs/quant-model.md appendix A5 met for compliance. The
         escape used there, likelihood-ratio reweighting, is a poor fit here:
         per-step weights multiply along a trajectory so their variance
         compounds, and at a base rate of 2.5% only a handful of paths per
@@ -264,7 +264,7 @@ class StandardDynamics:
         breach paths and (1-p(g))/(1-p0) elsewhere. Differentiable in g, and it
         keeps breaches discrete, which matters because the spread they create
         is what the convex premium prices
-        (docs/static-model-debug-notes.md section 5).
+        (docs/quant-model.md appendix A5).
 
         Returns the **ratio only**, not the ratio times the path's prior
         probability. The prior belongs to the trajectory and is applied once;

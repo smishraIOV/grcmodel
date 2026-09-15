@@ -269,7 +269,7 @@ class FirmEnv:
         Divided by initial equity so a learner sees O(1) inputs and so the
         observation is invariant to the currency the firm is denominated in --
         the same requirement the cost functions carry
-        (docs/static-model-debug-notes.md section 4).
+        (docs/quant-model.md appendix A4).
 
         The deposit base is a feature only when there is one. A constant column
         would be worse than harmless: it is a bias term the network pays
@@ -431,7 +431,7 @@ class EvalResult:
     # failure rates, rating-agency default rates, insurance pricing) and the
     # primary regime check: outside roughly 0.2% to 15% the survival
     # comparative statics stop meaning anything
-    # (docs/static-model-debug-notes.md section 6).
+    # (docs/quant-model.md appendix A6).
     annual_death_probability: float
     # Probability the firm takes at least one cliff hit over the horizon.
     cliff_rate: float

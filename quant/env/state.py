@@ -105,7 +105,7 @@ class StepResult:
     `weight` is the per-step probability weight a path carries, which is how
     the compliance channel acts: a breach is discrete, so its budget cannot
     shrink a drawn indicator and instead reweights the path
-    (docs/static-model-debug-notes.md section 5). It is per-step and must be
+    (docs/quant-model.md appendix A5). It is per-step and must be
     multiplied along a trajectory, which is exactly why it does not survive a
     long horizon -- see Trajectory.effective_sample_size.
     """

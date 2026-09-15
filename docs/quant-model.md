@@ -373,7 +373,7 @@ exactly the one-period problem that benchmark solves.
 | 3a | Smooth survival hazard replacing the hard barrier | **built** — `quant/hazard.py` |
 | 3b | GRC acting on the hazard, not only on losses | **built** — `quant/hazard.py` |
 | 3c | What failure costs, and what GRC cannot do about it | **built** — `FirmParams.failure_recovery` |
-| — | Discrete cliff events as a *loss* channel | **built** — `StandardDynamics.cliff_loss`, [debug notes §7](static-model-debug-notes.md) |
+| — | Discrete cliff events as a *loss* channel | **built** — `StandardDynamics.cliff_loss`, appendix A7 |
 | 3d | Abandonment / orderly wind-down option | **built** — out of the money, see below |
 | 3e | Diagnostic bundle and the break-even outputs | **built** — `quant/studies/breakeven.py` |
 | — | Funding constraint: the balance sheet gates investment | **built** — live but weak, see §6 |
@@ -453,80 +453,47 @@ assumption baked into a solver.
 > **Which of these have been re-run since the liability side arrived.** The
 > deposit stock took the firm's book from about 25 to about 80 against the same
 > equity, and forced a recalibration, so every dynamic number moved. Re-run and
-> current, at commit `aab280d`: the GRC-as-a-stock table, the survival channel,
-> the failure-recovery sweep, the payout comparison, and all five break-evens.
-> **Not re-run, and marked individually below:** the grid-agreement table, the
-> decision-frequency comparison, the cliff-rate sweep, the horizon-comparability
-> table, the horizon-versus-credit-share sweep, and the SVG head-to-head. The
-> static tables that follow immediately are on the pinned oracle and did not
-> move at all.
+> current: the GRC-as-a-stock table, the survival channel, the failure-recovery
+> sweep, the payout comparison, and all five break-evens. **Not re-run, and
+> marked individually below:** the grid-agreement table, the decision-frequency
+> comparison, the cliff-rate sweep, the horizon-comparability table, the
+> horizon-versus-credit-share sweep, and the SVG head-to-head. The static tables
+> that follow immediately are on the pinned oracle and did not move at all.
 
-> **Two recalibrations, and what forced each.**
->
-> **The first** replaced the static model's magnitudes — a quarterly operating
-> surplus of 9.01 and a gross expected loss of 9.00, both against equity of 16 —
-> which were one-shot quantities wearing quarterly clothing. A firm earning more
-> than half its equity every quarter has a franchise worth about 473 against a
-> book value of 16, and that single ratio is what left the wind-down option
-> permanently out of the money, the financing friction inert, and the balance
-> sheet decorative. It set `A = 1.05, S = 600`, `alpha` from 0.3 to 1.5 (it
-> carries units of 1/money and had to move with the loss scale), and an opening
-> GRC stock of 0.650 per family.
->
-> **The second** was forced by the liability side. Four parameters had been
-> calibrated against a book of 25 and none of them moved on their own when the
-> book went to 80:
->
-> | parameter | from | to | why it had to move |
-> |---|---|---|---|
-> | `curvature_per_period` | 150 | 698 | I* stayed at 29 while capacity tripled, so the firm stopped wanting what it could fund — funding-constrained quarters fell 71% → 0.0% |
-> | `annual_return` | 1.2155 | 1.15 | a 12%/yr asset margin levered five times is a 33% return on equity |
-> | `initial_grc_stock` | 0.650 | 1.17 | the self-maintaining stock scales with losses, which tripled with the book |
-> | terminal franchise | 15 | 20 | one-shot estimate from the measured surplus; see the note below on why it is not a fixed point |
->
-> The firm now runs a book near 81 on equity of 16 — leverage 4.85 — earns
-> **23% a year** on that equity, and faces a 4.79% annual probability of
-> failure. Funding binds in 14.7% of quarters, against 71% before: a bank with
-> deposits is less often capital-rationed than one financing itself out of
-> retained earnings, which is most of the reason to be a bank.
->
-> **The third** was forced by the run replacing the asserted operational
-> hazard, and it is a single parameter — `initial_grc_stock`, 1.17 → 0.79.
-> Missing it was briefly the most misleading thing in the model. That parameter
-> is a fixed point *of the whole model*: the level at which the firm's own
-> optimal maintenance spend replaces depreciation. Retiring a hazard that was
-> buying a large share of the budget moves optimal spend, so the old value left
-> the firm opening **six times above the steady state it would now choose**,
-> spending the horizon running the stock down, and reporting a budget of 0.043
-> a quarter. That read as "retiring the hazard destroyed the case for GRC". At
-> the correct fixed point the budget is 0.187 against 0.197 before — a fall of
-> 5%, not 78%.
->
-> A stale fixed point degrades into a plausible wrong answer rather than an
-> error, so it is worth a standing rule: re-solve it after anything that
-> touches a hazard or a loss channel.
->
-> **23% overshoots the 17.6% `annual_return` was set against, and the reason is
-> an ordering mistake worth recording.** The margin was chosen first, holding
-> the opening GRC stock at its old value of 0.650; the stock was then re-solved
-> to 1.17, which cut expected loss and lifted the return with it. The two are
-> not independent and were solved as though they were. The number is inside
-> what an illustrative parameter set can claim for a high-margin crypto
-> intermediary, so it has not been re-solved — but a third recalibration should
-> iterate the pair rather than fix one and then move the other.
->
-> **The franchise is not solved for, deliberately.** Iterating it to a fixed
-> point diverges — a larger franchise makes survival worth more, so the firm
-> buys more GRC, so the hazard falls, so the franchise grows. Successive passes
-> ran 15 → 40 → 58 with annual failure falling 5.5% → 3.1%, which is a model
-> talking itself into being safe rather than a calibration converging.
->
-> The four-state oracle is **not** recalibrated and never should be
-> (`quant/params.py`, `ORACLE`). It exists to be exactly solvable, not
-> plausible, and sharing parameters with the model it checks is how one change
-> to `production_scale` took out five regression tests and both closed-form
-> checks at once. It is why the two static tables below are unchanged across
-> both recalibrations.
+The model has been recalibrated three times and had its horizon changed once.
+[`calibration.md`](calibration.md) §3 records what each change did to each
+headline; the short version is that the shapes held and the levels did not.
+Three things from that history belong here, because they are properties of the
+formulation rather than of any one parameter set:
+
+**`initial_grc_stock` is a fixed point of the whole model**, not a firm
+property — the level at which the firm's own optimal maintenance spend replaces
+depreciation. A stale value degrades into a plausible wrong answer rather than
+an error: retiring the asserted operational hazard moved optimal spend, and
+carrying the old stock forward left the firm opening six times above the steady
+state it would now choose, running it down all horizon, and reporting a budget
+fall of 78% that was really 5%. Re-solve it after anything that touches a hazard
+or a loss channel, and note that it depends on the **horizon** too (0.79 at
+quarterly decisions over two years, 1.12 at monthly over five).
+
+**The terminal franchise is not solved for, deliberately.** Iterating it to a
+fixed point diverges — a larger franchise makes survival worth more, so the firm
+buys more GRC, so the hazard falls, so the franchise grows. Successive passes
+ran 15 → 40 → 58 with annual failure falling 5.5% → 3.1%, which is a model
+talking itself into being safe rather than a calibration converging.
+
+**Parameters that are identified jointly must be solved jointly.**
+`annual_return` was set against a target ROE while the opening GRC stock was
+held at its old value; re-solving the stock then cut expected loss and lifted
+the realised return past the target. The two are not independent and were
+treated as though they were.
+
+The four-state oracle is **not** recalibrated and never should be
+(`quant/params.py`, `ORACLE`). It exists to be exactly solvable, not plausible,
+and sharing parameters with the model it checks is how one change to
+`production_scale` took out five regression tests and both closed-form checks at
+once. It is why the two static tables below are unchanged across every
+recalibration.
 
 Run `uv run python scripts/run_static_model.py`.
 
@@ -613,7 +580,7 @@ the clip touches `train_pathwise` and nothing else.
 $0.7 \times 16$, the absorbing wind-down — with zero survival. The script still
 detects and flags that shape, since the exit action is absorbing: once the
 probability mass has left there is nothing still operating to generate a
-gradient for staying ([debug notes §8](static-model-debug-notes.md)).
+gradient for staying (appendix A8).
 
 **The cause was a gradient explosion out of a converged state, now fixed.**
 
@@ -1002,7 +969,7 @@ It matters because both neighbouring regimes are degenerate, in opposite ways:
 | 12 | 2.1% | 0.002 | model has nothing to say about budgets |
 
 The high end is the "never binds" trap of
-[`static-model-debug-notes.md`](static-model-debug-notes.md) §6 in a new place:
+appendix A6 in a new place:
 survival looks excellent and the model is silent on the only question it was
 built to answer.
 
@@ -1212,7 +1179,7 @@ trap rather than economics (see the note below).
 > nothing still operating to generate a gradient for staying. Forbidding the
 > action outright was worth 76% more at twenty-four quarters. Holding the
 > *cumulative* probability fixed instead removes it —
-> [debug notes §8](static-model-debug-notes.md).
+> appendix A8.
 >
 > A milder version of the horizon effect is real and remains — see below. It no
 > longer blocks the horizon question, but it does mean values are not
@@ -1389,15 +1356,18 @@ result.)
 
 > **Pre-liability figures — not re-run.** Produced by a firm with no deposits, funding a book of about 25 out of its own capital. The shape of the finding is the part to trust; the levels are all from the earlier calibration.
 
-> **Parked, not rejected — and the case for re-testing has strengthened twice
-> since.** Everything below was measured at horizons of **at most 32 steps**,
-> and the technique exists for long horizons where full backpropagation, whose
-> cost is linear in the number of steps, becomes the binding constraint. The
-> horizon is going to roughly triple. Separately, the neural policy has since
-> become unstable at the longest horizon tested — one seed of five produced a
-> firm worth 0.9 against a best of 32.7 — which is the failure mode a critic is
-> meant to damp. The verdict below is sound about the regime it was measured in
-> and says nothing about the regime now approaching.
+> **Parked, not rejected.** Everything below was measured at horizons of **at
+> most 32 steps**, and the technique exists for long horizons, where full
+> backpropagation's cost — linear in the number of steps — becomes the binding
+> constraint. The default horizon has since roughly tripled, so the regime the
+> technique is for is closer than when this was measured.
+>
+> The other half of the case for re-testing has since evaporated. The learner
+> did become unstable at the longest horizon, which looked like the failure a
+> critic damps; it turned out to be a single gradient explosion out of a
+> converged state, caused by the run channel's straight-through estimator and
+> fixed by a clip. A critic addresses gradients that grow or vanish as they are
+> multiplied back through many timesteps, which is not what happened.
 
 
 `scripts/compare_learners.py` **on the `svg-critic` branch**, where the three
@@ -1433,7 +1403,7 @@ learns to predict the wind-down value very accurately — its loss falls to
 0.0003 — which is a self-fulfilling bootstrap rather than convergence.
 
 **And it does not rescue the long horizon, which was the whole case for it.**
-Re-run after the exit trap of [debug notes §8](static-model-debug-notes.md) was
+Re-run after the exit trap of appendix A8 was
 fixed, so full BPTT is no longer handicapped:
 
 | quarters | constant | full BPTT | SVG(K=8) | SVG(K=4) |
@@ -1648,9 +1618,8 @@ equity behind.
 
 An earlier version reported that optimal GRC investment rises with financing-cost
 convexity (2.92 → 4.32). That result did not survive dimensional correction of the
-cost function and a parameterization that is not permanently insolvent; see
-[`critical-review.md`](critical-review.md) F1–F2. The convexity comparative static
-is regime-dependent and is no longer claimed.
+cost function and a parameterization that is not permanently insolvent. The convexity
+comparative static is regime-dependent and is no longer claimed.
 
 ## 8. Not done
 
@@ -1662,3 +1631,110 @@ is regime-dependent and is no longer claimed.
 - The unimplemented state variables and controls in §1–§2.
 - Hard solvency / liquidity / regulatory constraints (§4).
 - §5.3, the MDP.
+
+---
+
+## Appendix: derivations and traps
+
+Reasoning that shaped the formulation and is worth not rediscovering. Numbered
+to match the citations in `quant/`. Items 1, 4, 5 and 7 were folded into §3 and
+into "Why the model is differentiable at all"; what remains here is what those
+sections do not already say.
+
+**A1 — Constrained controls need softplus, not clamp.** `clamp`'s gradient is
+exactly zero *at* the boundary, so a control initialised at zero never receives
+a signal to move. Everything non-negative is therefore `softplus(raw)`. One
+consequence shows up in tests: a control whose true optimum is exactly zero is
+only approached asymptotically, so zero-benchmarks get ~1e-3 tolerance against
+~1e-6 for interior optima.
+
+**A2 — Froot-Stein needs genuine uncertainty, and this is algebra, not
+numerics.** With a single *deterministic* loss $L$, writing
+$A = -1 + \alpha L e^{-\alpha g}$,
+
+$$\frac{d\,\text{value}}{dg} = A\left(1 + \gamma\sigma\,\text{shortfall}^{\gamma-1}\right)$$
+
+The second factor is one plus non-negative terms, so it is strictly positive and
+can never be why the derivative vanishes. The first-order condition needs
+$A = 0$, and $A$ contains neither $\gamma$ nor $\sigma$: the optimum is
+$g^\star = \ln(\alpha L)/\alpha$ **whatever the cost function looks like**.
+
+The reason is that Froot-Stein is a Jensen effect — $\mathbb{E}[C(X)] \ge
+C(\mathbb{E}[X])$ for convex $C$, with the gap growing in both the convexity and
+the spread of $X$. Risk management narrows the spread. A fixed number has no
+spread, so there is nothing for convexity to act on. Hence every draw carries
+real probability weight over multiple states, and hence the headline test is a
+*mean-preserving spread* test: spread is what the mechanism is about.
+
+**A3 — …and it needs an investment opportunity.** Uncertainty alone still leaves
+firm value strictly decreasing in loss, so GRC is a pure expense. The model
+could then say "losses are convexly expensive, reduce them" but not that risk
+management *creates* value. The investment opportunity is what makes the value
+function concave in wealth: after a bad draw the firm must either underinvest or
+pay the premium, so wealth is worth more at the margin in bad states than good.
+That endogenous risk aversion is the whole result.
+
+**A4 — Cost functions need a reference level.** $\sigma\,e^{\gamma}$ subtracts
+$\text{money}^{\gamma}$ from money, so the answer changes with the currency.
+Written $\sigma K (e/K)^{\gamma}$ instead, with $K$ carrying money units.
+
+**A5 — A discrete channel the control moves needs a device, and there are two.**
+`torch.bernoulli` has no gradient in $p$, so a channel whose *frequency* GRC
+changes cannot simply be sampled. Compliance uses **likelihood-ratio
+reweighting**: indicators are drawn once at a base probability $p_0$ and each
+path is reweighted by $p(g)/p_0$ on breach paths and $(1-p(g))/(1-p_0)$
+elsewhere. Unbiased, and it keeps breaches discrete — which matters, because the
+spread they create is what the convex premium prices. The cost is that weights
+*multiply* along a trajectory, so the effective sample size decays; and it
+decays with **calendar time, not step count** — about 0.57 at five years at any
+decision frequency. The ratio is returned alone, without the path's prior: the
+prior belongs to the trajectory and is applied once, and multiplying it in every
+period made the accumulated weight carry a constant $(1/\text{batch})^T$.
+
+The cliff and the run arrived later, at longer horizons where compounding
+variance would have been fatal, and got the straight-through estimator of A7
+instead. Neither device is better; they fail in different directions and the
+horizon decides which failure is affordable. See "Why the model is
+differentiable at all" in §3.
+
+**A6 — The regime has to be checked, not assumed.** The model has content only
+where a constraint binds in *some* states and not others. Both degenerate
+regimes — never binds, always binds — look like working models and quietly
+produce flat or reversed comparative statics. Hence the diagnostic bundle every
+solver returns, and a test asserting the defaults sit between the extremes.
+
+**A7 — Straight-through relaxation, and where its temperature comes from.** The
+forward pass uses the true hard indicator; the backward pass differentiates a
+tempered sigmoid of the same threshold — `occurs + relaxed - relaxed.detach()`.
+The gradient is biased by a factor the temperature controls, and unlike
+reweighting's variance that bias does not compound along the path. The
+temperature of 0.1 is not taste: it was chosen by measuring the gradient against
+the exact analytic mixture at one period, which is affordable there. Two
+consequences worth carrying: the sigmoid **saturates**, so only paths landing
+within a few tenths of a logit of the threshold carry gradient at all; and
+`logit(p)` must be floored away from 0 and 1, a trap this project has now hit
+three times. The estimator is also the amplifier behind the learner's gradient
+spike — $d\,\text{logit}(p)/dp$ is $1/(p(1-p))$, about 147 at a run probability
+near 0.7%, and the temperature multiplies that by another ten.
+
+**A8 — An absorbing action is a trap, and its initialisation is
+horizon-dependent.** Once probability mass takes an absorbing action there is
+nothing still operating to generate a gradient for *not* taking it, so the
+policy cannot learn its way back out. The exit was initialised at a flat 1.8% a
+quarter — negligible per period, **44% cumulative over 32 quarters** — and the
+firm began its search halfway out of the door. Measured, it converged to
+$0.7 \times 16$ at 24 and 32 quarters against 19.7 and 17.9 with the action
+forbidden. More training did not help: a basin, not a budget. The fix is to hold
+the *cumulative* probability fixed, so the initialisation means the same thing
+at every horizon.
+
+**This shape has now appeared four times and is worth recognising on sight**: a
+pathwise gradient meets an absorbing outcome and stops carrying information.
+The perfect-information bound's gradient desert (limited liability makes a dead
+firm worth a constant); the hard insolvency barrier, replaced by a hazard so the
+gradient flows through the *probability* of crossing; the exit action here; and
+the learner's gradient spike, which destroys a converged policy precisely
+because the state it lands in cannot be escaped. Smoothing helps where the
+outcome is involuntary. An action the policy *chooses* cannot be smoothed the
+same way — the remedy is to start far enough away that the search never enters
+before it knows better.

@@ -19,7 +19,7 @@ def financing_cost(
     is dimensionless and the result is money. The earlier form -- a bare
     `shortfall ** convexity` -- subtracted money^convexity from money, which
     made the model's answer depend on whether the firm was denominated in
-    dollars or cents (docs/critical-review.md F1). With K present, `convexity`
+    dollars or cents. With K present, `convexity`
     is a pure shape parameter.
 
     `shortfall` must already be clamped to >= 0. `convexity` must be >= 1;

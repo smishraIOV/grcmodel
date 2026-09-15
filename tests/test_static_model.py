@@ -4,7 +4,7 @@ These replace an earlier test asserting that optimal GRC investment rises with
 financing-cost convexity. That assertion passed only because the cost function
 was dimensionally inconsistent and the firm was parameterized into permanent
 insolvency; it fails once either is fixed, so it was defending a bug rather
-than the economics (docs/critical-review.md F1, F2, F5).
+than the economics.
 
 What is tested here instead is the mechanism: that the model's answers do not
 depend on the currency unit, that switching the financing friction off recovers
@@ -95,7 +95,7 @@ def test_optimal_policy_is_unit_invariant():
     """Redenominating the firm -- dollars to cents -- must scale the optimal
     budgets by exactly the same factor and change nothing real. The previous
     cost function failed this, which is what made its convexity result an
-    artifact (docs/critical-review.md F1)."""
+    artifact."""
 
     def solve(k: float) -> float:
         draw = build_shock()
@@ -124,7 +124,7 @@ def test_optimal_policy_is_unit_invariant():
 def test_each_family_responds_to_its_own_effectiveness():
     """The risk taxonomy has to be load-bearing. Previously the three loss
     fields were summed and mitigated uniformly, so the split was decorative
-    (docs/critical-review.md F4). Making one family's GRC more effective should
+   . Making one family's GRC more effective should
     move that family's budget most."""
     draw = build_shock()
     baseline = optimize_policy(build_model(), draw)
@@ -181,7 +181,7 @@ def test_default_parameters_sit_in_the_constrained_regime():
     """The model only has content where the finance constraint binds in some
     states but not all. Permanent insolvency (the old parameterization) and
     permanent slack both make GRC's effect on survival vacuous, and both
-    silently reverse or flatten the headline result (docs/critical-review.md F2)."""
+    silently reverse or flatten the headline result."""
     _frictionless, frictional = run_friction_premium()
     assert 0.05 < frictional.constrained_fraction < 0.95
     assert frictional.value > 0, "a firm worth running should have positive value"

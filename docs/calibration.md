@@ -4,15 +4,14 @@ Every number in this model is illustrative. That is stated honestly throughout,
 and it is also the standing objection to the whole exercise: *if none of the
 parameters are calibrated, why should any of the conclusions be believed?*
 
-This document answers that in three parts. **§1** sorts every parameter by how
-calibratable it actually is, and names a target statistic and a source for each —
-because "uncalibrated" is doing too much work as a single label, and most of
-these have real external anchors that have simply never been used. **§2** lists
-the modelling assumptions that carry the same risk but are not parameters at
-all, which is the more dangerous category because nothing flags them. **§3** is
-the empirical answer: how each headline behaved across four successive
-recalibrations of this model, which is the only direct evidence available about
-which conclusions survive a parameter change and which do not.
+Three parts. **§1** sorts every parameter by how calibratable it actually is,
+with a target statistic and a source for each — "uncalibrated" is doing too much
+work as a single label, and most of these have external anchors that have simply
+never been used. **§2** lists the modelling assumptions that carry the same risk
+but are not parameters at all, the more dangerous category because nothing flags
+them. **§3** is the empirical answer: how each headline behaved across four
+successive recalibrations, which is the only direct evidence available about
+which conclusions survive a parameter change.
 
 The short version of §3: **the shapes held and the levels did not**, and one
 headline reversed outright.
@@ -63,7 +62,7 @@ this firm resembles that population. That argument is the calibration work.
 | `GrcAlphas.credit` / `.operational` / `.compliance` | 1.5 each | no public data links control spend to loss reduction; the firms that hold it do not publish it | **reports a break-even** — the effectiveness a programme must reach to be worth running. This is the whole reason the break-even framing exists |
 | terminal franchise (`PerpetuityValue`) | 20.0 | it is a stand-in for everything past the horizon | partially anchorable via price-to-book of comparable firms; properly fixed by computing continuation value from the model itself |
 | `AnnualRates.annual_return` / `curvature_per_period` | 1.15 / 698 | not independently observable | **jointly** pinned so the firm reproduces a target ROE and a target funding-constraint frequency. Identified as a pair, never separately |
-| `FirmParams.initial_grc_stock` | 0.79 | it is not a free parameter at all | a **fixed point of the whole model** — the level at which optimal maintenance spend replaces depreciation. Must be re-solved after any change that moves optimal spend |
+| `FirmParams.initial_grc_stock` | 1.12 | it is not a free parameter at all | a **fixed point of the whole model** — the level at which optimal maintenance spend replaces depreciation. Depends on the horizon as well as the hazards (0.79 quarterly over two years, 1.12 monthly over five), so `GRC_STEADY_STATE` holds one per configuration and re-solving is mandatory after any change that moves optimal spend |
 | relaxation temperatures | 0.1 | numerical, not economic | chosen by measuring gradient bias against an exact answer |
 | `market_access_*`, `access_*`, `run_capital_*` | — | shape parameters of smooth transitions | chosen for smoothness, not level. Results should not be sensitive to them; that is testable and has not been tested |
 
@@ -134,7 +133,7 @@ claims the earlier columns had marked as stable.
 | GRC as a stock beats GRC as an expense | +268% | +33% | +49% | +31% | **+131%** | **sign held**, and it grows with the horizon |
 | Less destroyed in failure → less spend | — | −41% | −41% | −27% | −11% | **held**, magnitude fading |
 | Firm is risk-averse near failure | — | trace convex | trace convex | none | none | **held, and strengthened** |
-| State feedback beats a fixed policy | — | +0.03% | −0.02% | −0.50% | −0.35%, 1 seed in 5 **failed** | **held: it does not** — and at C4 it does not run |
+| State feedback beats a fixed policy | — | +0.03% | −0.02% | −0.50% | +0.37% vs 0.75% noise | **held: it does not** |
 | Hazard break-even (basis points) | — | 527 | 270 | 243 | 354 | level unstable |
 | Survival vs loss-reduction spend ratio | ~1.3× | ~55× | ~9× | **1.6×** | 1.62× | **reversed**, then finally stable |
 | Cost of ignoring survival (firm value) | 0.3% | 4.9% | 2.1% | 0.5% | 4.0% | level unstable |

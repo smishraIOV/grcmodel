@@ -207,7 +207,7 @@ def test_rollout_is_reproducible():
 
 def test_observation_is_invariant_to_the_currency_unit():
     """Features are divided by initial equity, so redenominating the firm
-    leaves the learner's inputs unchanged (docs/static-model-debug-notes.md
+    leaves the learner's inputs unchanged (docs/quant-model.md appendix
     section 4, one axis over)."""
     base = monte_carlo_env()
     # Every money-valued opening quantity scales together, which is what
@@ -360,7 +360,7 @@ def test_reproduces_the_published_froot_stein_premium():
     assert on.constrained_fraction == pytest.approx(0.520, abs=1e-3)
 
     # The regime check the project requires before trusting any comparative
-    # static: degenerate at 0 or 1 (docs/static-model-debug-notes.md section 6).
+    # static: degenerate at 0 or 1 (docs/quant-model.md appendix A6).
     assert 0.05 < on.constrained_fraction < 0.95
 
 
@@ -594,7 +594,7 @@ def test_hazard_responds_to_equity():
     An exogenous death rate leaves firm value linear in equity, which removes
     the Froot-Stein content entirely and makes the hazard a discount-rate
     adjustment wearing a costume. It is the dynamic form of the
-    deterministic-loss trap in docs/static-model-debug-notes.md section 2, and
+    deterministic-loss trap in docs/quant-model.md appendix A2, and
     just as silent: the model runs, converges, and means nothing.
     """
     equity = REFERENCE.tensor([24.0, 16.0, 8.0, 4.0, 1.0, -2.0])
@@ -615,7 +615,7 @@ def test_hazard_gives_gradient_where_a_barrier_gives_none():
 
 def test_hazard_is_invariant_to_the_currency_unit():
     """The intensity depends on equity only through a ratio, so redenominating
-    the firm must not change it (docs/static-model-debug-notes.md section 4)."""
+    the firm must not change it (docs/quant-model.md appendix A4)."""
     equity = REFERENCE.tensor([8.0, 2.0])
     base = failure_intensity(equity, ZERO_STOCK(equity), 16.0, DEFAULTS.hazard, DEFAULTS.alphas, 4)
     big = REFERENCE.tensor([800.0, 200.0])
@@ -766,7 +766,7 @@ def test_grc_spend_rises_when_it_buys_survival():
 
 def test_default_quarterly_model_sits_in_a_usable_regime():
     """The project's standing requirement, one axis over: check the regime
-    before trusting a comparative static (docs/static-model-debug-notes.md
+    before trusting a comparative static (docs/quant-model.md appendix
     section 6).
 
     Two degenerate regimes flank the useful one and both look like working
@@ -1191,7 +1191,7 @@ def test_impatience_raises_the_payout():
 
 def test_the_model_is_invariant_to_how_often_the_firm_decides():
     """The time-axis counterpart of unit invariance, and the same class of
-    silent bug (docs/static-model-debug-notes.md section 4).
+    silent bug (docs/quant-model.md appendix A4).
 
     The discount, the GRC depreciation and all three hazard rates were already
     annual and divided down correctly. The loss means, the event probabilities,

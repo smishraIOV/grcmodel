@@ -277,7 +277,7 @@ def main() -> None:
         # still operating to generate a gradient for staying, and the solve
         # lands on exactly `orderly_recovery * initial_equity` with survival at
         # zero. That is an optimizer trap and not a valuation
-        # (docs/static-model-debug-notes.md section 8).
+        # (docs/quant-model.md appendix A8).
         # A solve has collapsed if nothing is left operating at the horizon,
         # whatever value it landed on. Matching the wind-down value was too
         # narrow twice over: it missed the value by a fraction of a percent

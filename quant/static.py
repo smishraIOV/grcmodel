@@ -19,7 +19,7 @@ The two results this module reports:
 
 An earlier version of this module swept the financing convexity instead. That
 result did not survive a dimensional correction to the cost function; see
-docs/critical-review.md F1-F2.
+
 
 Every tensor here is built through a NumericsProfile. Before that, these
 constructions carried no `dtype=` at all and so were silently float32, upcast

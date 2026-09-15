@@ -8,7 +8,7 @@ parameter values rather than treating any single answer as a point estimate.
 
 Results are reported across several seeds with a confidence interval. The
 severity distributions are heavy-tailed, so a single-seed answer quoted to four
-decimals overstates what the sample supports (docs/critical-review.md F6).
+decimals overstates what the sample supports.
 
 Sampling follows the rule in quant/numerics.py: uniforms are drawn on CPU in
 float64 and the inverse-CDF transform is applied there, with the cast to the

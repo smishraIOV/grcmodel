@@ -9,7 +9,7 @@ disagreed about the economics.
 Always `softplus`, never `torch.clamp`: clamp's gradient is exactly zero at the
 boundary, so a control initialized at zero -- the natural start for a spend
 level -- never receives a signal to move off it
-(docs/static-model-debug-notes.md section 1).
+(docs/quant-model.md appendix A1).
 """
 
 import math

@@ -104,14 +104,14 @@ def capital_intensity(
 
     The exponent is a ratio over a dimensionless scale, so it stays
     unit-invariant; that was the objection to a power of a money quantity
-    (docs/static-model-debug-notes.md section 4), not to exponentials as such.
+    (docs/quant-model.md appendix A4), not to exponentials as such.
 
     Falling equity raises the intensity smoothly. That dependence is the whole
     point and is asserted in the tests: a hazard that does *not* respond to
     state leaves firm value linear in equity, which removes the Froot-Stein
     content entirely and turns the hazard into a discount-rate adjustment. It
     is the dynamic form of the deterministic-loss trap in
-    docs/static-model-debug-notes.md section 2, and just as silent -- the model
+    docs/quant-model.md appendix A2, and just as silent -- the model
     runs, converges, and means nothing.
     """
     kappa = capital_ratio(equity, reference_equity)
