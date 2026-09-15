@@ -240,6 +240,97 @@ This is unbiased, differentiable in $g_k$, and keeps breaches discrete — which
 matters, because it is the spread those breaches create that the convex premium
 prices.
 
+### Why the model is differentiable at all
+
+Almost nothing here is naturally smooth. A firm either suffers a bridge exploit
+or does not, either survives the quarter or does not, either winds down or does
+not. Every one of those is a step function, and a step function has zero
+gradient almost everywhere and none at the step. **The differentiability is
+engineered, mechanism by mechanism**, and it is what lets the whole project use
+exact gradients instead of sampled ones.
+
+| what is naturally discrete | what the model does instead | cost |
+|---|---|---|
+| **Death** | Not sampled at all. Each path carries the *probability* it is still alive, accumulated in log space; value is an expectation over survival | none — this is strictly better than sampling |
+| **Cliff strike, depositor run** | Straight-through estimator: forward pass is the true hard indicator, backward pass differentiates a tempered sigmoid of the same threshold | the gradient is biased, by a factor the temperature controls |
+| **Compliance breach** | Likelihood-ratio reweighting: draw once at a base probability, reweight each path by $p(g)/p_0$ | unbiased, but the weights multiply along the path so the effective sample size decays |
+| **The wind-down decision** | Relaxed from a binary choice to a probability in $[0,1]$ | **none** — see below |
+| **Non-negative spend and investment** | `softplus`, never `clamp` | a control whose true optimum is exactly zero is only approached asymptotically |
+| **Failing to pay depositors** | Deliberately *not* a second hard death branch. The unmet share feeds a hazard channel that is linear in it | none — arguably the cleanest instance of the pattern |
+
+**Every random draw is reparameterised**, which is the precondition for all of
+the above. Continuous losses are inverse-CDF transforms of a pre-drawn uniform
+($-\mu \ln(1-u)$), and the Bernoullis are thresholds against *fixed* base
+probabilities. So **nothing the policy controls sits inside a sampler** — the
+two probabilities GRC does move are precisely the two whose raw uniforms are
+handed to the dynamics rather than thresholded in the sampler, so that the
+relaxation can see the control.
+
+**Death is the one that matters most.** A sampled death is a step function of
+equity, so a firm that died tells the optimiser nothing about how it might have
+avoided dying. Carrying survival as a probability gives a gradient everywhere:
+measured, $dS/dE$ is non-zero from $\kappa = 1$ down to about $\kappa = -0.5$,
+against exactly zero everywhere under a hard barrier. This is the whole reason
+the barrier was replaced by a hazard.
+
+**A liquidity failure was the last thing that could have become a hard branch,
+and did not.** A firm that cannot pay depositors even after liquidating its
+whole book has plainly failed, and the obvious implementation is a second death
+test. Instead the shortfall stays owed — which drives equity sharply negative
+where the capital hazard already prices it — and the *share* it could not meet
+feeds a hazard channel linear in that share. A discrete failure event converted
+into a smooth intensity.
+
+**Two different devices for the same problem, deliberately.** Reweighting is
+unbiased but its variance compounds along the trajectory; a straight-through
+estimator is biased but its bias does not. Compliance got reweighting when the
+horizon was short. The cliff and the run arrived later and at longer horizons,
+where compounding variance would have been fatal — so they got the estimator
+whose error stays put. Neither device is better; they fail in different
+directions and the horizon decides which failure is affordable.
+
+**The wind-down relaxation is free, which is unusual.** Relaxing a binary
+decision normally costs accuracy. Here firm value is **linear** in the exit
+probability — it is a convex combination of exiting now and carrying on — and a
+linear function on $[0,1]$ attains its maximum at an endpoint. The optimiser
+therefore drives it to 0 or 1 by itself and the relaxed optimum *equals* the
+discrete one. What the relaxation buys is a gradient in between, which an argmax
+would not have.
+
+**Where the gradient is dead anyway.** "Differentiable" is accurate but not
+unqualified, and the quiet regions are known:
+
+- **Limited liability.** Recovery is `clamp(equity, min=0)`, so below zero the
+  term is flat. The only thing still pushing a path away from deep insolvency
+  is the survival probability — which is the job the hazard was brought forward
+  to do.
+- **The capital hazard's exponent is clamped** at 50, so below about
+  $\kappa = -9.6$ the derivative is exactly zero. Deliberate: it keeps a
+  catastrophic path's intensity enormous rather than infinite.
+- **The straight-through sigmoids saturate.** Only paths whose uniform lands
+  within a few tenths of a logit of the threshold carry any gradient at all;
+  elsewhere the tempered sigmoid's derivative underflows to exactly zero. So
+  the "a handful of paths carry the whole gradient" objection raised against
+  reweighting does not fully disappear under the relaxation — what disappears
+  is the *compounding* of that variance along the trajectory, which is the
+  trade actually being made.
+- **A quarter that made no profit has no payout gradient.** Dividends come out
+  of `clamp(gross − equity, min=0)`, so when the firm did not earn, the control
+  is flat. Necessary (without it the payout control is a way to strip the firm)
+  but a dead zone all the same.
+- **The gradient desert.** From a cold start most paths die in the first few
+  periods, and dead paths carry no gradient. Measured, a perfect-information
+  solver started cold converges to 14.4 against a constant policy's 25.4 — not
+  a bound at all. Warm-starting fixes it, and is mandatory for that solver.
+  Counter-intuitively the hazard makes the *cold start* worse, not better — 3.2
+  against 10.5 under a hard barrier — because it kills paths more gently and so
+  kills more of them early. It buys gradient where a sensible policy operates,
+  not where a bad one wanders.
+
+That last one is the honest summary of the limitation: the gradient exists
+wherever a sensible policy actually operates, and goes quiet in the regions a
+badly initialised one wanders into.
+
 ## 4. Objective
 
 At $t_0$ the firm chooses GRC budgets $g_c, g_o, g_k$. At $t_1$ it observes the
