@@ -86,6 +86,18 @@ class CommonRandomNumbers:
 
     Uniforms stay at the profile's `rng_dtype` on CPU: samplers transform them
     at full precision and cast last, per the rule in quant/numerics.py.
+
+    **Changing `batch` changes the scenario set, it does not refine it.** The
+    draw is `(horizon, batch)` filled row-major, so a 4096-path draw and a
+    1024-path draw at the same seed share only the first row's first 1024
+    entries -- the two are effectively disjoint samples, not nested ones.
+
+    That makes any comparison across batch sizes a comparison of *different
+    problems*. It has already produced one wrong published finding: three runs
+    at 1024, 2048 and 4096 paths gave 33.4, 11.2 and 1.1, which was written up
+    as a monotone batch-size effect and was three draws of a lottery. Holding
+    the batch fixed and varying the seed is the comparison that isolates
+    anything; varying the batch is only a statement about cost.
     """
 
     def __init__(

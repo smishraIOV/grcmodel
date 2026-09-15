@@ -316,19 +316,25 @@ unit has nowhere left to go. The same control has now given four different
 answers across four configurations, and what changes each time is not the firm's
 patience but what a retained unit is *for*.
 
-**The learner does not survive this horizon, and the reason is not what it
-looked like.** The state-feedback policy fails in two distinct ways, and the
-failure gets *worse* with more sample paths: at 1024 it trains fine and beats
-the fixed policy; at 2048 it winds the firm down immediately; at 4096 it drives
-it to death on every path. Sampling noise would improve with more paths, so this
-is a bug rather than variance, and it is not yet explained. Removing the exit
-action prevents one failure without restoring performance.
+**The learner sometimes destroys itself at this horizon, and it is a gradient
+explosion out of a converged state.** One run in six: training converges
+normally for 500 steps with the gradient norm *falling* the whole way, then the
+norm jumps 35× in a single step and the policy is worthless eight steps later.
+No NaN is involved. Gradient clipping prevents it completely and costs nothing —
+the clipped run matches the seeds that never failed.
 
-That also settles what *not* to do next. The obvious reach is the parked
+**An earlier version of this report blamed the sample count**, saying the
+failure got worse with more paths. That was wrong and is withdrawn: changing the
+path count silently changes the *scenario set*, so those were three different
+problems rather than one problem at three resolutions. Holding the batch fixed
+and varying the seed shows an ordinary lottery, not a trend.
+
+It also settles what *not* to do next. The obvious reach is the parked
 truncated-BPTT critic (§4), since a critic is the standard remedy for long
-horizons — but gradient pathology over a long chain would not depend on batch
-size, and a critic is by that experiment's own verdict the thing that makes an
-absorbing-exit trap worse. Both symptoms point away from it. Find the bug first.
+horizons. But a critic addresses pathology accumulated along a long chain, and
+what happens here is a single step off a cliff from an otherwise healthy
+trajectory, caught by a one-line clip. Fix the cliff before changing the
+algorithm.
 
 **As an effectiveness threshold**, a compliance programme pays if a unit of
 spend removes about 12% of exposure, where pure loss-reduction arithmetic

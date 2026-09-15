@@ -509,34 +509,54 @@ which is why survival is zero. The exit action is absorbing, so once the
 probability mass has left there is nothing still operating to generate a
 gradient for staying ([debug notes §8](static-model-debug-notes.md)).
 
-**At five years the neural policy fails, in two distinct ways, and the failure
-gets worse with more paths.** Holding everything else fixed and varying only the
-batch:
+**At five years the neural policy sometimes destroys itself, and it is a
+gradient explosion out of a converged state.**
 
-| paths | value | survives | exit rate | what happened |
+An earlier version of this section reported the failure as a *batch-size* effect
+— 33.4 at 1024 paths, 11.2 at 2048, 1.1 at 4096, "monotone in the batch, which
+rules out bad luck". **That was wrong and is withdrawn.**
+`CommonRandomNumbers` draws `(horizon, batch)` row-major, so changing the batch
+changes the *scenario set*: those were three different problems, not one problem
+at three resolutions, and three points of a trimodal outcome is not a trend.
+
+Holding the batch fixed and varying the seed, which is the comparison that
+actually isolates anything:
+
+| paths | seed | final | peak ‖∇‖ | survives |
 |---|---|---|---|---|
-| 1024 | 33.37 | 84.6% | 0.0% | trains fine, beats the constant policy |
-| 2048 | 11.20 | 0.0% | 100.0% | winds down immediately |
-| 4096 | 1.12 | 0.0% | 0.0% | drives the firm to death on every path |
+| 1024 | 0, 1, 2 | 33.13, 33.91, 33.28 | ~81 | 85–87% |
+| 4096 | 0 | **0.77** | **2.7 × 10⁵** | **0%** |
+| 4096 | 1, 2 | 33.47, 33.53 | ~81 | 86–87% |
 
-**Monotone in the batch size, which rules out bad luck.** Sampling noise would
-improve with more paths, not degrade; the objective is a weighted mean and
-should be batch-invariant. Something in the training loop is not, and it is not
-yet known what. The constant policy on the same draws is untroubled (±0.222
-across seeds), so this is the learner rather than the problem.
+**It is a seed lottery — one draw in six here — and the peak gradient norm is
+what separates them**, by three orders of magnitude.
 
-Removing the exit action prevents the wind-down variant but does not restore
-performance — 17.34 against the constant policy's 33.29 on the same draw. So
-the absorbing action is the *sink* the failure drains into rather than its
-cause.
+Instrumenting the failing run shows the mechanism exactly. Training converges
+normally for 500 steps, with the gradient norm *decaying* the whole way: value
+32.97 and ‖∇‖ 0.64 at step 500. Then at step 506 the norm jumps 35× in a single
+step and the policy destroys itself in eight more:
 
-**This is a bug-shaped finding, not an algorithm-choice one**, and it is the
-reason the truncated-BPTT critic has not simply been reached for. A critic is
-the remedy for gradient pathology over a long chain, which would be
-batch-invariant. It is also, by that experiment's own verdict, the thing that
-makes the absorbing-exit trap *worse*. Both of the failures seen here point away
-from it. The learner numbers at this horizon should not be relied on until the
-batch-size dependence is explained.
+| step | 500 | 506 | 509 | 512 | 514 | 599 |
+|---|---|---|---|---|---|---|
+| value | 32.97 | 31.17 | 23.49 | 10.50 | 1.51 | 0.77 |
+| ‖∇‖ | 0.64 | 21.9 | 67.5 | 173.1 | 22.5 | 2.33 |
+
+**No NaN is ever produced** — every parameter gradient is finite at every step,
+which rules out the unguarded `logit(0)` in `cliff_loss` as the cause. The
+effective sample size is 0.47–0.50 on healthy runs, which exonerates the
+self-normalised weights in `path_weights` — the only place paths couple.
+
+So a converged policy walks off a cliff in the objective. **Gradient clipping at
+norm 2.0 prevents it completely and costs nothing**: 33.46 on the failing seed,
+against 33.47 and 33.53 on the seeds that never failed. A smaller learning rate
+also prevents it but converges to less (28.2). Neither is applied yet.
+
+**This remains a bug-shaped finding rather than an algorithm-choice one**, and
+it is why the truncated-BPTT critic has not been reached for. A critic addresses
+gradient pathology accumulated along a long chain; what happens here is a single
+step off a cliff from an otherwise healthy trajectory, and a one-line clip
+catches it. The learner numbers below were produced without that clip and should
+not be relied on.
 
 The detection threshold had to be made *relative*, having missed this twice on
 the third decimal place: the collapsed value is not exactly

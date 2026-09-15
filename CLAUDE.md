@@ -84,6 +84,13 @@ profile, torch version and commit it ran under.
   opening six times above its new steady state; it spent the horizon running the
   stock down and reported a budget 78% lower, which read as a headline finding
   and was an artifact. Re-solved, the fall was 5%.
+- **Never compare across `batch` sizes and call it a refinement.**
+  `CommonRandomNumbers` draws `(horizon, batch)` row-major, so changing the
+  batch changes the *scenario set* rather than sampling the same one more
+  finely. Three runs at 1024/2048/4096 paths were written up as a monotone
+  batch-size effect and were three draws of a lottery — at a fixed batch,
+  varying the seed, two of three succeed. Vary the seed to isolate anything;
+  vary the batch only to talk about cost.
 - **`optimize_constant`'s step budget has to reach the answer.** The control
   starts at `softplus(0)` and Adam moves the raw parameter by at most `lr` per
   step, so 1500 steps at lr 0.05 cannot reach an investment level near 80 —

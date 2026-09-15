@@ -104,6 +104,28 @@ def train_pathwise(
     policy = NeuralPolicy(env, hidden=hidden)
     optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
 
+    # **This loop has no gradient clipping, and measurably needs one.** At the
+    # five-year horizon roughly one run in six destroys itself: training
+    # converges normally for ~500 steps with the gradient norm *falling* the
+    # whole way (value 32.97, norm 0.64 at step 500), then the norm jumps 35x in
+    # a single step and the policy is worthless eight steps later. Peak norm on
+    # a failing run is 2.7e5 against ~81 on a healthy one -- three orders of
+    # magnitude, and the cleanest signal available for detecting it.
+    #
+    # No NaN is involved; every parameter gradient stays finite throughout. It
+    # is a converged policy stepping off a cliff in the objective, not an
+    # accumulation of pathology along the chain -- which is why the truncated
+    # BPTT critic on `svg-critic` is not the remedy for it.
+    #
+    # Measured fixes, none applied yet: `clip_grad_norm_` at 2.0 prevents it
+    # completely and costs nothing (33.46 on the failing seed against 33.47 and
+    # 33.53 on seeds that never failed); lr 1e-3 also prevents it but converges
+    # to 28.2. Deliberately left undone so the choice is made explicitly --
+    # every learner figure in docs/ was produced without it.
+    #
+    # Note also that this is the only solver in the repo with a **cold start**.
+    # `perfect_information_bound` warm-starts from the constant policy and its
+    # docstring calls that mandatory once the barrier is on.
     history = []
     for step in range(n_steps):
         optimizer.zero_grad()
