@@ -194,7 +194,7 @@ w_{t+1} =
 + \underbrace{\alpha_t(\pi + s_N\,\xi_N)}_{\text{new product}}
 + \underbrace{(I_t\,b_M - H_t)\,\varepsilon_M - h(H_t)}_{\text{tradeable, hedged}}
 - \tau K_t
-- (1 + r_D)\,D + D
+- (1 + r_D)\,D
 $$
 
 - $\ell_t = \phi_A(G_{t+1})\,m + \phi_B(G_{t+1})\,s_P\,\xi_P$ is the book's
@@ -205,8 +205,11 @@ $$
   the factor is fairly tradeable.
 - $\tau K_t$ is the deadweight cost of carrying equity, the paper's $\tau K$
   charged every period.
-- Depositors are paid $(1+r_D)D$ and re-deposit $D$. Interest is senior to
-  everything the shareholders receive.
+- Depositors are owed $(1+r_D)D$ at the close, so $w_{t+1}$ is assets less
+  that. The base is rolled over: the re-deposited $D$ arrives as cash next
+  period through $R_{t+1}$. Adding it back here as well would count it twice;
+  an earlier draft did. Interest is senior to everything the shareholders
+  receive.
 
 **Walk-away.** At the start of any period, shareholders may abandon the firm
 and receive 0. Depositors then receive the assets and bear the shortfall,

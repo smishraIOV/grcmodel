@@ -32,23 +32,16 @@ Three rules this module exists to enforce:
    vs non-fused Adam, MPS reduction order), so every entry point prints
    `fingerprint()` in its header.
 
-Which profile for which workload, per docs/quant-model.md section 5:
+Which profile for which workload:
 
-    analytic oracles, published tables    REFERENCE
-    perfect-information bound             REFERENCE (CPU_FAST at scale)
-    grid / fitted value iteration         FAST
-    RL rollouts and critic training       FAST
-    threshold / sensitivity studies       CPU_FAST
+    analytic oracles, anything quoted in docs/   REFERENCE
+    grid value iteration at scale                FAST, once measured to pay
+    learner rollouts                             FAST
 
-The crossover is measured, not assumed -- run scripts/bench_profiles.py to
-re-measure on other hardware. On an M4 Pro under torch 2.14 the shape is: MPS
-carries a fixed dispatch cost of roughly 160 microseconds per optimizer step
-that does not shrink with the batch, while CPU cost grows with it. So the
-accelerator loses on small batches by a constant and wins on large ones by a
-widening margin, crossing over around 4k elements for elementwise path work
-and around 1k once a small network is in the loop. quant/static.py runs at
-n=4 and quant/simulate.py at n=8192; the dynamic model's rollouts and grid
-sweeps sit orders of magnitude above both.
+The crossover was measured on the old model (M4 Pro, torch 2.14): MPS carries
+a fixed dispatch cost of roughly 160 microseconds per step, so it loses on
+small batches by a constant and wins on large ones, crossing over around 4k
+elements. Re-measure for the new solver rather than trusting that number.
 
 Measure warm, not cold. MPS pays a one-off compilation cost on first launch,
 tens of milliseconds, and timing a few hundred steps without discarding it is

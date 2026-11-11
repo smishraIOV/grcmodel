@@ -2,8 +2,8 @@
 
 Every number this repo prints is conditional on a NumericsProfile, a torch
 version and a commit. Printing that line costs nothing and removes a whole
-class of "why doesn't this reproduce" — docs/quant-model.md requires quoted
-numbers to come from a real run, and this is what identifies the run.
+class of "why doesn't this reproduce" — numbers quoted in docs/ must come
+from a real run, and this is what identifies the run.
 """
 
 import argparse
