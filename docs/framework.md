@@ -81,4 +81,5 @@ Rejected alternatives:
 - *Risk-adjusted return target (Sharpe-like)* — belongs to the
   investment-manager layer, where the decision is strategy selection.
 
-This definition is what `quant-model.md`'s objective function maximizes.
+This definition is what the model's objective function maximizes; it is stated
+formally in [`model-spec.md`](model-spec.md) §8.

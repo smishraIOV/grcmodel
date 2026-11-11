@@ -1,33 +1,49 @@
 # GRC
 
-A framework and a quantitative model for **G**overnance, **R**isk and
-**C**ompliance — the function that sets risk limits, runs controls and keeps a
-firm on the right side of its regulators. GRC is normally treated as a cost
-centre. The thesis here is that GRC done well **increases firm value**, and that
+A quantitative model for **G**overnance, **R**isk and **C**ompliance. 
+GRC is normally treated as a cost centre. The thesis here is that GRC (done well) **increases firm value**, and 
 this can be made quantitative rather than asserted.
 
-The academic anchor is Froot and Stein: even a firm indifferent to risk in
-principle will pay to manage it, if losing money in bad states stops it from
-funding good investments. Risk management is then not insurance — it is
-protection of the firm's capacity to keep operating.
 
-The firm modelled is a **financial intermediary on crypto rails**: it takes
-deposits into vaults, lends and invests them, and runs the tokenized
-infrastructure those assets live on. It carries the full set of banking risks —
-credit is the largest single loss channel at 62% of expected loss — plus a
-second family the rails add: operational incidents at 16%, cliff events such as
-a drained bridge at 13%, compliance penalties at 9%. The claim is not that the
-novel risks displace the textbook ones, but that a firm of this shape faces
-both and has to budget a programme against both.
+## Academic Roots
 
-> **A note on units.** Money here has no denomination. Opening capital is 16 and
-> every other quantity — a book of 77, a programme costing 0.95, a franchise of
+Even a risk-neutral firm will pay to manage risks,
+if losing money in bad states stops it from funding good investments. Risk management is then not insurance or reducing volatlity — it is protection of the firm's capacity to keep investing and operating.
+
+1. Risk Management: Coordinating Corporate Investment and Financing Policies (1993).
+Kenneth A. Froot, David S. Scharfstein, Jeremy C. Stein, [The Journal of Finance, 48(5)](https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1993.tb05123.x).
+
+2. Risk Management, Capital Budgeting, and Capital Structure Policy for Financial Institutions: An Integrated Approach (1998). Kenneth A. Froot, Jeremy C. Stein, [Journal of Financial Economics, 47(1)](https://www.sciencedirect.com/science/article/pii/S0304405X97000378?via%3Dihub).
+
+Financial institutions should evaluate investments not just by their market risk, but also by how they interact with the institution's existing portfolio of **unhedgeable risks** and its scarce capital. The paper develops an integrated framework linking risk management, capital allocation, and investment decisions, including a comparison with RAROC. 
+
+
+## Model
+The firm is modelled as a **financial intermediary on crypto rails**: it takes
+deposits into vaults, and invests them. It runs the tokenized
+infrastructure those assets live on. 
+
+It carries the usual set of banking risks 
+— credit is the largest single loss channel at 62% of expected loss.
+
+A second family the rails add: 
+- operational incidents at 16%
+- cliff events such as a drained bridge at 13%
+- and compliance penalties at 9% 
+
+A firm of this shape has to budget a GRC program against both.
+
+Todo: no units, ok. But these numbers seem out of place at the moment.
+> **Note on units.** Money here has no specific denomination. Opening capital is 16 and
+> every other quantity — a book of 77, a program costing 0.95, a franchise of
 > 26.93 — is in the same arbitrary currency. Only ratios carry meaning, which is
 > deliberate: the cost functions are built so the answer cannot depend on
 > whether the firm is denominated in dollars or cents. Bare numbers are not
 > percentages.
 
 ## Running it
+Todo: This section is very abrupt. Need to say where we are going with this. None of this makes sense now. 
+Selective code references can appear later. Maybe remove or crop leaving only the most relevant?
 
 ```bash
 uv run python scripts/run_dynamic_model.py  # the multi-period model -- start here
@@ -37,18 +53,8 @@ uv run python scripts/run_static_model.py   # the original two-period model
 uv run python -m quant.simulate             # Monte Carlo, reported across seeds
 uv run python scripts/bench_profiles.py     # where the accelerator starts paying
 uv run python scripts/solve_steady_state.py # the opening GRC stock a config supports
-uv run pytest                               # 142 tests, about four and a half minutes
+uv run pytest                               # 142 tests 
 ```
-
-`solve_steady_state.py` is maintenance rather than a result. `initial_grc_stock`
-is a fixed point of the whole model, so any change to a hazard, a loss channel
-or the horizon invalidates it — and a stale value does not error, it produces a
-firm that spends the horizon running down controls it would never have built.
-Re-solve before quoting a budget.
-
-Each entry point takes `--profile {reference,cpu-fast,fast}` and prints the
-profile, torch version and commit it ran under. Numbers quoted in `docs/` come
-from `reference`.
 
 ## Where it started, and where it is
 
@@ -57,43 +63,42 @@ structure, and the smallest model in which risk management can add value at
 all: one period in which risk is borne, one in which the investment opportunity
 arrives.
 
-> With external finance free the firm spends 0.77 on GRC. Facing convex
-> financing costs the same firm spends 2.56. The gap is the Froot-Stein
-> premium — risk management that pays for itself only because capital is
-> expensive to raise in bad states.
-
-Real but limited in three ways that turned out to matter: the firm could not
-die, nothing accumulated, and the convex financing cost was a stand-in for
-something never represented.
+Real but limited in some ways: the firm could not die, nothing is accumulated, 
+and the convex financing cost is just an abstraction.
 
 **The model is now multi-period, and the firm can die.** It decides **monthly
 over five years**: how much to spend on GRC across three families, how much
-capital to deploy, how much to distribute, and whether to wind down. It funds a
-book near 77 with 16 of capital and a deposit base about four times that, so
+capital to deploy, how much to distribute, and whether to wind down. 
+
+Todo: The following details feel out of place.
+It funds a book near 77 with 16 of capital and a deposit base about four times that, so
 leverage near 4.9 means a loss of one percent of assets is a loss of five
 percent of capital. Deposits persist, pay interest whether or not the book
 earns, and shrink with the capital that carries them — so this period's losses
 bind *next* period's lending.
 
-It fails through three channels whose intensities add: **capital** (equity
-thins to insolvency), **liquidity** (asked for deposits it cannot pay, even
-after selling its book at a 35% discount), and **licence** (a breach escalates
-to revocation). Against these it holds two defences and uses both: a GRC stock
-that depreciates at 25% a year, and reserves — currently 22% of the balance
-sheet. Annual probability of failure: 3.0%.
+It fails through three channels whose intensities add: 
+- **capital** (equity thins to insolvency)
+-  **liquidity** (asked for deposits it cannot pay, even
+after selling its book at a 35% discount), 
+- and **licence** (a breach escalates to revocation). 
+
+Todo: following detail also feels out of place. No coherent narrative here yet in this readme. Rethink what we want to present. Focus on getting the model mechanics to be credible and testable first. The narrative can be presented later. 
+Against these it holds two defences and uses both: a GRC stock that depreciates at 25% a year, and reserves — currently 22% of the balance sheet. Annual probability of failure: 3.0%.
 
 ## What it says
 
 **The headline has no uncalibrated effectiveness parameter in it:**
 
-> A programme costing 0.95 a year, against a business worth 26.93 as a going
+Todo: remove this ..  not making sense. not credible
+> A program costing 0.95 a year, against a business worth 26.93 as a going
 > concern, must cut the annual probability of failure by at least **354 basis
 > points** to pay for itself.
 
 Both inputs are things a board already has a view on. As an effectiveness
-threshold, a compliance programme pays if a unit of spend removes about **11% of
+threshold, a compliance program pays if a unit of spend removes about **11% of
 its exposure**, where pure loss-reduction arithmetic would need it to remove
-essentially all of it — which no programme does. That gap is the Froot-Stein
+essentially all of it — which no program does. That gap is the Froot-Stein
 premium, expressed as something a risk owner can disagree with.
 
 - **Accumulation matters more than the annual number.** Treating GRC as a stock
@@ -113,7 +118,7 @@ premium, expressed as something a risk owner can disagree with.
   About three times as much at equity 8–16 as at 4 or 64, on every seed. The
   argmax landed at 32, 8 and 8 on three draws of the same experiment; anyone
   quoting an optimal capitalisation from a single run is quoting the draw.
-- **A cheaper failure buys a smaller programme.** Spend falls 11% as recovery in
+- **A cheaper failure buys a smaller program.** Spend falls 11% as recovery in
   failure rises from nothing to 80%.
 - **State feedback does not beat a fixed budget.** +0.37% against seed noise of
   0.75%; the learner converges to within 0.05% of an optimised constant policy.
@@ -132,7 +137,7 @@ was retired. [`docs/calibration.md`](docs/calibration.md) sorts every parameter
 by how calibratable it is and names a source for each.
 
 Parameters are illustrative and uncalibrated, which is why the outputs are
-break-evens — the effectiveness a programme must reach to be worth running —
+break-evens — the effectiveness a program must reach to be worth running —
 rather than spend recommendations.
 
 ## What is unresolved
@@ -201,6 +206,7 @@ them a test rather than a confound.
 
 ## See also
 
+* [`docs/model-spec.md`](docs/model-spec.md) — **the specification**: every symbol, the within-period timing, each mechanism, and what is deliberately not modelled. History-free, and checked against the code by `tests/test_spec.py`
 * [`docs/framework.md`](docs/framework.md) — GRC pillars, risk taxonomy, operating environment, and the firm-value definition this project uses
 * [`docs/quant-model.md`](docs/quant-model.md) — the model specification (state, controls, frictions, objective), the current results, and an appendix of derivations and the traps each one guards against
 * [`docs/calibration.md`](docs/calibration.md) — every parameter, sorted by how calibratable it is, with a source named for each

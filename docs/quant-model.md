@@ -4,6 +4,14 @@ This document turns `readme.md`'s aspirational goal into an explicit formulation
 and records what is actually built. It builds on the choices in
 [`framework.md`](framework.md) — in particular the firm-value definition in its §3.
 
+> **For the current model, read [`model-spec.md`](model-spec.md) instead.** That
+> document is history-free, defines every symbol before using it, and is checked
+> against the code by `tests/test_spec.py`. **This** document is the results and
+> the history: what the model has said, what it used to say, and why each claim
+> changed. Where §1–§4 below and the specification disagree about a definition,
+> the specification is right — those sections predate it and are due to be cut
+> back to pointers.
+
 ## 1. State variables
 
 | state | symbol | implemented? |
@@ -49,6 +57,9 @@ $$
 \qquad \varsigma(E) = \text{sigmoid}\!\left(\frac{E/E_0 - \kappa_{\text{mkt}}}{s}\right),
 \qquad D_{t+1} = D_t + \theta\,\big(\bar{D}(E_{t+1}) - D_t\big)
 $$
+
+todo: $\lambda, \theta, s, \kappa$,  have not been defined yet?
+todo: this quant model is very hard to follow. Complicated.
 
 Three things follow, and none of them were expressible before.
 
@@ -152,6 +163,8 @@ $$
 P(e) = \sigma\, K \left( \frac{e}{K} \right)^{\gamma}
 $$
 
+todo: are we using this in the mainline model?
+
 where $\gamma$ is the financing convexity and $\sigma$ a switch that turns the
 friction off ($\sigma = 0$) or on ($\sigma = 1$) — which is how the Froot-Stein
 premium in §6 is measured.
@@ -184,6 +197,9 @@ redundant with the capital channel: the shortfall also lands on equity and is
 priced there, but **insolvency and illiquidity are different failures**, and a
 firm can be solvent and unable to pay. That distinction is the whole reason to
 model a run.
+
+todo: some of this stuff seems out of place and ad hoc. Need a clearer description of 
+the main model. 
 
 **The operational channel is retired, and that is a replacement rather than a
 deletion.** It asserted three things in one parameter: that an incident becomes
