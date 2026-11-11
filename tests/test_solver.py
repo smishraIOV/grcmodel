@@ -98,6 +98,6 @@ def test_costly_equity_holds_only_the_floor(base_solution):
 
 
 def test_answer_does_not_depend_on_the_step_budget(base_solution):
-    """Doubling the inner optimiser's steps must not move the value."""
+    """Doubling the inner optimizer's steps must not move the value."""
     longer = solve(BASE, P, SPEC, improve_steps=80, first_improve_steps=800)
     assert float((longer.V - base_solution.V).abs().max()) < 1e-3

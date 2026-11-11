@@ -56,8 +56,8 @@ class Params:
     delta: float = 0.25      # share of the GRC stock lost per period
     a_A: float = 50.0        # effectiveness against the mean loss, per unit of stock
     a_B: float = 50.0        # effectiveness against the spread
-    rho_A: float = 0.3       # share of the mean loss no programme removes
-    rho_B: float = 0.3       # share of the spread no programme removes
+    rho_A: float = 0.3       # share of the mean loss no program removes
+    rho_B: float = 0.3       # share of the spread no program removes
 
     def __post_init__(self):
         if not self.A > 1.0 + self.r:

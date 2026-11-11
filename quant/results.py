@@ -13,7 +13,7 @@ only:
 
 the required return per unit of variance for scaling up the bank's own risk.
 Under normal shocks Stein's lemma makes this exactly -E[V_ww] / E[V_w]; under
-the Student-t it is the natural generalisation. The same construction gives
+the Student-t it is the natural generalization. The same construction gives
 the **hurdle** for a small new position with payoff shock eps:
 
     hurdle(eps) = -E[V_w(w') eps] / E[V_w(w')]
@@ -61,9 +61,9 @@ def risk_map(sol: Solution) -> RiskMap:
     w_next, slope = _next_period(sol)
     E = rule.expect
     shadow = E(slope)
-    centred = w_next - E(w_next).unsqueeze(-1)
-    variance = E(centred * centred)
-    G = -E(slope * centred) / (shadow * torch.clamp(variance, min=1e-300))
+    centered = w_next - E(w_next).unsqueeze(-1)
+    variance = E(centered * centered)
+    G = -E(slope * centered) / (shadow * torch.clamp(variance, min=1e-300))
     xi_P, xi_N = rule.nodes[:, 0], rule.nodes[:, 1]
     hurdle_N = -E(slope * (p.s_N * xi_N)) / shadow
     hurdle_P = -E(slope * (p.s_P * xi_P)) / shadow
@@ -72,7 +72,7 @@ def risk_map(sol: Solution) -> RiskMap:
 
 @dataclass(frozen=True)
 class Thresholds:
-    """Per GRC grid level: where the bank stops recapitalising and starts paying out."""
+    """Per GRC grid level: where the bank stops recapitalizing and starts paying out."""
 
     walk_away: torch.Tensor  # highest w at which V = 0 (nan if none on the grid)
     payout: torch.Tensor     # lowest w at which K < w, i.e. a dividend is paid
@@ -114,7 +114,7 @@ class GrcValue:
 
     Each row is a separate solve with GRC allowed to act through some
     mechanisms and not others. Values are V at one equity level and zero GRC
-    stock -- a bank deciding whether to start a programme.
+    stock -- a bank deciding whether to start a program.
     """
 
     none: float          # GRC does nothing

@@ -78,7 +78,7 @@ def final_objective(p: Params, w: torch.Tensor, I: torch.Tensor) -> torch.Tensor
 def final_value(
     p: Params, w: torch.Tensor, walk_away: bool = False, iterations: int = 120
 ) -> torch.Tensor:
-    """P(w): the last period's value, maximised over I in [0, 1] by golden section.
+    """P(w): the last period's value, maximized over I in [0, 1] by golden section.
 
     The first-best book is 1 by the choice of units, and every friction only
     lowers it, so [0, 1] brackets the optimum. 120 iterations shrink the bracket
@@ -174,7 +174,7 @@ def first_period_wealth(
 def optimal_positions(
     p: Params, rule: ShockRule, profile: NumericsProfile, fixed: FirstPeriod
 ) -> tuple[float, float]:
-    """(alpha*, H*) maximising E[P(w')], found numerically.
+    """(alpha*, H*) maximizing E[P(w')], found numerically.
 
     Knows nothing about eq. (9) or Prop. 2. E[P(w')] is concave in (alpha, H)
     because P is concave and w' is linear in both, so L-BFGS-B from any start
@@ -235,7 +235,7 @@ def oracle_params(**overrides) -> Params:
     D >= 1 - k makes the capital ratio, not the cash constraint, the binding
     floor at every book up to the first-best, so the floor has no kink in
     range. A heavy mean loss in the first period (m = 0.1) leaves the bank
-    thinly capitalised, so with small shocks every quadrature node lands below
+    thinly capitalized, so with small shocks every quadrature node lands below
     the issuance threshold. P is then one quadratic over every node and
     Gauss-Hermite integrates it exactly. `pi` is set so alpha* is interior.
 

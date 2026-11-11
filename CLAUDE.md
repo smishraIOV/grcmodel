@@ -19,7 +19,7 @@ to be merged back.
   of what they will cost. Do not turn a simple question into a task.
 - Short replies by default. Detail on request.
 - **Abstraction level:** keep the paper's core economic drivers, at the level
-  of detail where the problem solves computationally as an optimisation. Do not
+  of detail where the problem solves computationally as an optimization. Do not
   chase every detail of the paper.
 - **Stages need approval.** `docs/design.md` §6 lists v0–v3; each starts only
   when agreed.
@@ -87,10 +87,13 @@ print the profile, torch version and commit they ran under.
   learner is involved.
 - **A script with no test importing it can be broken for days.** Keep every
   entry point imported by a test.
-- **An optimiser's step budget has to reach the answer.** A result that moves
-  when the budget is raised was measuring the optimiser.
+- **An optimizer's step budget has to reach the answer.** A result that moves
+  when the budget is raised was measuring the optimizer.
 
 ## Documentation
+
+- **US spelling throughout** — docs, docstrings, comments and identifiers:
+  program, optimize, capitalize, behavior, modeling, license (noun and verb).
 
 - Functions carry a pointer to the design section they implement. Keep both
   ends in sync when either moves.

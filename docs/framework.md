@@ -42,13 +42,13 @@ quantitative model's constraint set.
 The three families are not interchangeable buckets of expected loss, and GRC
 spend does not act on them the same way: better underwriting shifts the **mean** of credit
 losses, security and operational controls contain the **severity** of an incident
-without preventing it, and a compliance programme reduces the **probability** of
-a breach without softening the penalty once one lands. Compliance is modelled as
-rare but severe, because what is at stake is licence to operate rather than a
+without preventing it, and a compliance program reduces the **probability** of
+a breach without softening the penalty once one lands. Compliance is modeled as
+rare but severe, because what is at stake is license to operate rather than a
 proportional fine — that asymmetry is what makes the family worth separating at
 all. See [`quant-model.md`](quant-model.md) §3.
 
-**Open:** risks that resist explicit modelling need a generic home in the
+**Open:** risks that resist explicit modeling need a generic home in the
 quantitative model. Nothing currently plays that role.
 
 ## 2. Structural map of the operating environment

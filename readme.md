@@ -1,7 +1,7 @@
 # GRC
 
 A quantitative model for **G**overnance, **R**isk and **C**ompliance. 
-GRC is normally treated as a cost centre. The thesis here is that GRC (done well) **increases firm value**, and 
+GRC is normally treated as a cost center. The thesis here is that GRC (done well) **increases firm value**, and 
 this can be made quantitative rather than asserted.
 
 
@@ -19,7 +19,7 @@ Financial institutions should evaluate investments not just by their market risk
 
 
 ## Model
-The firm is modelled as a **financial intermediary on crypto rails**: it takes
+The firm is modeled as a **financial intermediary on crypto rails**: it takes
 deposits into vaults, and invests them. It runs the tokenized
 infrastructure those assets live on. 
 

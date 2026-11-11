@@ -12,14 +12,14 @@ Two nested rules:
 - **The mixing scale `v`** uses Gauss-Legendre in log-probability space: nodes
   are placed by the CDF of W, with the grid uniform in log u, so points
   crowd into the small-W tail where the large shocks live. The plain
-  generalised Gauss-Laguerre rule was measured first and badly understates the
+  generalized Gauss-Laguerre rule was measured first and badly understates the
   tail: at nu = 5 it reaches a kurtosis of 7.3 against a true 9 with 64 points.
   This rule reaches 8.8 with 12. The remainder is the probability mass beyond
-  `tail` (1e-10), dropped and renormalised.
+  `tail` (1e-10), dropped and renormalized.
 - **The normal part** is a tensor-product Gauss-Hermite rule, correlated by a
   Cholesky factor.
 
-`v` is renormalised so that the rule's variance is exactly one. Second moments
+`v` is renormalized so that the rule's variance is exactly one. Second moments
 are therefore exact whatever the node count; what the node count buys is the
 tail.
 

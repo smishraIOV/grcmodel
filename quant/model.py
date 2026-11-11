@@ -1,6 +1,6 @@
 """The v0 bank, one period: primitives and the transition (design.md section 3).
 
-Everything here is element-wise and branch-free, so it vectorises over grid
+Everything here is element-wise and branch-free, so it vectorizes over grid
 points, controls and quadrature nodes at once, and stays differentiable for
 the later learner. Shapes broadcast: controls carry a leading batch shape,
 shocks a trailing node axis.
@@ -52,7 +52,7 @@ def issuance_cost(p: Params, e: torch.Tensor) -> torch.Tensor:
 def mitigation(G: torch.Tensor, a: float, rho: float) -> torch.Tensor:
     """Share of an exposure left after a GRC stock G: rho + (1 - rho) exp(-a G).
 
-    `rho` is the irreducible floor no programme removes (design.md section 3.4).
+    `rho` is the irreducible floor no program removes (design.md section 3.4).
     """
     return rho + (1.0 - rho) * torch.exp(-a * G)
 

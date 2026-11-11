@@ -58,7 +58,7 @@ def test_final_value_curvature_matches_closed_form():
 
 
 def test_tradeable_risk_is_fully_hedged(oracle):
-    """Prop. 2: H* = b_M I, found by an optimiser that does not know it."""
+    """Prop. 2: H* = b_M I, found by an optimizer that does not know it."""
     p, _, _, H = oracle
     assert H == pytest.approx(p.b_M * ORACLE_FIRST_PERIOD.I, rel=1e-5)
 

@@ -54,7 +54,7 @@ def main(argv=None):
     print(f"\ntarget GRC stock: {target_stock(sol):.4f}")
 
     gv = grc_value(PARAMS, profile, SPEC)
-    print("\nGRC value at w = 0.1, starting from no programme")
+    print("\nGRC value at w = 0.1, starting from no program")
     print(f"  no GRC                  {gv.none:.5f}")
     print(f"  expected loss only (A)  {gv.mean_only:.5f}   target stock {gv.stock_mean_only:.4f}")
     print(f"  spread only (B)         {gv.spread_only:.5f}")

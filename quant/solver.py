@@ -27,7 +27,7 @@ Off the grid:
 - below `w_lo`, the bank issues equity to get back onto the grid (see
   `interpolate`). `Solution` reports whether `w_lo` is in the walk-away region.
 
-**The inner maximisation** is gradient ascent (Adam) on unconstrained raw
+**The inner maximization** is gradient ascent (Adam) on unconstrained raw
 controls, for every grid point at once. The controls are mapped so every
 constraint holds by construction:
 
@@ -241,7 +241,7 @@ class RisklessSteadyState:
         V(w_ss) = (w_ss - K*) / (1 - beta),    V(w) = w - K* + beta V(w_ss)
 
     for any w >= K*. Holding equity above the floor is never worth it: a unit
-    costs 1 now and returns beta (1 + r - tau) < 1. I* maximises
+    costs 1 now and returns beta (1 + r - tau) < 1. I* maximizes
     -L(I) + beta w'(L(I), I), which is concave in I, so golden section finds it.
     """
 
@@ -318,12 +318,12 @@ def solve(
     def ascend_at(V_now, start: RawPolicy, steps: int, rate: float) -> tuple[RawPolicy, torch.Tensor]:
         """Adam on every grid point's controls at once; returns the policy and its value."""
         params = [z.detach().clone().requires_grad_(True) for z in start.tensors()]
-        optimiser = torch.optim.Adam(params, lr=rate)
+        optimizer = torch.optim.Adam(params, lr=rate)
         for _ in range(steps):
-            optimiser.zero_grad()
+            optimizer.zero_grad()
             c = RawPolicy(*params).controls(p, grid)
             (-continuation(p, grid, rule, V_now, w, s, c).sum()).backward()
-            optimiser.step()
+            optimizer.step()
         found = RawPolicy(*[z.detach() for z in params])
         with torch.no_grad():
             value = continuation(p, grid, rule, V_now, w, s, found.controls(p, grid))

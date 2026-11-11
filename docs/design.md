@@ -7,7 +7,7 @@ The previous model is frozen on the `legacy` branch.
 
 Decisions already taken (2026-11-10):
 
-- The modelling objective is the **integrated framework of Froot & Stein
+- The modeling objective is the **integrated framework of Froot & Stein
   (1998)**: risk management, capital budgeting and capital structure decided
   jointly, all priced by one endogenous risk aversion. Froot, Scharfstein &
   Stein (1993) supplies the mechanism that makes the bank care about risk.
@@ -21,7 +21,7 @@ Decisions already taken (2026-11-10):
   settled**, and is to be worked out iteratively (§5).
 - **Abstraction level:** keep only the paper's core economic drivers, at the
   level of detail where the problem can be solved computationally as an
-  optimisation. Matching every detail of the paper is not a goal.
+  optimization. Matching every detail of the paper is not a goal.
 - **A practical model, not a replication.** The paper's simplifying
   assumptions exist to keep its analysis tractable; a computational model does
   not need them. Departures are fine, but each one is justified and listed in
@@ -35,7 +35,7 @@ Decisions already taken (2026-11-10):
   do not price risk. If gambling for resurrection appears, it is reported, not
   suppressed.
 - **No negative equity, and a minimum capital ratio.** A bank below its
-  requirement either recapitalises or shrinks its book. If neither is worth
+  requirement either recapitalizes or shrinks its book. If neither is worth
   it, it shuts down. There is no operating with negative equity.
 - Deposits and withdrawals become **dynamic later** (v3): flows in and out, and
   runs, as they behave on crypto rails.
@@ -97,7 +97,7 @@ Froot & Stein give the bank three levers: $K$, $H$ and $\alpha$. GRC is a
 **fourth**: a costly, persistent way to change the **non-tradeable** risk the
 bank cannot sell in the market. That is the right home for it. Tradeable risk
 is hedged at zero NPV, so GRC spent on it is wasted. Non-tradeable risk is
-exactly what operational controls, compliance programmes and underwriting act
+exactly what operational controls, compliance programs and underwriting act
 on.
 
 Four ways a unit of GRC could act. They are not mutually exclusive. Which of
@@ -110,7 +110,7 @@ them apply to which risk is the brainstorm in §5.
 | **C. covariance** | lowers the correlation between a product's risk and the existing book's | lowers the hurdle in (10) *for other products*. GRC as an enabler of capital budgeting |
 | **D. tradeability** | turns non-tradeable risk into tradeable risk: audited contracts become insurable, a documented book becomes saleable | moves risk from the $G$-priced bucket to the $\gamma$-priced one. The most distinctively Froot–Stein mechanism |
 
-**The headline output this makes possible:** split a GRC programme's value into
+**The headline output this makes possible:** split a GRC program's value into
 
 - **A**, which any firm would pay for;
 - **B + C + D**, which only a capital-constrained firm pays for.
@@ -172,7 +172,7 @@ risk-weighted assets with a single weight. $k = 0$ leaves only "no negative
 equity". A bank that a bad period leaves below the requirement has three
 choices:
 
-- recapitalise, at cost $C(e)$;
+- recapitalize, at cost $C(e)$;
 - deleverage, by shrinking $I_t$ until $K_t \ge k I_t$;
 - shut down, by walking away.
 
@@ -220,7 +220,7 @@ $$
 
 **Walk-away.** At the start of any period, shareholders may abandon the firm
 and receive 0. Depositors then receive the assets and bear the shortfall,
-$(-w_t)^+$. With a negative $w_t$ the choice is whether recapitalising to
+$(-w_t)^+$. With a negative $w_t$ the choice is whether recapitalizing to
 $K \ge 0$, at cost $C(e)$, is worth more than nothing. Failure is therefore a
 decision, not a hazard parameter.
 
@@ -324,7 +324,7 @@ with **one $W$ shared** across all components, rescaled to unit variance.
 $$\phi_j(G) = \rho_j + (1 - \rho_j)\,e^{-a_j G}, \qquad j \in \{A, B\}$$
 
 $a_A$ acts on the mean loss and $a_B$ on its spread: mechanisms A and B of §2,
-one effectiveness each. $\rho_j$ is the share of the risk no programme removes.
+one effectiveness each. $\rho_j$ is the share of the risk no program removes.
 Without it, enough spend drives any risk to zero, which is how the old model
 ended up reading an effectiveness as "removes 992%". Break-evens are reported
 over $(a_A, a_B)$, and $\rho$ is reported as an assumption rather than hidden in
@@ -347,14 +347,14 @@ factor. $\tau K$ stays available as an extra linear friction, zero by default.
 a grid is exact up to grid error, and the discount guarantees convergence.
 
 **Expectations by quadrature, not Monte Carlo.** The scale-mixture form of the
-$t$ makes this two nested rules: generalised Gauss–Laguerre over $W$, then
+$t$ makes this two nested rules: generalized Gauss–Laguerre over $W$, then
 Gauss–Hermite over $Z$. The grid solution is then deterministic. No seed noise,
 no scenario sets that differ by batch size, no "10% across draws". That removes
 the whole class of sampling problems in the old `CLAUDE.md` traps list.
 
-**The cost is in the inner maximisation.** It runs over six controls at every
+**The cost is in the inner maximization.** It runs over six controls at every
 grid point. That is the part where array tooling matters: a gradient-based
-inner maximisation under PyTorch or JAX, vectorised over the grid. The grid
+inner maximization under PyTorch or JAX, vectorized over the grid. The grid
 solver and the later learner should share one backend, so the learner can be
 graded against the grid on identical arithmetic.
 
@@ -368,7 +368,7 @@ choices were forced by what the first solves did:
   concave, and hedged exactly.
 - **Two starts per improvement.** The product size and the hedge are bounded
   through `sigmoid`/`tanh`; a control pushed to its bound early has almost no
-  gradient left to come back. Each step also optimises from a fresh start and
+  gradient left to come back. Each step also optimizes from a fresh start and
   keeps the better per grid point. The first solve also starts from a linear,
   risk-neutral value rather than $\max(w, 0)$, whose kink invited gambling.
 - **Below the grid the bank issues equity back onto it**, rather than having
@@ -429,7 +429,7 @@ A first, deliberately tentative cut. Each row is a question, not an answer.
 | Smart-contract exploit, bridge drain | **partly** | on-chain cover protocols: thin, costly, capacity-limited | B (audits shrink the tail), **D (audits make cover purchasable)** |
 | Custody / key management | **partly** | custody insurance, limited capacity | A, B, D |
 | Operational incidents | **no** | — | A, B |
-| Compliance / licence | **no** | — | A (fewer breaches); B (a lost licence is the tail) |
+| Compliance / license | **no** | — | A (fewer breaches); B (a lost license is the tail) |
 
 Questions for the next pass:
 
@@ -486,5 +486,5 @@ computational model for practical analysis rather than a closed-form argument.
 | Regulation | none | minimum capital ratio $K \ge kI$ | ordinary bank regulation; it gives the Froot–Stein channel a second route (a loss shrinks the book the bank may lend) |
 | Hedging | tradeable risk hedged at fair prices | hedging at a cost $c_H$ for "partly tradeable" risk | crypto-rails risks (exploit cover, custody insurance) are hedgeable only thinly and expensively |
 | GRC | absent | a fourth lever acting on non-tradeable risk | the project's purpose |
-| **Discounting** | at the riskless rate $r$; the cost of equity is a separate deadweight $\tau K$ | at the shareholders' required return $r_E > r$; cash earns $r$; $\tau = 0$ by default | discounting an infinite stream of bank profits at the riskless rate capitalises them into an implausibly large franchise. In the first solves the bank was worth over 1 at zero equity, so it would recapitalise from any loss and walk-away never occurred. Discounting at a cost of equity gives the carrying cost of capital ($r_E - r$) and a franchise of realistic size from one parameter. $r_E$ is to be set against a target **market-to-book ratio**, which is observable, rather than chosen directly |
+| **Discounting** | at the riskless rate $r$; the cost of equity is a separate deadweight $\tau K$ | at the shareholders' required return $r_E > r$; cash earns $r$; $\tau = 0$ by default | discounting an infinite stream of bank profits at the riskless rate capitalizes them into an implausibly large franchise. In the first solves the bank was worth over 1 at zero equity, so it would recapitalize from any loss and walk-away never occurred. Discounting at a cost of equity gives the carrying cost of capital ($r_E - r$) and a franchise of realistic size from one parameter. $r_E$ is to be set against a target **market-to-book ratio**, which is observable, rather than chosen directly |
 
