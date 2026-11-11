@@ -18,6 +18,10 @@ to be merged back.
   refactors and multi-file rewrites need approval first, with a rough estimate
   of what they will cost. Do not turn a simple question into a task.
 - Short replies by default. Detail on request.
+- **Raise new concepts before using them.** Any theoretical or numerical
+  concept not already discussed (a method, theorem, distribution, solver
+  technique) is named, with its source — the papers, standard literature, or
+  Claude's own construction — and discussed before it appears in code or docs.
 - **Abstraction level:** keep the paper's core economic drivers, at the level
   of detail where the problem solves computationally as an optimization. Do not
   chase every detail of the paper.

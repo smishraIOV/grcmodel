@@ -1,9 +1,12 @@
 # Design: a dynamic Froot–Stein (1998) bank, with GRC as a fourth lever
 
-Status: **v0 in progress**. The one-period model, the quadrature, the
-two-period oracle (a known-answer check) and the infinite-horizon grid solver
-are built (`quant/`). Results and the effective-risk-aversion map are next.
-The previous model is frozen on the `legacy` branch.
+Status: **v0 built; v1 under way.** Built (`quant/`): the one-period model,
+the quadrature (a deterministic way of computing expected values from a small
+set of weighted scenarios, in place of random simulation), the two-period
+oracle (a known-answer check), the infinite-horizon grid solver, the outputs
+(effective risk aversion, hurdles, thresholds, GRC's value and premium), and
+v1's jump losses. Still to come in v1: several products, and GRC lowering the
+cost of hedging. The previous model is frozen on the `legacy` branch.
 
 Decisions already taken (2026-11-10):
 
@@ -376,8 +379,14 @@ about two-thirds of the bank's minimum capital; the tail goes far beyond it.
 a grid is exact up to grid error, and the discount guarantees convergence.
 
 **Expectations by quadrature, not Monte Carlo.** The scale-mixture form of the
-$t$ makes this two nested rules: generalized Gauss–Laguerre over $W$, then
-Gauss–Hermite over $Z$. The grid solution is then deterministic. No seed noise,
+$t$ makes this two nested rules: one over the shared variance factor $W$, then
+Gauss–Hermite over $Z$. The rule over $W$ places its points by probability,
+uniformly in log-probability, so they crowd into the tail where the large
+shocks live. The textbook choice for this integral, generalized
+Gauss–Laguerre, was tried first and measured to understate the tail badly: a
+kurtosis of 7.3 against a true 9 at $\nu = 5$, even with 64 points, against 8.8
+with 12 for the rule now used (`quant/quadrature.py`). The jump severities use
+the same tail-placed construction. The grid solution is then deterministic. No seed noise,
 no scenario sets that differ by batch size, no "10% across draws". That removes
 the whole class of sampling problems in the old `CLAUDE.md` traps list.
 
@@ -424,8 +433,9 @@ effective risk aversion.
    holding and paying out, so $K$ is not pinned there. Built.
 4. Prop. 2: full hedging of the tradeable factor where the bank is risk-averse.
    Built; exact to 1e-3 at every state with $w \ge 0$.
-5. No non-tradeable risk: GRC's value reduces to mechanism A alone. Not yet
-   built.
+5. No non-tradeable risk: GRC's value reduces to its expected-loss saving, so
+   the bank and its frictionless twin value it identically and the premium is
+   zero. Built.
 
 **The learner** comes in when the state outgrows a grid: several GRC families,
 then deposits. It is trained on the same stationary problem and **graded
@@ -517,3 +527,43 @@ computational model for practical analysis rather than a closed-form argument.
 | GRC | absent | a fourth lever acting on non-tradeable risk | the project's purpose |
 | **Discounting** | at the riskless rate $r$; the cost of equity is a separate deadweight $\tau K$ | at the shareholders' required return $r_E > r$; cash earns $r$; $\tau = 0$ by default | discounting an infinite stream of bank profits at the riskless rate capitalizes them into an implausibly large franchise. In the first solves the bank was worth over 1 at zero equity, so it would recapitalize from any loss and walk-away never occurred. Discounting at a cost of equity gives the carrying cost of capital ($r_E - r$) and a franchise of realistic size from one parameter. $r_E$ is to be set against a target **market-to-book ratio**, which is observable, rather than chosen directly |
 
+
+---
+
+## 9. Methods and concepts introduced without prior discussion
+
+Concepts brought into the code or this document by Claude, not taken from the
+papers and not discussed before use. Accepted for now (2026-11-11), and kept
+here so any of them can be revisited. From now on a new concept is raised
+before it is used (`CLAUDE.md`).
+
+**Source** says where each comes from: *standard* means textbook or widely used
+technique; *own construction* means assembled for this project, with no single
+reference.
+
+### Numerical methods
+
+| concept | source | where | what it does | if revisited |
+|---|---|---|---|---|
+| Gauss–Hermite quadrature | standard | `quant/quadrature.py` | weighted scenario set for the normal part of the shocks | sparse grids if the shock dimension grows |
+| Tail-placed mixing rule | own construction | `quant/quadrature.py` | scenario set for the $t$'s shared volatility factor: Gauss–Legendre nodes uniform in log-probability, placed through the inverse CDF | replaced generalized Gauss–Laguerre (standard), which understated kurtosis (7.3 against 9 at $\nu = 5$, 64 points); accuracy is checked by tests, not by a reference |
+| Tail-placed jump-severity rule | own construction | `quant/quadrature.py` | the same construction for the Pareto jump severity, capped at the whole book | the dropped far tail and the cap shave the mean slightly; tested to within 5% |
+| Cholesky factorization | standard | `quant/quadrature.py` | builds correlated shocks from independent ones | — |
+| Policy iteration with repeated policy evaluation (Howard improvement) | standard | `quant/solver.py` | how the infinite-horizon solve converges | plain value iteration is slower but simpler |
+| Adam, vectorized over the grid | standard | `quant/solver.py` | chooses every grid point's controls at once by gradient ascent; two starts per step, and a slow final pass | the step-budget test guards against it stopping short |
+| Linear interpolation in equity (Catmull-Rom optional) | standard | `quant/solver.py` | reads the value function between grid points | Catmull-Rom invented convexity near kinks and the bank gambled on it; a shape-preserving smooth spline is the alternative |
+| Off-grid rules | own construction | `quant/solver.py` | above the grid, pay out the excess; below it, issue equity back onto it | clamping below the grid made the first solve diverge |
+| Golden-section search | standard | `quant/twoperiod.py`, `quant/solver.py` | one-dimensional optimizer for the oracles | — |
+| Squashed controls (`sigmoid`, `tanh`, `softplus`) | standard | `quant/solver.py` | keep every constraint satisfied by construction | saturated controls lose their gradient; the two-start step is the guard |
+
+### Modeling and theory
+
+| concept | source | where | what it does | if revisited |
+|---|---|---|---|---|
+| Stein's lemma | standard probability | `quant/twoperiod.py`, `quant/results.py` | why the paper's formulas (9), (10) are exact under normal shocks and approximate under fat tails; the basis of the two-period oracle | — |
+| Student-$t$ as a scale mixture of normals, one shared factor | standard | `quant/quadrature.py`, §3.4 | fat tails and tail dependence from one parameter $\nu$ | copulas would separate marginal tails from dependence |
+| Pareto jump severity | standard in operational-risk modeling | `quant/quadrature.py`, §3.5 | heavy-tailed one-sided losses | lognormal, or an empirical exploit-loss distribution |
+| Effective risk aversion from first derivatives | own construction | `quant/results.py` | measures the paper's $G$ as the price of risk, $-E[V_w (w' - Ew')] / (E[V_w] \mathrm{Var}(w'))$; equals the paper's $G$ under normality by Stein's lemma | the right generalization under fat tails is a choice, not a theorem |
+| Hurdle as a measured price of risk | own construction | `quant/results.py` | $-E[V_w \varepsilon] / E[V_w]$ for a small position with payoff shock $\varepsilon$; equals eq. (10) under normality, exact in general | — |
+| Frictionless twin | own construction | `quant/results.py`, §2 | Froot–Stein premium = GRC's value to the bank minus its value to the same bank with free equity issuance | mixes the Froot–Stein effect with limited liability once jumps can wipe the bank out (§2); a twin without walk-away would separate them |
+| GRC value split by mechanism | own construction | superseded | the first premium measure (mean versus spread) | dropped once jumps made prevention act on both |
