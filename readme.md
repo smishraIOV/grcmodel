@@ -4,6 +4,8 @@ A quantitative model for **G**overnance, **R**isk and **C**ompliance.
 GRC is normally treated as a cost center. The thesis here is that GRC (done well) **increases firm value**, and 
 this can be made quantitative rather than asserted.
 
+Even experts do not know how much risk to budget for. A chief actuary may not know how much reinsurance to purchase.
+A computational tool can provide some guidance.
 
 ## Academic Roots
 

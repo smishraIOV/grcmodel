@@ -1,6 +1,6 @@
 """Solve the v0 bank and print what it says (design.md section 6, v0).
 
-    uv run python scripts/solve_v0.py [--profile reference]
+    uv run python scripts/solve_v0.py [--profile reference] [--periods-per-year 1]
 
 Prints the walk-away and payout thresholds, the effective risk aversion and
 the product's hurdle across equity, the target GRC stock, and GRC's value
@@ -10,6 +10,7 @@ The parameters are the solver tests' interior configuration (GRC worth buying,
 the product not free money), not a calibration.
 """
 
+import argparse
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -24,14 +25,22 @@ from quant.results import grc_value, risk_map, target_stock, thresholds  # noqa:
 from quant.solver import GridSpec, solve  # noqa: E402
 
 PARAMS = replace(DEFAULTS, m=0.02, s_P=0.03, a_A=100.0, a_B=100.0, pi=0.002, jump_rate=0.0)
+# Annual by default for quick exploration; pass --periods-per-year 4 for the
+# quarterly model, which takes longer to converge.
+DEFAULT_PERIODS = 1
 SPEC = GridSpec(n_w=257, n_s=9, s_hi=0.08, w_lo=-0.4, w_hi=0.6, n_hermite=5, n_mixing=8)
 SHOW = (-0.25, -0.2, -0.15, -0.1, -0.05, 0.0, 0.03, 0.06, 0.1, 0.3)
 
 
 def main(argv=None):
-    profile = parse_profile(__doc__.splitlines()[0], argv)
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--periods-per-year", type=int, default=DEFAULT_PERIODS)
+    known, rest = pre.parse_known_args(argv)
+    profile = parse_profile(__doc__.splitlines()[0], rest)
     print_header(profile)
-    sol = solve(PARAMS, profile, SPEC)
+    params = replace(PARAMS, periods_per_year=known.periods_per_year)
+    print(f"periods per year: {params.periods_per_year}")
+    sol = solve(params, profile, SPEC)
     print(f"converged in {sol.iterations} iterations, residual {sol.residual:.1e}")
     print(f"grid reaches walk-away: {sol.lower_edge_is_walk_away}; reaches payout: {sol.upper_edge_pays_out}")
 
@@ -53,7 +62,7 @@ def main(argv=None):
         )
     print(f"\ntarget GRC stock: {target_stock(sol):.4f}")
 
-    gv = grc_value(PARAMS, profile, SPEC)
+    gv = grc_value(params, profile, SPEC)
     print("\nGRC value at w = 0.1, starting from no program")
     print(f"  to this bank                    {gv.gain:.5f}   target stock {gv.stock:.4f}")
     print(f"  to a bank that raises equity free {gv.gain_frictionless:.5f}   target stock {gv.stock_frictionless:.4f}")

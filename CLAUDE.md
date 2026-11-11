@@ -39,6 +39,12 @@ uv run pytest
 Entry points take `--profile {reference,cpu-fast,fast}` (`quant/cli.py`) and
 print the profile, torch version and commit they ran under.
 
+**Decision frequency.** Parameters are stated per year; `periods_per_year`
+(default 4, quarterly) sets how often the bank decides, and the solver converts
+on entry (`Params.per_period()`). Use 1 for quick exploration and tests, 4 for
+realistic runs; `scripts/solve_v0.py --periods-per-year 4`. Quarterly runs need
+a finer equity grid near the issuance kink (`docs/design.md` §3.6).
+
 ## Layout
 
 - `quant/params.py` — every parameter, one economic driver each

@@ -246,6 +246,7 @@ def oracle_params(**overrides) -> Params:
         D=0.95, nu=float("inf"), m=0.1, s_P=0.005, s_N=0.03, pi=0.0002,
         r_E=0.02, tau=0.01,  # the paper's discounting, pinned when the model moved off it
         jump_rate=0.0,       # the paper has no jumps, and the oracle's quadratic region needs none
+        periods_per_year=1,  # the oracle's periods are the paper's dates; nothing to convert
     )
     return replace(base, **overrides)
 

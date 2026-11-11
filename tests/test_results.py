@@ -70,7 +70,9 @@ def test_without_non_tradeable_risk_there_is_no_premium():
     p = replace(BASE, s_P=0.0, s_N=0.0, jump_rate=0.0)
     gv = grc_value(p, P, SPEC)
     assert gv.gain > 0
-    assert gv.premium == pytest.approx(0.0, abs=1e-5)
+    # A difference of four solves, each good to about 1e-5: compare it with
+    # GRC's value rather than with an absolute zero.
+    assert abs(gv.premium) < 1e-3 * gv.gain
 
 
 def test_every_entry_point_imports():

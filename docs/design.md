@@ -5,7 +5,8 @@ the quadrature (a deterministic way of computing expected values from a small
 set of weighted scenarios, in place of random simulation), the two-period
 oracle (a known-answer check), the infinite-horizon grid solver, the outputs
 (effective risk aversion, hurdles, thresholds, GRC's value and premium), and
-v1's jump losses. Still to come in v1: several products, and GRC lowering the
+v1's jump losses, all at a configurable decision frequency (quarterly by
+default, §3.6). Still to come in v1: several products, and GRC lowering the
 cost of hedging. The previous model is frozen on the `legacy` branch.
 
 Decisions already taken (2026-11-10):
@@ -370,6 +371,34 @@ failure — are rare and large. v1 adds them as **jump losses**.
 Defaults (illustrative): $\lambda_J = 0.1$ a year, $\mu_J = 5\%$ of the book,
 $\zeta = 2.5$, $a_J = 100$, $\rho_J = 0.3$. A 5% loss of a book of 0.8 is 0.04,
 about two-thirds of the bank's minimum capital; the tail goes far beyond it.
+
+### 3.6 Decision frequency
+
+The bank decides **quarterly** in the main model, and the frequency is a
+parameter, `periods_per_year`. Every rate is stated **per year**, and
+`Params.per_period()` converts the annual statement into what one period sees.
+The conventions were agreed before they were coded:
+
+| what | annual → per period ($n$ periods a year) | why |
+|---|---|---|
+| interest rates and the required return ($r$, $r_D$, $r_E$) | $(1+r)^{1/n} - 1$ | money compounds |
+| the book's gross return $A$ | $A^{1/n}$; $b$ then still puts the first-best book at 1 | keeps the units of §3.1 at every frequency |
+| mean loss rate, product's excess return, carrying cost $\tau$ | $\div n$ | flows that accrue with time |
+| volatilities ($s_P$, $s_N$, $s_M$) | $\div \sqrt{n}$ | independent periods' variances add up to the year's. Under fat tails this is a convention, not an identity |
+| jump rate | $\div n$ | Poisson events per unit of time |
+| GRC depreciation | $1 - (1-\delta)^{1/n}$ | the same share lost over a year |
+| issuance costs, capital ratio, deposit base, jump severity, GRC effectiveness and floors, position bounds, correlations, $\nu$ | unchanged | sizes and per-event amounts, not rates |
+
+**Use 1 to explore, 4 for realistic runs.** At quarterly frequency the
+discount factor per period is closer to one, so a solve needs more policy
+evaluation steps; the solver scales them with $1/(1-\beta)$. The tests run
+annually, apart from `tests/test_frequency.py`, which checks the conversion and
+solves the quarterly model, including the exact no-shock oracle.
+
+One trap found on the way: a quarter's profit is a quarter of a year's, so the
+steady state sits much closer to the kink where issuance starts. On a coarse
+grid, linear interpolation across that kink understated the value by 0.006.
+Quarterly runs need a finer grid in equity than annual ones.
 
 ---
 

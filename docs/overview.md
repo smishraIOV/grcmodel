@@ -1,7 +1,6 @@
 # What this project is about, in plain language
 
-This is the non-technical companion to the project. It explains what we are
-trying to do and why, without formulas. The technical design is in
+This is the non-technical companion to the project. The technical design is in
 [`design.md`](design.md). This page is updated as the model grows.
 
 ## The question
@@ -9,18 +8,16 @@ trying to do and why, without formulas. The technical design is in
 Governance, risk and compliance — GRC — is the part of a company that sets
 risk limits, runs controls and keeps the firm on the right side of its
 regulators. Most companies treat it as a cost: necessary, but something to
-keep as small as possible.
-
-This project asks whether that is the wrong way to look at it. Can a good GRC
-program **make a firm more valuable**, rather than just costing it money? And
-can we put numbers on that, instead of just asserting it?
+keep as small as possible. Our premise is that a good GRC
+program can **make a firm more valuable**. And we can
+try to put numbers on that - instead of just asserting it.
 
 ## The idea we build on
 
 The idea comes from two well-known papers in corporate finance, by Kenneth
 Froot, David Scharfstein and Jeremy Stein (1993, and Froot and Stein 1998).
 
-Their insight is simple. A firm with plenty of spare cash does not need to
+Their insight is that a firm with plenty of spare cash does not need to
 worry much about bad luck: if it loses money, it absorbs the loss and carries
 on. But most firms do not have unlimited spare cash, and raising new money
 from investors is expensive, especially right after a loss, when investors are
@@ -33,7 +30,7 @@ will pay to manage it. **Risk management is not about avoiding volatility for
 its own sake. It is about protecting the firm's ability to keep investing and
 operating.**
 
-The 1998 paper applies this to banks and shows something more: a bank's
+The 1998 paper applies this to banks and shows that a bank's
 decisions about how much risk to hedge, which investments to take on, and how
 much capital to hold are really **one decision**, not three. All three depend on
 how much the bank fears a loss at that moment, and that fear depends on how
@@ -48,11 +45,11 @@ We model a **financial firm on crypto rails**: it takes deposits into vaults,
 lends and invests them, and runs the blockchain infrastructure those assets
 live on. It is a bank in most respects, with some new risks attached.
 
-Each year, the firm decides:
+Every quarter, the firm decides:
 
 - **how much to lend**;
 - **how much capital to keep**, and how much to pay out to its owners — or,
-  after a bad year, whether to raise new money;
+  after a bad quarter, whether to raise new money;
 - **how much to spend on GRC**;
 - **whether to take on a new line of business**, and how much of it;
 - **how much market risk to hedge** — for example, the risk of crypto prices
@@ -69,7 +66,7 @@ The firm faces three kinds of risk:
 - **Market risk**, such as crypto prices moving. This can be hedged in
   financial markets at a fair price, so a sensible firm hedges it away.
 - **Everyday losses**: loans that go bad, routine operational mistakes. These
-  come every year and vary in size, but rarely in a dramatic way.
+  come all the time and vary in size, but rarely in a dramatic way.
 - **Rare, severe losses**: a drained bridge, a hacked smart contract, a failed
   custodian. These are unlikely in any given year, but when they happen they
   can wipe out a large part of the firm's capital.
@@ -78,7 +75,7 @@ The last two cannot simply be sold off to someone else. The firm has to carry
 them, and that is where GRC comes in: better controls make losses smaller,
 less variable, or less frequent.
 
-We deliberately use **fat-tailed** risk models. Many past financial crises were
+We use **fat-tailed** risk models. Many past financial crises were
 worse than expected because the models behind them assumed that extreme events
 were far rarer than they really are, and that different risks would not all go
 wrong at once. Our model allows for both.
@@ -103,11 +100,12 @@ wrong at once. Our model allows for both.
 
 ## How we work it out
 
-The firm's decisions play out year after year with no fixed end date, because
-a bank is meant to keep going. A computer program works out the best decision
+The firm's decisions play out quarter after quarter with no fixed end date. 
+A computer program works out the best decision
 in every situation the firm could find itself in — every combination of
 capital and GRC investment — taking into account everything that could happen
-next year and how that would affect the years after.
+next quarter and how that would affect the quarters after. While we are
+testing ideas we can also run it once a year, which is much quicker.
 
 We do not simply trust the computer's answers. We check them against cases
 where the right answer is known in advance: simplified versions of the problem
@@ -130,7 +128,7 @@ survive changes in the numbers, rather than any particular figure.
 - **GRC buys a little survival.** A firm with a stronger GRC program can absorb
   somewhat larger losses before it gives up.
 - **Against everyday losses alone, the premium is small.** When the only
-  risks are moderate, year-to-year ones, GRC is worth buying almost entirely
+  risks are moderate, routine ones, GRC is worth buying almost entirely
   for the losses it prevents on average. Capital scarcity adds little on top.
   This is why we are now adding rare, severe losses: the theory says that is
   where scarce capital — and therefore GRC — should matter most.

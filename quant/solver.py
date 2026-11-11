@@ -205,7 +205,7 @@ def continuation(
 
 @dataclass
 class Solution:
-    params: Params
+    params: Params                  # per period: what the model ran on
     grid: Grid
     rule: ShockRule
     jumps: JumpRule | None
@@ -214,6 +214,7 @@ class Solution:
     residual: float                 # sup |V - T V| at the end
     iterations: int
     history: list[float] = field(default_factory=list)
+    inputs: Params | None = None    # as given, rates per year
 
     def controls(self) -> Controls:
         return self.policy.controls(self.params, self.grid)
@@ -258,6 +259,7 @@ class RisklessSteadyState:
 
 
 def riskless_steady_state(p: Params, profile: NumericsProfile) -> RisklessSteadyState:
+    p = p.per_period()
     if (p.s_P, p.s_N, p.s_M, p.a_A, p.jump_rate) != (0.0, 0.0, 0.0, 0.0, 0.0):
         raise ValueError("the riskless oracle needs s_P = s_N = s_M = a_A = jump_rate = 0")
 
@@ -291,11 +293,19 @@ def solve(
     max_iterations: int = 200,
     improve_steps: int = 40,
     first_improve_steps: int = 400,
-    evaluate_steps: int = 30,
+    evaluate_steps: int | None = None,
     polish_steps: int = 300,
     lr: float = 0.05,
     verbose: bool = False,
 ) -> Solution:
+    inputs = p
+    p = p.per_period()  # rates stated per year become rates per period (design.md 3.6)
+    if evaluate_steps is None:
+        # Policy evaluation contracts by beta per step, so the number of steps
+        # it needs grows like 1 / (1 - beta): about 50 annually, about 200
+        # quarterly. A fixed 30 left the quarterly solve at its iteration cap,
+        # still 3e-6 from converged.
+        evaluate_steps = max(30, math.ceil(3.0 / (1.0 - p.beta)))
     grid = make_grid(spec, profile)
     rule = student_t_rule(
         shock_correlation(p), p.nu, profile, n_hermite=spec.n_hermite, n_mixing=spec.n_mixing
@@ -381,5 +391,5 @@ def solve(
 
     return Solution(
         params=p, grid=grid, rule=rule, jumps=jumps, V=V, policy=policy,
-        residual=residual, iterations=it + 1, history=history,
+        residual=residual, iterations=it + 1, history=history, inputs=inputs,
     )
