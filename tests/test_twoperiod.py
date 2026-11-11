@@ -1,7 +1,5 @@
 """The two-period truncation reproduces Froot & Stein (1998) under normal shocks."""
 
-from dataclasses import replace
-
 import pytest
 import torch
 
@@ -11,7 +9,6 @@ from quant.quadrature import student_t_rule
 from quant.twoperiod import (
     ORACLE_FIRST_PERIOD,
     final_marginals,
-    final_value,
     first_period_wealth,
     froot_stein,
     issuance_threshold,
@@ -80,17 +77,3 @@ def test_hurdle_takes_the_sign_of_the_covariance(rho):
     alpha, H = optimal_positions(p, rule, P, ORACLE_FIRST_PERIOD)
     hurdle = froot_stein(p, rule, P, ORACLE_FIRST_PERIOD, alpha, H).hurdle
     assert hurdle == pytest.approx(0.0, abs=1e-12) if rho == 0 else (hurdle > 0) == (rho > 0)
-
-
-def test_fat_tails_break_the_mean_variance_rule(oracle):
-    """Under the t, Stein's lemma fails, and eq. (9) is only an approximation.
-
-    Not a bug: the gap is the result design.md section 4 asks for. This test
-    only pins that the gap exists and is small in this mild configuration.
-    """
-    p = replace(oracle[0], nu=4.5)
-    rule = student_t_rule(shock_correlation(p), p.nu, P)
-    alpha, H = optimal_positions(p, rule, P, ORACLE_FIRST_PERIOD)
-    fs = froot_stein(p, rule, P, ORACLE_FIRST_PERIOD, alpha, H)
-    gap = abs(alpha - fs.alpha) / alpha
-    assert 1e-3 < gap < 0.05

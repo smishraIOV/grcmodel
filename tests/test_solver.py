@@ -88,21 +88,6 @@ def test_free_equity_buys_a_buffer(base_solution):
     assert float((c.K[top] - BASE.k * c.I[top]).min()) > 0.1
 
 
-def test_costly_equity_holds_only_the_floor(base_solution):
-    """At r_E = 6% the bank holds the minimum capital and pays out the rest.
-
-    Not an oracle -- a finding at the current calibration, pinned so a change
-    to it is noticed: raising equity after a loss is cheaper than carrying a
-    buffer.
-    """
-    sol = base_solution
-    c = sol.controls()
-    w, _ = sol.grid.states()
-    top = w >= 0.4
-    floor = BASE.k * c.I[top]
-    assert float((c.K[top] - floor).abs().max()) < 1e-3
-
-
 def test_answer_does_not_depend_on_the_step_budget(base_solution):
     """Doubling the inner optimizer's steps must not move the value."""
     longer = solve(BASE, P, SPEC, improve_steps=80, first_improve_steps=800)

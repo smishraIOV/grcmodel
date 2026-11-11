@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 
 from quant.numerics import REFERENCE
-from quant.params import DEFAULTS, Params
+from quant.params import DEFAULTS
 from quant.solver import riskless_steady_state, solve
 from tests.test_solver import BASE, SPEC
 

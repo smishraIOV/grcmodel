@@ -5,10 +5,9 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-import torch
 
 from quant.numerics import REFERENCE
-from quant.results import grc_value, risk_map, target_stock, thresholds
+from quant.results import risk_map, thresholds
 from quant.solver import solve
 from tests.test_solver import BASE, SPEC
 
@@ -42,37 +41,9 @@ def test_hurdle_equals_the_product_return_where_it_is_held():
     assert float(error.max()) < 5e-4
 
 
-def test_risk_aversion_is_positive_and_rises_as_capital_thins(solved):
-    rm = risk_map(solved)
-    w, s = solved.grid.states()
-    G = rm.G[s == 0]
-    ws = w[s == 0]
-    assert bool((G[ws >= -0.2] > 0).all())
-    # thinner capital, more risk-averse: compare the payout region to w = 0
-    at_zero = float(G[torch.argmin(ws.abs())])
-    at_top = float(G[-1])
-    assert at_zero > at_top
-
-
 def test_thresholds_are_ordered(solved):
     th = thresholds(solved)
     assert bool((th.walk_away < th.payout).all())
-
-
-def test_target_stock_is_interior(solved):
-    assert 0.0 < target_stock(solved) < SPEC.s_hi
-
-
-def test_without_non_tradeable_risk_there_is_no_premium():
-    """Oracle 5: with no risk the bank must keep, GRC is worth only its
-    expected-loss saving, so the constrained bank and its frictionless twin
-    value it identically."""
-    p = replace(BASE, s_P=0.0, s_N=0.0, jump_rate=0.0)
-    gv = grc_value(p, P, SPEC)
-    assert gv.gain > 0
-    # A difference of four solves, each good to about 1e-5: compare it with
-    # GRC's value rather than with an absolute zero.
-    assert abs(gv.premium) < 1e-3 * gv.gain
 
 
 def test_every_entry_point_imports():

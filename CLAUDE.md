@@ -25,6 +25,10 @@ to be merged back.
 - **Abstraction level:** keep the paper's core economic drivers, at the level
   of detail where the problem solves computationally as an optimization. Do not
   chase every detail of the paper.
+- **Only quantitatively meaningful measurements.** No outputs that compare the
+  bank with an unrealistic counterfactual (equity raised for free, forced
+  recapitalization, unlimited liability). Their qualitative point is already
+  known, and their numbers mean nothing. Acknowledge such effects in words.
 - **Stages need approval.** `docs/design.md` §6 lists v0–v3; each starts only
   when agreed.
 

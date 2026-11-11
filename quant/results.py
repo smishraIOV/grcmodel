@@ -111,51 +111,28 @@ def target_stock(sol: Solution, at_w: float | None = None) -> float:
 
 @dataclass(frozen=True)
 class GrcValue:
-    """What a GRC program is worth, and how much of that is the Froot-Stein premium.
+    """What a GRC program is worth to this bank (design.md section 2).
 
-    Value is V at one equity level and zero GRC stock: a bank deciding whether
-    to start a program. "Worth" is the gain over the same bank with GRC that
-    does nothing.
+    Value is V at one equity level and zero GRC stock -- a bank deciding
+    whether to start a program -- compared with the same bank without one.
 
-    **The premium is measured against a frictionless twin** (design.md 3.5):
-    the same bank, same risks, but able to raise equity at no cost. A bank
-    that can always recapitalize for free is indifferent to risk, so it values
-    GRC only for the expected losses it removes. What the real bank pays above
-    that, only a capital-constrained bank would pay. This replaced a split by
-    mechanism, which stopped isolating the premium once jumps arrived: cutting
-    jump frequency removes expected loss *and* tail risk at once.
+    No counterfactual benchmark is computed. A "premium" measured against a
+    bank that raises equity for free, or one forced to recapitalize after any
+    loss, is an academic construction: neither bank exists, so the number has
+    no quantitative meaning, and the qualitative point is already known. See
+    design.md section 2 for what was tried and why it was removed.
     """
 
-    gain: float               # GRC's value to this bank
-    gain_frictionless: float  # GRC's value to the frictionless twin
-    stock: float              # target GRC stock, this bank
-    stock_frictionless: float
-
-    @property
-    def premium(self) -> float:
-        return self.gain - self.gain_frictionless
-
-    @property
-    def premium_share(self) -> float:
-        return self.premium / self.gain if self.gain > 0 else float("nan")
+    gain: float    # V with a GRC program minus V without one
+    stock: float   # the GRC stock the bank converges to
 
 
 def grc_value(p: Params, profile, spec: GridSpec, at_w: float = 0.1, **solve_args) -> GrcValue:
-    inert = dict(a_A=0.0, a_B=0.0, a_J=0.0)
-
     def value(q):
         sol = solve(q, profile, spec, **solve_args)
         row = int(torch.argmin((sol.grid.w - at_w).abs()))
         return float(sol.V[row, 0]), sol
 
-    free = replace(p, lam=0.0, kappa=0.0)
     with_grc, sol = value(p)
-    without, _ = value(replace(p, **inert))
-    with_grc_free, sol_free = value(free)
-    without_free, _ = value(replace(free, **inert))
-    return GrcValue(
-        gain=with_grc - without,
-        gain_frictionless=with_grc_free - without_free,
-        stock=target_stock(sol),
-        stock_frictionless=target_stock(sol_free),
-    )
+    without, _ = value(replace(p, a_A=0.0, a_B=0.0, a_J=0.0))
+    return GrcValue(gain=with_grc - without, stock=target_stock(sol))

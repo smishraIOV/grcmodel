@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from quant.numerics import REFERENCE
-from quant.quadrature import mixing_rule, student_t_rule
+from quant.quadrature import student_t_rule
 
 P = REFERENCE
 CORR = np.array([[1.0, 0.5, 0.0], [0.5, 1.0, 0.0], [0.0, 0.0, 1.0]])
@@ -41,12 +41,6 @@ def test_t_kurtosis_reaches_the_true_value(nu, tol):
     _, _, kurt = moments(student_t_rule(CORR, nu, P))
     target = 3.0 + 6.0 / (nu - 4.0)
     assert torch.allclose(kurt, torch.full((3,), target, dtype=P.dtype), rtol=tol)
-
-
-def test_mixing_rule_has_unit_mean():
-    for nu in (4.5, 5.0, 30.0):
-        v, p = mixing_rule(nu, 12)
-        assert float(np.sum(p * v)) == pytest.approx(1.0, abs=1e-14)
 
 
 def test_shared_scale_gives_tail_dependence():

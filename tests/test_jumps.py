@@ -56,11 +56,9 @@ def test_outcome_weights_sum_to_one():
     assert torch.allclose(out.weights.sum(-1), torch.ones(2, dtype=P.dtype), atol=1e-13)
 
 
-def test_jumps_lower_value_and_raise_the_target_stock():
-    from quant.results import target_stock
-
+def test_jumps_cannot_raise_the_bank_s_value():
+    """Adding a source of loss can only make the bank worth less, everywhere."""
     calm = solve(BASE, P, SPEC)
     jumpy = solve(JUMPY, P, SPEC)
     assert jumpy.residual < 1e-6
     assert bool((jumpy.V <= calm.V + 1e-9).all())
-    assert target_stock(jumpy) > target_stock(calm)

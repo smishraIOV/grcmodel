@@ -3,8 +3,8 @@
     uv run python scripts/solve_v0.py [--profile reference] [--periods-per-year 1]
 
 Prints the walk-away and payout thresholds, the effective risk aversion and
-the product's hurdle across equity, the target GRC stock, and GRC's value
-split into expected-loss reduction and the Froot-Stein premium.
+the product's hurdle across equity, the target GRC stock, and what a GRC
+program is worth to the bank.
 
 The parameters are the solver tests' interior configuration (GRC worth buying,
 the product not free money), not a calibration.
@@ -63,10 +63,9 @@ def main(argv=None):
     print(f"\ntarget GRC stock: {target_stock(sol):.4f}")
 
     gv = grc_value(params, profile, SPEC)
-    print("\nGRC value at w = 0.1, starting from no program")
-    print(f"  to this bank                    {gv.gain:.5f}   target stock {gv.stock:.4f}")
-    print(f"  to a bank that raises equity free {gv.gain_frictionless:.5f}   target stock {gv.stock_frictionless:.4f}")
-    print(f"  Froot-Stein premium             {gv.premium:.5f}   ({gv.premium_share:.1%} of GRC's value)")
+    print("\nGRC program at w = 0.1, starting from none")
+    print(f"  value to the bank  {gv.gain:.5f}")
+    print(f"  target stock       {gv.stock:.4f}")
 
 if __name__ == "__main__":
     main()

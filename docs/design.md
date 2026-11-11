@@ -4,7 +4,7 @@ Status: **v0 built; v1 under way.** Built (`quant/`): the one-period model,
 the quadrature (a deterministic way of computing expected values from a small
 set of weighted scenarios, in place of random simulation), the two-period
 oracle (a known-answer check), the infinite-horizon grid solver, the outputs
-(effective risk aversion, hurdles, thresholds, GRC's value and premium), and
+(effective risk aversion, hurdles, thresholds, GRC's value to the bank), and
 v1's jump losses, all at a configurable decision frequency (quarterly by
 default, §3.6). Still to come in v1: several products, and GRC lowering the
 cost of hedging. The previous model is frozen on the `legacy` branch.
@@ -110,22 +110,35 @@ them apply to which risk is the brainstorm in §5.
 | mechanism | effect on the non-tradeable risk | what it is worth |
 |---|---|---|
 | **A. mean** | lowers the expected loss | worth it to a risk-neutral firm; no Froot–Stein content |
-| **B. spread** | lowers the variance or tail | worth $\approx \tfrac12 G\,\Delta\mathrm{var}$ in value terms. **This is the Froot–Stein premium** |
+| **B. spread** | lowers the variance or tail | worth $\approx \tfrac12 G\,\Delta\mathrm{var}$ in value terms: the Froot–Stein channel |
 | **C. covariance** | lowers the correlation between a product's risk and the existing book's | lowers the hurdle in (10) *for other products*. GRC as an enabler of capital budgeting |
 | **D. tradeability** | turns non-tradeable risk into tradeable risk: audited contracts become insurable, a documented book becomes saleable | moves risk from the $G$-priced bucket to the $\gamma$-priced one. The most distinctively Froot–Stein mechanism |
 
-**The headline output this makes possible:** split a GRC program's value into
-what any firm would pay for and what only a capital-constrained firm pays for.
-The second part is the **Froot–Stein premium**.
+**What is reported:** GRC's value to this bank — the bank with a program
+against the same bank without one — and how that value moves with its capital,
+its risks and the size of its losses.
 
-*How it is measured (revised in v1).* The first version split value by
-mechanism: A as "any firm", B + C + D as "constrained only". That stops working
-once GRC acts on jump losses, because preventing a jump removes expected loss
-and tail risk at once. The premium is now measured directly: GRC's value to
-this bank minus its value to a **frictionless twin**, the same bank with the same
-risks but able to raise equity at no cost. A bank that can always recapitalize
-for free does not care about risk, so it values GRC only for expected losses
-removed. Whatever the real bank pays above that is the premium (§3.5).
+**What is deliberately not measured: a "Froot–Stein premium".** The appeal was
+to split GRC's value into what any firm would pay and what only a
+capital-constrained firm pays. Two ways were built and both were removed
+(2026-11-11):
+
+- *By mechanism* (mean versus spread). Stopped working once GRC prevents jumps,
+  which removes expected loss and tail risk at once.
+- *Against a frictionless twin*, the same bank able to raise equity for free.
+  Nobody raises equity for free, so the comparison is an academic construction
+  with no quantitative meaning, and the qualitative point it would make is
+  already known from the paper. It also mixed in a second effect: the real bank
+  walks away from losses large enough to sink it, so preventing those losses
+  protects depositors rather than shareholders. Separating the two would need a
+  bank forced to recapitalize after any loss — unlimited liability, which is no
+  more realistic.
+
+**Acknowledged, not measured: limited liability weakens the incentive to
+invest in GRC.** For losses that threaten survival, shareholders bear only
+part of the damage and depositors the rest, so the bank may spend less on
+preventing them than their full cost would justify. The model shows this
+qualitatively; it does not put a number on it.
 
 ---
 
@@ -462,9 +475,8 @@ effective risk aversion.
    holding and paying out, so $K$ is not pinned there. Built.
 4. Prop. 2: full hedging of the tradeable factor where the bank is risk-averse.
    Built; exact to 1e-3 at every state with $w \ge 0$.
-5. No non-tradeable risk: GRC's value reduces to its expected-loss saving, so
-   the bank and its frictionless twin value it identically and the premium is
-   zero. Built.
+5. ~~No non-tradeable risk: no premium over a frictionless twin.~~ Removed
+   with the twin (§2).
 
 **The learner** comes in when the state outgrows a grid: several GRC families,
 then deposits. It is trained on the same stationary problem and **graded
@@ -518,7 +530,7 @@ Questions for the next pass:
 | stage | adds | solved by | done when |
 |---|---|---|---|
 | **v0** | one non-tradeable risk, one tradeable factor, one new product, one GRC family, a fixed deposit base at a fixed rate, walk-away; state $(w, G)$ | grid VI with quadrature | the four oracles in §4 pass, and the sign of $G(w)$ is mapped |
-| **v1** | **built first:** one-sided jump losses with heavy-tailed severity, and the premium measured against a frictionless twin (§2, §3.5). **Still to come:** several products with a covariance matrix (eqs (11)–(12)), the hurdle schedule $\mu^*(w)$, mechanism D as $c_H(G)$ | grid | the premium is reported across capital levels and jump settings |
+| **v1** | **built first:** one-sided jump losses with heavy-tailed severity (§3.5). **Still to come:** several products with a covariance matrix (eqs (11)–(12)), the hurdle schedule $\mu^*(w)$, mechanism D as $c_H(G)$ | grid | GRC's value is reported across capital levels and jump settings |
 | **v2** | GRC by family (credit, operational, compliance), mechanisms C and D | learner, checked against the grid on the v1 slice | learner within tolerance of the grid where both run |
 | **v3** | deposits as a dynamic stock: inflows, withdrawals and runs, as on crypto rails; then depositors who price risk, as an alternative to the fixed rate; risk weights per asset and a liquidity requirement | learner ($D$ becomes a state variable) | the extension changes some answer; otherwise it is not merged |
 
@@ -594,5 +606,5 @@ reference.
 | Pareto jump severity | standard in operational-risk modeling | `quant/quadrature.py`, §3.5 | heavy-tailed one-sided losses | lognormal, or an empirical exploit-loss distribution |
 | Effective risk aversion from first derivatives | own construction | `quant/results.py` | measures the paper's $G$ as the price of risk, $-E[V_w (w' - Ew')] / (E[V_w] \mathrm{Var}(w'))$; equals the paper's $G$ under normality by Stein's lemma | the right generalization under fat tails is a choice, not a theorem |
 | Hurdle as a measured price of risk | own construction | `quant/results.py` | $-E[V_w \varepsilon] / E[V_w]$ for a small position with payoff shock $\varepsilon$; equals eq. (10) under normality, exact in general | — |
-| Frictionless twin | own construction | `quant/results.py`, §2 | Froot–Stein premium = GRC's value to the bank minus its value to the same bank with free equity issuance | mixes the Froot–Stein effect with limited liability once jumps can wipe the bank out (§2); a twin without walk-away would separate them |
-| GRC value split by mechanism | own construction | superseded | the first premium measure (mean versus spread) | dropped once jumps made prevention act on both |
+| Frictionless twin | own construction | **removed** | a premium measured against a bank raising equity for free | removed as an academic construction with no quantitative meaning (§2) |
+| GRC value split by mechanism | own construction | **removed** | the first premium measure (mean versus spread) | dropped once jumps made prevention act on both (§2) |

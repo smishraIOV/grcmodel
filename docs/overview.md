@@ -83,12 +83,12 @@ wrong at once. Our model allows for both.
 ## What we want to measure
 
 1. **How much GRC is worth** to a firm like this.
-2. **How much of that value exists only because capital is scarce.** We call
-   this the *Froot–Stein premium*. We measure it by comparing our firm with an
-   imaginary twin that can raise money for free whenever it wants. The twin
-   values GRC only for the losses it prevents on average. Anything our firm is
-   willing to pay above that is the premium — the value of protecting its
-   ability to keep operating.
+2. **How that value changes with the firm's situation** — its capital, the
+   risks it carries, and how severe its worst losses can be. Scarce capital
+   makes losses more damaging than their face value, so GRC should be worth
+   more to a thinly capitalized firm facing severe risks. We measure GRC's
+   value to the firm as it is; we do not compare it with imaginary firms that
+   could raise money for free, because no such firm exists.
 3. **How the firm's appetite for risk changes with its capital.** A
    well-capitalized firm can afford to take risk; a thinly capitalized one
    becomes cautious; and one on the brink of failure may start to gamble,
@@ -113,26 +113,6 @@ that the original papers solved with pen and paper, or situations simple
 enough to work out by hand. The program has to reproduce those before we
 believe it on the harder questions.
 
-## What we have found so far
-
-The model's numbers are illustrative: they are not yet calibrated to any real
-firm. What we pay attention to is the **shape** of the results, which tends to
-survive changes in the numbers, rather than any particular figure.
-
-- **The firm behaves as the theory predicts.** It hedges market risk fully. It
-  becomes more cautious as its capital thins: it takes on less of a risky new
-  line of business and demands a higher return from it.
-- **Near failure, caution gives way to gambling.** Close to the point where its
-  owners would walk away, the firm's caution starts to fall again. This is the
-  well-known danger of a bank whose owners have little left to lose.
-- **GRC buys a little survival.** A firm with a stronger GRC program can absorb
-  somewhat larger losses before it gives up.
-- **Against everyday losses alone, the premium is small.** When the only
-  risks are moderate, routine ones, GRC is worth buying almost entirely
-  for the losses it prevents on average. Capital scarcity adds little on top.
-  This is why we are now adding rare, severe losses: the theory says that is
-  where scarce capital — and therefore GRC — should matter most.
-
 ## What comes next
 
 - **Rare, severe losses** (in progress): does GRC become much more valuable
@@ -152,5 +132,5 @@ survive changes in the numbers, rather than any particular figure.
 - **Walking away**: the owners giving up on the firm, at which point it fails.
 - **Fat tails**: extreme events being more likely than a simple "bell curve"
   model would suggest.
-- **Froot–Stein premium**: the part of GRC's value that exists only because
-  raising new capital is costly.
+- **Limited liability**: the owners of a firm can lose what they invested,
+  but no more; anything beyond that falls on creditors and depositors.
