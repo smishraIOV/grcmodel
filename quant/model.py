@@ -15,6 +15,7 @@ import numpy as np
 import torch
 
 from quant.params import Params
+from quant.quadrature import JumpRule, ShockRule
 
 SHOCKS = ("xi_P", "xi_N", "eps_M")
 
@@ -131,3 +132,59 @@ def next_wealth(
     product = alpha * (p.pi + p.s_N * xi_N)
     factor = (p.b_M * I - H) * p.s_M * eps_M - 0.5 * p.c_H * H * H
     return book + cash + product + factor - p.tau * K - (1.0 + p.r_D) * p.D
+
+
+def jump_probability(p: Params, G_next: torch.Tensor) -> torch.Tensor:
+    """Chance of a jump this period: 1 - exp(-rate phi_J(G')).
+
+    GRC acts on frequency -- prevention -- with the same irreducible floor as
+    the other mechanisms. The probability enters the quadrature *weights*, so
+    it is exactly differentiable in the spend; no sampling device is needed.
+    """
+    return 1.0 - torch.exp(-p.jump_rate * mitigation(G_next, p.a_J, p.rho_J))
+
+
+@dataclass(frozen=True)
+class Outcomes:
+    """Every next-period outcome of a decision, with its probability.
+
+    `wealth` and `weights` are (..., M) with M = N (1 + J): each continuous
+    shock node, without a jump and then with each jump severity. `shocks` is
+    (M, 3), the continuous shock behind each outcome, for measuring the price
+    of a particular risk.
+    """
+
+    wealth: torch.Tensor
+    weights: torch.Tensor
+    shocks: torch.Tensor
+
+    def expect(self, values: torch.Tensor) -> torch.Tensor:
+        return (values * self.weights).sum(-1)
+
+
+def outcomes(
+    p: Params, c: Controls, G_next: torch.Tensor, rule: ShockRule, jumps: JumpRule | None
+) -> Outcomes:
+    """w' over the continuous shocks and, if any, the jump losses (design.md 3.5).
+
+    A jump takes a share J of the book, on top of everything else, so with a
+    jump w' falls by I J. It impairs an asset rather than paying cash out --
+    the book is what a drained bridge or a defaulting protocol takes.
+    """
+    base = next_wealth(p, c, G_next, rule.nodes)                    # (..., N)
+    if jumps is None or p.jump_rate == 0.0:
+        weights = rule.weights.expand_as(base)
+        return Outcomes(wealth=base, weights=weights, shocks=rule.nodes)
+    loss = c.I[..., None, None] * jumps.severity                     # (..., 1, J)
+    hit = base.unsqueeze(-1) - loss                                 # (..., N, J)
+    wealth = torch.cat([base.unsqueeze(-1), hit], dim=-1)           # (..., N, 1 + J)
+    q = jump_probability(p, G_next).unsqueeze(-1)                   # (..., 1)
+    branch = torch.cat([1.0 - q, q * jumps.weights], dim=-1)        # (..., 1 + J)
+    weights = rule.weights[:, None] * branch.unsqueeze(-2)          # (..., N, 1 + J)
+    n_out = wealth.shape[-2] * wealth.shape[-1]
+    shocks = rule.nodes.repeat_interleave(1 + jumps.severity.shape[0], dim=0)
+    return Outcomes(
+        wealth=wealth.reshape(*wealth.shape[:-2], n_out),
+        weights=weights.reshape(*weights.shape[:-2], n_out),
+        shocks=shocks,
+    )

@@ -63,12 +63,14 @@ def test_target_stock_is_interior(solved):
     assert 0.0 < target_stock(solved) < SPEC.s_hi
 
 
-def test_without_non_tradeable_risk_only_the_mean_mechanism_matters():
-    """Oracle 5: with nothing for GRC to narrow, its spread effect is worthless."""
-    p = replace(BASE, s_P=0.0, s_N=0.0)
+def test_without_non_tradeable_risk_there_is_no_premium():
+    """Oracle 5: with no risk the bank must keep, GRC is worth only its
+    expected-loss saving, so the constrained bank and its frictionless twin
+    value it identically."""
+    p = replace(BASE, s_P=0.0, s_N=0.0, jump_rate=0.0)
     gv = grc_value(p, P, SPEC)
-    assert gv.spread_only == pytest.approx(gv.none, abs=1e-6)
-    assert gv.both == pytest.approx(gv.mean_only, abs=1e-6)
+    assert gv.gain > 0
+    assert gv.premium == pytest.approx(0.0, abs=1e-5)
 
 
 def test_every_entry_point_imports():

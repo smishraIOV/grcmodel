@@ -1,7 +1,8 @@
 """What a solved bank says: the v0 outputs (design.md sections 2, 3.3, 6).
 
 Everything here reads a `Solution`; nothing re-solves except `grc_value`,
-which compares solves by construction.
+which compares solves by construction. Expectations run over every outcome,
+jumps included.
 
 **Effective risk aversion without second derivatives.** The paper's
 G = -E[P''] / E[P'] needs the value function's curvature, and a linearly
@@ -27,23 +28,23 @@ from dataclasses import dataclass, replace
 
 import torch
 
-from quant.model import next_grc, next_wealth
+from quant.model import next_grc, outcomes
 from quant.params import Params
 from quant.solver import GridSpec, Solution, interpolate, solve
 
 
 def _next_period(sol: Solution):
-    """w' at every node for every grid state, and V_w at those points."""
-    p, grid, rule = sol.params, sol.grid, sol.rule
+    """Every next-period outcome for every grid state, and V_w at each."""
+    p, grid = sol.params, sol.grid
     _, s = grid.states()
     with torch.no_grad():
         c = sol.controls()
         s_next = next_grc(p, s, c.g)
-        w_next = next_wealth(p, c, s_next, rule.nodes)
-    point = w_next.clone().requires_grad_(True)
+        out = outcomes(p, c, s_next, sol.rule, sol.jumps)
+    point = out.wealth.clone().requires_grad_(True)
     value = interpolate(p, sol.V, grid, point, s_next.unsqueeze(-1))
     (slope,) = torch.autograd.grad(value.sum(), point)
-    return w_next, slope
+    return out, slope
 
 
 @dataclass(frozen=True)
@@ -57,14 +58,14 @@ class RiskMap:
 
 
 def risk_map(sol: Solution) -> RiskMap:
-    p, rule = sol.params, sol.rule
-    w_next, slope = _next_period(sol)
-    E = rule.expect
+    p = sol.params
+    out, slope = _next_period(sol)
+    E = out.expect
     shadow = E(slope)
-    centered = w_next - E(w_next).unsqueeze(-1)
+    centered = out.wealth - E(out.wealth).unsqueeze(-1)
     variance = E(centered * centered)
     G = -E(slope * centered) / (shadow * torch.clamp(variance, min=1e-300))
-    xi_P, xi_N = rule.nodes[:, 0], rule.nodes[:, 1]
+    xi_P, xi_N = out.shocks[:, 0], out.shocks[:, 1]
     hurdle_N = -E(slope * (p.s_N * xi_N)) / shadow
     hurdle_P = -E(slope * (p.s_P * xi_P)) / shadow
     return RiskMap(shadow=shadow, G=G, hurdle_N=hurdle_N, hurdle_P=hurdle_P)
@@ -110,40 +111,51 @@ def target_stock(sol: Solution, at_w: float | None = None) -> float:
 
 @dataclass(frozen=True)
 class GrcValue:
-    """What GRC is worth, split by mechanism (design.md section 2).
+    """What a GRC program is worth, and how much of that is the Froot-Stein premium.
 
-    Each row is a separate solve with GRC allowed to act through some
-    mechanisms and not others. Values are V at one equity level and zero GRC
-    stock -- a bank deciding whether to start a program.
+    Value is V at one equity level and zero GRC stock: a bank deciding whether
+    to start a program. "Worth" is the gain over the same bank with GRC that
+    does nothing.
+
+    **The premium is measured against a frictionless twin** (design.md 3.5):
+    the same bank, same risks, but able to raise equity at no cost. A bank
+    that can always recapitalize for free is indifferent to risk, so it values
+    GRC only for the expected losses it removes. What the real bank pays above
+    that, only a capital-constrained bank would pay. This replaced a split by
+    mechanism, which stopped isolating the premium once jumps arrived: cutting
+    jump frequency removes expected loss *and* tail risk at once.
     """
 
-    none: float          # GRC does nothing
-    mean_only: float     # mechanism A: smaller expected loss
-    spread_only: float   # mechanism B: smaller spread -- the Froot-Stein premium
-    both: float
-    stock_mean_only: float
-    stock_both: float
+    gain: float               # GRC's value to this bank
+    gain_frictionless: float  # GRC's value to the frictionless twin
+    stock: float              # target GRC stock, this bank
+    stock_frictionless: float
+
+    @property
+    def premium(self) -> float:
+        return self.gain - self.gain_frictionless
 
     @property
     def premium_share(self) -> float:
-        """Share of GRC's value that only a capital-constrained bank would pay for."""
-        total = self.both - self.none
-        return (self.both - self.mean_only) / total if total > 0 else float("nan")
+        return self.premium / self.gain if self.gain > 0 else float("nan")
 
 
 def grc_value(p: Params, profile, spec: GridSpec, at_w: float = 0.1, **solve_args) -> GrcValue:
-    def solved(q):
-        return solve(q, profile, spec, **solve_args)
+    inert = dict(a_A=0.0, a_B=0.0, a_J=0.0)
 
-    def value(sol):
+    def value(q):
+        sol = solve(q, profile, spec, **solve_args)
         row = int(torch.argmin((sol.grid.w - at_w).abs()))
-        return float(sol.V[row, 0])
+        return float(sol.V[row, 0]), sol
 
-    none = solved(replace(p, a_A=0.0, a_B=0.0))
-    mean = solved(replace(p, a_B=0.0))
-    spread = solved(replace(p, a_A=0.0))
-    both = solved(p)
+    free = replace(p, lam=0.0, kappa=0.0)
+    with_grc, sol = value(p)
+    without, _ = value(replace(p, **inert))
+    with_grc_free, sol_free = value(free)
+    without_free, _ = value(replace(free, **inert))
     return GrcValue(
-        none=value(none), mean_only=value(mean), spread_only=value(spread), both=value(both),
-        stock_mean_only=target_stock(mean), stock_both=target_stock(both),
+        gain=with_grc - without,
+        gain_frictionless=with_grc_free - without_free,
+        stock=target_stock(sol),
+        stock_frictionless=target_stock(sol_free),
     )

@@ -100,5 +100,7 @@ print the profile, torch version and commit they ran under.
 - Numbers quoted in `docs/` must come from a real run under `reference`. If a
   change moves them, re-run and update.
 - Distinguish what is implemented from what is designed but not yet built.
+- **`docs/overview.md` is the plain-language companion**: no formulas, written
+  for non-technical readers. Update it when a stage lands or a finding changes.
 - Parameters are illustrative, not calibrated. Lead with shapes and
   break-evens; quote levels as "at the current calibration".

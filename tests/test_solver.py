@@ -17,7 +17,8 @@ P = REFERENCE
 SPEC = GridSpec(n_w=33, n_s=5, s_hi=0.08, w_lo=-0.4, w_hi=0.6, n_hermite=3, n_mixing=4)
 # GRC that is worth buying and a product that is not free money, so the
 # controls are interior. The defaults are not yet calibrated for this.
-BASE = replace(DEFAULTS, m=0.02, s_P=0.03, a_A=100.0, a_B=100.0, pi=0.002)
+# v0's configuration: no jumps, which the v1 tests add (tests/test_jumps.py).
+BASE = replace(DEFAULTS, m=0.02, s_P=0.03, a_A=100.0, a_B=100.0, pi=0.002, jump_rate=0.0)
 
 
 @pytest.fixture(scope="module")

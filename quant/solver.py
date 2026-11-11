@@ -51,6 +51,7 @@ import torch.nn.functional as F
 from quant.model import (
     Controls,
     capital_floor,
+    outcomes,
     issuance_cost,
     next_grc,
     next_wealth,
@@ -59,7 +60,7 @@ from quant.model import (
 )
 from quant.numerics import NumericsProfile
 from quant.params import Params
-from quant.quadrature import ShockRule, student_t_rule
+from quant.quadrature import JumpRule, ShockRule, pareto_jump_rule, student_t_rule
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,7 @@ class GridSpec:
     I_max: float = 1.5
     n_hermite: int = 5
     n_mixing: int = 8
+    n_jump: int = 8
     interpolation: str = "linear"  # or "cubic" (Catmull-Rom); see `interpolate`
 
 
@@ -191,13 +193,13 @@ class RawPolicy:
 
 
 def continuation(
-    p: Params, grid: Grid, rule: ShockRule, V: torch.Tensor,
+    p: Params, grid: Grid, rule: ShockRule, jumps: JumpRule | None, V: torch.Tensor,
     w: torch.Tensor, s: torch.Tensor, c: Controls,
 ) -> torch.Tensor:
     """flow(w, K) + beta E V(w', S'), before the walk-away floor."""
     s_next = next_grc(p, s, c.g)
-    w_next = next_wealth(p, c, s_next, rule.nodes)
-    future = rule.expect(interpolate(p, V, grid, w_next, s_next.unsqueeze(-1)))
+    out = outcomes(p, c, s_next, rule, jumps)
+    future = out.expect(interpolate(p, V, grid, out.wealth, s_next.unsqueeze(-1)))
     return shareholder_flow(p, w, c.K) + p.beta * future
 
 
@@ -206,6 +208,7 @@ class Solution:
     params: Params
     grid: Grid
     rule: ShockRule
+    jumps: JumpRule | None
     V: torch.Tensor                 # (n_w, n_s)
     policy: RawPolicy
     residual: float                 # sup |V - T V| at the end
@@ -255,8 +258,8 @@ class RisklessSteadyState:
 
 
 def riskless_steady_state(p: Params, profile: NumericsProfile) -> RisklessSteadyState:
-    if (p.s_P, p.s_N, p.s_M, p.a_A) != (0.0, 0.0, 0.0, 0.0):
-        raise ValueError("the riskless oracle needs s_P = s_N = s_M = a_A = 0")
+    if (p.s_P, p.s_N, p.s_M, p.a_A, p.jump_rate) != (0.0, 0.0, 0.0, 0.0, 0.0):
+        raise ValueError("the riskless oracle needs s_P = s_N = s_M = a_A = jump_rate = 0")
 
     def closing(I):
         K = capital_floor(p, I, torch.zeros_like(I))
@@ -297,6 +300,10 @@ def solve(
     rule = student_t_rule(
         shock_correlation(p), p.nu, profile, n_hermite=spec.n_hermite, n_mixing=spec.n_mixing
     )
+    jumps = (
+        pareto_jump_rule(p.jump_mean, p.jump_tail, profile, n=spec.n_jump)
+        if p.jump_rate > 0 else None
+    )
     w, s = grid.states()
     n = w.shape[0]
     # Start risk-neutral: V = w - w_lo is linear, so the first improvements see
@@ -310,7 +317,7 @@ def solve(
     history = []
 
     def bellman(V_now, c):
-        return torch.relu(continuation(p, grid, rule, V_now, w, s, c)).reshape(spec.n_w, spec.n_s)
+        return torch.relu(continuation(p, grid, rule, jumps, V_now, w, s, c)).reshape(spec.n_w, spec.n_s)
 
     def ascend(V_now, start: RawPolicy, steps: int) -> tuple[RawPolicy, torch.Tensor]:
         return ascend_at(V_now, start, steps, lr)
@@ -322,11 +329,11 @@ def solve(
         for _ in range(steps):
             optimizer.zero_grad()
             c = RawPolicy(*params).controls(p, grid)
-            (-continuation(p, grid, rule, V_now, w, s, c).sum()).backward()
+            (-continuation(p, grid, rule, jumps, V_now, w, s, c).sum()).backward()
             optimizer.step()
         found = RawPolicy(*[z.detach() for z in params])
         with torch.no_grad():
-            value = continuation(p, grid, rule, V_now, w, s, found.controls(p, grid))
+            value = continuation(p, grid, rule, jumps, V_now, w, s, found.controls(p, grid))
         return found, value
 
     for it in range(max_iterations):
@@ -373,6 +380,6 @@ def solve(
             V = V_next
 
     return Solution(
-        params=p, grid=grid, rule=rule, V=V, policy=policy,
+        params=p, grid=grid, rule=rule, jumps=jumps, V=V, policy=policy,
         residual=residual, iterations=it + 1, history=history,
     )

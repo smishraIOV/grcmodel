@@ -70,5 +70,6 @@ The previous model (finite horizon, hazard-based failure) is preserved on the
 
 ## See also
 
+* [`docs/overview.md`](docs/overview.md) — the project in plain language, for non-technical readers
 * [`docs/design.md`](docs/design.md) — the model being built, and why
 * [`docs/framework.md`](docs/framework.md) — GRC pillars, risk taxonomy, operating environment, and the firm-value definition this project uses

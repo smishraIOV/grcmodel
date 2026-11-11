@@ -104,3 +104,36 @@ def student_t_rule(
         nodes=profile.tensor(nodes),
         weights=profile.tensor(weights / weights.sum()),
     )
+
+
+@dataclass(frozen=True)
+class JumpRule:
+    """Severity nodes for a jump loss, as shares of the book, with probabilities.
+
+    The severity is Pareto with tail index `tail`, scaled to mean `mean`, and
+    capped at 1: a jump cannot take more than the whole book. Nodes are placed
+    like the mixing rule's -- Gauss-Legendre in log tail-probability -- so they
+    crowd into the far tail where a heavy-tailed loss does its damage.
+    """
+
+    severity: torch.Tensor   # (J,)
+    weights: torch.Tensor    # (J,), summing to one
+
+    @property
+    def mean(self) -> float:
+        return float(self.weights @ self.severity)
+
+
+def pareto_jump_rule(
+    mean: float, tail: float, profile: NumericsProfile, n: int = 8, tail_prob: float = 1e-8
+) -> JumpRule:
+    s, ws = np.polynomial.legendre.leggauss(n)
+    lo = math.log(tail_prob)
+    s = lo + (s + 1.0) * (-lo) / 2.0
+    ws = ws * (-lo) / 2.0
+    survival = np.exp(s)               # P(severity > x) at each node
+    p = ws * survival
+    p = p / p.sum()
+    scale = mean * (tail - 1.0) / tail     # Pareto minimum, so that E = mean before the cap
+    severity = np.minimum(scale * survival ** (-1.0 / tail), 1.0)
+    return JumpRule(severity=profile.tensor(severity), weights=profile.tensor(p))

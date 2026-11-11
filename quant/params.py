@@ -52,12 +52,19 @@ class Params:
     # -- shocks ----------------------------------------------------------
     nu: float = 5.0          # Student-t degrees of freedom; math.inf is the normal case
 
+    # -- jump losses (v1, design.md section 3.5) --------------------------
+    jump_rate: float = 0.1   # jumps per period at zero GRC (Poisson rate; at most one counted)
+    jump_mean: float = 0.05  # mean share of the book lost in a jump
+    jump_tail: float = 2.5   # Pareto tail index of the severity; > 2 keeps the variance finite
+
     # -- GRC -------------------------------------------------------------
     delta: float = 0.25      # share of the GRC stock lost per period
     a_A: float = 50.0        # effectiveness against the mean loss, per unit of stock
     a_B: float = 50.0        # effectiveness against the spread
     rho_A: float = 0.3       # share of the mean loss no program removes
     rho_B: float = 0.3       # share of the spread no program removes
+    a_J: float = 100.0       # effectiveness against jump frequency (prevention)
+    rho_J: float = 0.3       # share of jump frequency no program removes
 
     def __post_init__(self):
         if not self.A > 1.0 + self.r:
@@ -66,6 +73,8 @@ class Params:
             raise ValueError("nu must exceed 2 for covariances to exist")
         if not self.r_E >= self.r:
             raise ValueError("shareholders cannot require less than cash earns: r_E >= r")
+        if self.jump_rate > 0 and not self.jump_tail > 2.0:
+            raise ValueError("jump_tail must exceed 2 for the jump variance to exist")
         if not 0.0 <= self.k < 1.0:
             raise ValueError("capital ratio k must be in [0, 1)")
 

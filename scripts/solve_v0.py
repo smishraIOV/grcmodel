@@ -23,7 +23,7 @@ from quant.params import DEFAULTS  # noqa: E402
 from quant.results import grc_value, risk_map, target_stock, thresholds  # noqa: E402
 from quant.solver import GridSpec, solve  # noqa: E402
 
-PARAMS = replace(DEFAULTS, m=0.02, s_P=0.03, a_A=100.0, a_B=100.0, pi=0.002)
+PARAMS = replace(DEFAULTS, m=0.02, s_P=0.03, a_A=100.0, a_B=100.0, pi=0.002, jump_rate=0.0)
 SPEC = GridSpec(n_w=257, n_s=9, s_hi=0.08, w_lo=-0.4, w_hi=0.6, n_hermite=5, n_mixing=8)
 SHOW = (-0.25, -0.2, -0.15, -0.1, -0.05, 0.0, 0.03, 0.06, 0.1, 0.3)
 
@@ -55,12 +55,9 @@ def main(argv=None):
 
     gv = grc_value(PARAMS, profile, SPEC)
     print("\nGRC value at w = 0.1, starting from no program")
-    print(f"  no GRC                  {gv.none:.5f}")
-    print(f"  expected loss only (A)  {gv.mean_only:.5f}   target stock {gv.stock_mean_only:.4f}")
-    print(f"  spread only (B)         {gv.spread_only:.5f}")
-    print(f"  both                    {gv.both:.5f}   target stock {gv.stock_both:.4f}")
-    print(f"  Froot-Stein premium share of GRC's value: {gv.premium_share:.1%}")
-
+    print(f"  to this bank                    {gv.gain:.5f}   target stock {gv.stock:.4f}")
+    print(f"  to a bank that raises equity free {gv.gain_frictionless:.5f}   target stock {gv.stock_frictionless:.4f}")
+    print(f"  Froot-Stein premium             {gv.premium:.5f}   ({gv.premium_share:.1%} of GRC's value)")
 
 if __name__ == "__main__":
     main()

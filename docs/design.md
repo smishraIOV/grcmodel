@@ -111,13 +111,17 @@ them apply to which risk is the brainstorm in §5.
 | **D. tradeability** | turns non-tradeable risk into tradeable risk: audited contracts become insurable, a documented book becomes saleable | moves risk from the $G$-priced bucket to the $\gamma$-priced one. The most distinctively Froot–Stein mechanism |
 
 **The headline output this makes possible:** split a GRC program's value into
+what any firm would pay for and what only a capital-constrained firm pays for.
+The second part is the **Froot–Stein premium**.
 
-- **A**, which any firm would pay for;
-- **B + C + D**, which only a capital-constrained firm pays for.
-
-Measure that split as a function of how much capital the bank holds. It is the
-"Froot–Stein premium" the old model tried to report, now defined from the
-paper's own objects rather than as a gap between two solves.
+*How it is measured (revised in v1).* The first version split value by
+mechanism: A as "any firm", B + C + D as "constrained only". That stops working
+once GRC acts on jump losses, because preventing a jump removes expected loss
+and tail risk at once. The premium is now measured directly: GRC's value to
+this bank minus its value to a **frictionless twin**, the same bank with the same
+risks but able to raise equity at no cost. A bank that can always recapitalize
+for free does not care about risk, so it values GRC only for expected losses
+removed. Whatever the real bank pays above that is the premium (§3.5).
 
 ---
 
@@ -339,6 +343,31 @@ stock.
 **Cost of carrying equity:** the spread $r_E - r$, through the discount
 factor. $\tau K$ stays available as an extra linear friction, zero by default.
 
+### 3.5 Jump losses (v1)
+
+The continuous shocks of v0 are frequent and moderate. The risks that matter
+most on crypto rails — a drained bridge, a protocol exploit, a custodian
+failure — are rare and large. v1 adds them as **jump losses**.
+
+- **At most one jump per period**, with probability
+  $p_J = 1 - e^{-\lambda_J \phi_J(G')}$. $\lambda_J$ is the rate at zero GRC.
+- **Severity is a share of the book**, Pareto with tail index $\zeta$, scaled to a
+  mean $\mu_J$, and capped at 1: a jump cannot take more than the whole book. The
+  loss is $I \cdot J$. Like credit losses, it impairs an asset rather than
+  paying cash out.
+- **GRC acts on frequency** (prevention), through
+  $\phi_J(G) = \rho_J + (1 - \rho_J) e^{-a_J G}$, with the same irreducible
+  floor as the other mechanisms. Acting on severity (containment) is a later
+  option.
+- **Integration.** The severity uses the same tail-placed quadrature as the
+  $t$'s mixing variable, so nodes crowd into the far tail. The jump
+  probability enters the quadrature **weights**, so it is exactly
+  differentiable in GRC spend, with no sampling device needed.
+
+Defaults (illustrative): $\lambda_J = 0.1$ a year, $\mu_J = 5\%$ of the book,
+$\zeta = 2.5$, $a_J = 100$, $\rho_J = 0.3$. A 5% loss of a book of 0.8 is 0.04,
+about two-thirds of the bank's minimum capital; the tail goes far beyond it.
+
 ---
 
 ## 4. How it is solved
@@ -450,7 +479,7 @@ Questions for the next pass:
 | stage | adds | solved by | done when |
 |---|---|---|---|
 | **v0** | one non-tradeable risk, one tradeable factor, one new product, one GRC family, a fixed deposit base at a fixed rate, walk-away; state $(w, G)$ | grid VI with quadrature | the four oracles in §4 pass, and the sign of $G(w)$ is mapped |
-| **v1** | several products with a covariance matrix: eqs (11)–(12), the hurdle schedule $\mu^*(w)$, the A versus B+C+D split; one-sided jump losses with heavy-tailed severity; mechanism D as $c_H(G)$ | grid | the split is reported across capital levels |
+| **v1** | **built first:** one-sided jump losses with heavy-tailed severity, and the premium measured against a frictionless twin (§2, §3.5). **Still to come:** several products with a covariance matrix (eqs (11)–(12)), the hurdle schedule $\mu^*(w)$, mechanism D as $c_H(G)$ | grid | the premium is reported across capital levels and jump settings |
 | **v2** | GRC by family (credit, operational, compliance), mechanisms C and D | learner, checked against the grid on the v1 slice | learner within tolerance of the grid where both run |
 | **v3** | deposits as a dynamic stock: inflows, withdrawals and runs, as on crypto rails; then depositors who price risk, as an alternative to the fixed rate; risk weights per asset and a liquidity requirement | learner ($D$ becomes a state variable) | the extension changes some answer; otherwise it is not merged |
 
