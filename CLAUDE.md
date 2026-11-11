@@ -42,6 +42,7 @@ print the profile, torch version and commit they ran under.
 - `quant/quadrature.py` — deterministic rules for the Student-t shocks
 - `quant/twoperiod.py` — the two-period truncation, the paper's own structure,
   used as the oracle (a known-answer check against the paper's formulas)
+- `quant/solver.py` — the infinite-horizon grid solver (policy iteration)
 - `quant/numerics.py` — profiles: device, dtype, RNG
 
 ## Numerics

@@ -1,8 +1,9 @@
 # Design: a dynamic Froot–Stein (1998) bank, with GRC as a fourth lever
 
-Status: **v0 in progress**. The one-period model, the quadrature and the
-two-period oracle (a known-answer check) are built (`quant/`); the infinite-horizon solver is being
-written. The previous model is frozen on the `legacy` branch.
+Status: **v0 in progress**. The one-period model, the quadrature, the
+two-period oracle (a known-answer check) and the infinite-horizon grid solver
+are built (`quant/`). Results and the effective-risk-aversion map are next.
+The previous model is frozen on the `legacy` branch.
 
 Decisions already taken (2026-11-10):
 
@@ -355,8 +356,27 @@ the whole class of sampling problems in the old `CLAUDE.md` traps list.
 grid point. That is the part where array tooling matters: a gradient-based
 inner maximisation under PyTorch or JAX, vectorised over the grid. The grid
 solver and the later learner should share one backend, so the learner can be
-graded against the grid on identical arithmetic. The backend is chosen when v0's
-solver is written.
+graded against the grid on identical arithmetic.
+
+**As built (`quant/solver.py`).** PyTorch, policy iteration: Adam on every grid
+point's controls at once, then repeated evaluation of the fixed policy. Three
+choices were forced by what the first solves did:
+
+- **Linear interpolation in $w$, not cubic.** Catmull-Rom bulged into a small
+  convex patch near the payout kink and the solver gambled on it: hedge errors
+  of 0.03 in matched $\pm$ pairs. Linear interpolation of a concave function is
+  concave, and hedged exactly.
+- **Two starts per improvement.** The product size and the hedge are bounded
+  through `sigmoid`/`tanh`; a control pushed to its bound early has almost no
+  gradient left to come back. Each step also optimises from a fresh start and
+  keeps the better per grid point. The first solve also starts from a linear,
+  risk-neutral value rather than $\max(w, 0)$, whose kink invited gambling.
+- **Below the grid the bank issues equity back onto it**, rather than having
+  its value clamped. Clamping capped the downside of any gamble and the first
+  solve diverged.
+
+The GRC stock is written $S$ in the code, because $G$ is also the paper's
+effective risk aversion.
 
 **Oracles:**
 
@@ -366,9 +386,17 @@ solver is written.
    Under the $t$ it is not exact, and how far the mean-variance hurdle (10) is
    from the true one becomes a **result**: how wrong the paper's rule is when
    tails are fat.
-2. $r_E \to r$ with $\tau = 0$: $G \to 0$ and the bank hoards.
-3. Prop. 2: full hedging of the tradeable factor where $G > 0$.
-4. No non-tradeable risk: GRC's value reduces to mechanism A alone.
+2. **No shocks, inert GRC.** The infinite-horizon value is known exactly above
+   the steady state: the bank holds its capital floor, lends a fixed book and
+   pays out the rest. Checks the solver's *level*, not only its shape. Built;
+   matches to 2e-8.
+3. $r_E = r$ with $\tau = 0$: equity is free to carry, so the bank holds a
+   buffer well above its floor. Above some level it is indifferent between
+   holding and paying out, so $K$ is not pinned there. Built.
+4. Prop. 2: full hedging of the tradeable factor where the bank is risk-averse.
+   Built; exact to 1e-3 at every state with $w \ge 0$.
+5. No non-tradeable risk: GRC's value reduces to mechanism A alone. Not yet
+   built.
 
 **The learner** comes in when the state outgrows a grid: several GRC families,
 then deposits. It is trained on the same stationary problem and **graded
