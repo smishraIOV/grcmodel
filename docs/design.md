@@ -1,8 +1,8 @@
 # Design: a dynamic Froot–Stein (1998) bank, with GRC as a fourth lever
 
-Status: **draft for discussion**. Nothing here is implemented. It replaces the
-current model rather than extending it; the current `main` is to be frozen on a
-`legacy` branch before any code lands.
+Status: **v0 in progress**. The one-period model, the quadrature and the
+two-period oracle (a known-answer check) are built (`quant/`); the infinite-horizon solver is being
+written. The previous model is frozen on the `legacy` branch.
 
 Decisions already taken (2026-11-10):
 
@@ -21,6 +21,10 @@ Decisions already taken (2026-11-10):
 - **Abstraction level:** keep only the paper's core economic drivers, at the
   level of detail where the problem can be solved computationally as an
   optimisation. Matching every detail of the paper is not a goal.
+- **A practical model, not a replication.** The paper's simplifying
+  assumptions exist to keep its analysis tractable; a computational model does
+  not need them. Departures are fine, but each one is justified and listed in
+  §8.
 - **Walk-away is in:** shareholders can abandon the firm, and the firm fails.
 - **"Partly tradeable" means hedgeable at a price above fair.** GRC mechanism D
   works by lowering that price.
@@ -203,8 +207,10 @@ $$
 - $b_M$ is the book's loading on the tradeable factor (crypto collateral
   prices, say), and $H_t$ sells it off. $h(H)$ is the hedging cost, zero when
   the factor is fairly tradeable.
-- $\tau K_t$ is the deadweight cost of carrying equity, the paper's $\tau K$
-  charged every period.
+- $\tau K_t$ is an optional extra deadweight cost of carrying equity. Its
+  default is zero: the cost of holding equity comes from shareholders
+  discounting at $r_E > r$ while the cash that equity funds earns only $r$
+  (§3.3, §8).
 - Depositors are owed $(1+r_D)D$ at the close, so $w_{t+1}$ is assets less
   that. The base is rolled over: the re-deposited $D$ arrives as cash next
   period through $R_{t+1}$. Adding it back here as well would count it twice;
@@ -236,11 +242,13 @@ $$
 
 subject to the two balance-sheet constraints of §3.2 (capital ratio and
 non-negative cash), with
-$\beta = 1/(1+r)$. The outer $\max\{0, \cdot\}$ is the walk-away. A single
+$\beta = 1/(1+r_E)$, the shareholders' required return. The outer
+$\max\{0, \cdot\}$ is the walk-away. A single
 stage per period, so the stationary problem is one fixed point.
 
 Concavity of $V$ in $w$ is not assumed. It comes out of $F$, $C$, the
-constraint $K \ge 0$, and the carry cost $\tau$. The walk-away floor pushes
+constraint $K \ge 0$, and the cost of carrying equity, $r_E - r$ (plus $\tau$
+if set). The walk-away floor pushes
 the other way.
 
 **Dynamic counterparts of the paper's results.** Each one is a test or an
@@ -250,8 +258,9 @@ output:
   next-period distribution, is a **state-dependent** effective risk aversion.
   The hurdle (10) becomes a schedule in capital, $\mu^*(w)$.
 - (14) becomes the **payout boundary** $\bar w$: the bank pays out above it,
-  where $V_w = 1$. The carry cost $\tau$ sets where it sits; as $\tau \to 0$ the
-  bank hoards and $G \to 0$. Expect a threshold policy. Test for it rather than
+  where $V_w = 1$. The cost of carrying equity sets where it sits; as
+  $r_E \to r$ (with $\tau = 0$) the bank hoards and $G \to 0$. Expect a
+  threshold policy. Test for it rather than
   impose it.
 - Prop. 2 should hold where $V$ is concave: with $h \equiv 0$, $H$ hedges
   fully. $H$ stays a free control and the test checks the solver picks it.
@@ -326,7 +335,8 @@ tradeable" (§5), and the quadratic gives a partial hedge rather than an
 all-or-nothing one. Mechanism D enters in v1 as $c_H(G)$, falling in the GRC
 stock.
 
-**Carry cost of equity: linear,** $\tau K$, as in the paper.
+**Cost of carrying equity:** the spread $r_E - r$, through the discount
+factor. $\tau K$ stays available as an extra linear friction, zero by default.
 
 ---
 
@@ -356,7 +366,7 @@ solver is written.
    Under the $t$ it is not exact, and how far the mean-variance hurdle (10) is
    from the true one becomes a **result**: how wrong the paper's rule is when
    tails are fat.
-2. $\tau \to 0$: $G \to 0$ and the bank hoards.
+2. $r_E \to r$ with $\tau = 0$: $G \to 0$ and the bank hoards.
 3. Prop. 2: full hedging of the tradeable factor where $G > 0$.
 4. No non-tradeable risk: GRC's value reduces to mechanism A alone.
 
@@ -430,3 +440,23 @@ Each stage needs approval before it starts. v0 is a few sessions.
 4. **RAROC.** Check the JFE text for the comparison section, and decide whether
    it becomes a v1 output: standalone-risk pricing against the
    covariance-with-book pricing in (10).
+
+---
+
+## 8. Departures from the paper
+
+Each is a deliberate change from Froot & Stein (1998), made because this is a
+computational model for practical analysis rather than a closed-form argument.
+
+| departure | the paper | here | why |
+|---|---|---|---|
+| Horizon | three dates | infinite, stationary | a bank is a going concern; a finite horizon needs a terminal value, and in the legacy model that constant carried a third of firm value |
+| Timing | riskless investment after the risk is borne | one decision per period; the book itself is risky | for a bank the lending book *is* the main non-tradeable risk, and its credit risk grows with its size |
+| Shocks | normal | multivariate Student-$t$, shared variance factor | fat tails and tail dependence are what crises are made of; the normal case is kept as a limit ($\nu \to \infty$) for the oracles |
+| Liabilities | none explicit; $\tau$ stands for the cost of equity relative to debt | a fixed deposit base at a fixed rate, senior to dividends | the practical setting is a deposit-taking intermediary, and leverage is what makes ordinary losses dangerous |
+| Failure | none | walk-away under limited liability; depositors bear the shortfall | failure becomes a decision rather than an asserted hazard rate, and risk-shifting can be observed rather than ruled out |
+| Regulation | none | minimum capital ratio $K \ge kI$ | ordinary bank regulation; it gives the Froot–Stein channel a second route (a loss shrinks the book the bank may lend) |
+| Hedging | tradeable risk hedged at fair prices | hedging at a cost $c_H$ for "partly tradeable" risk | crypto-rails risks (exploit cover, custody insurance) are hedgeable only thinly and expensively |
+| GRC | absent | a fourth lever acting on non-tradeable risk | the project's purpose |
+| **Discounting** | at the riskless rate $r$; the cost of equity is a separate deadweight $\tau K$ | at the shareholders' required return $r_E > r$; cash earns $r$; $\tau = 0$ by default | discounting an infinite stream of bank profits at the riskless rate capitalises them into an implausibly large franchise. In the first solves the bank was worth over 1 at zero equity, so it would recapitalise from any loss and walk-away never occurred. Discounting at a cost of equity gives the carrying cost of capital ($r_E - r$) and a franchise of realistic size from one parameter. $r_E$ is to be set against a target **market-to-book ratio**, which is observable, rather than chosen directly |
+

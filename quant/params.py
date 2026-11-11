@@ -18,13 +18,15 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Params:
     # -- rates and the opportunity ---------------------------------------
-    r: float = 0.02          # riskless rate per period; cash earns it, beta = 1/(1+r)
+    r: float = 0.02          # riskless rate per period; cash earns it
+    r_E: float = 0.06        # shareholders' required return; beta = 1/(1+r_E). Departure from the
+                             # paper, design.md section 8: to be set against a target market-to-book
     A: float = 1.08          # gross return on the first unit lent, F'(0)
 
     # -- frictions: what makes the bank care about risk ------------------
     lam: float = 0.05        # proportional cost of issuing equity
     kappa: float = 1.0       # convex cost of issuing equity. A switch, not a calibration
-    tau: float = 0.01        # deadweight cost of carrying a unit of equity for a period
+    tau: float = 0.0         # extra deadweight cost of carrying equity; the main cost is r_E - r
 
     # -- liabilities and regulation --------------------------------------
     D: float = 0.9           # deposit base, fixed in v0, rolled over each period
@@ -45,6 +47,7 @@ class Params:
     b_M: float = 0.5         # the book's loading on the factor (crypto collateral prices)
     s_M: float = 0.10        # the factor's standard deviation per period
     c_H: float = 0.0         # hedging cost, c_H/2 * H^2. Zero: fairly tradeable, Prop. 2 applies
+    x_max: float = 1.0       # bound on the unhedged factor exposure, |b_M I - H|, for the same reason
 
     # -- shocks ----------------------------------------------------------
     nu: float = 5.0          # Student-t degrees of freedom; math.inf is the normal case
@@ -61,6 +64,8 @@ class Params:
             raise ValueError("the book must beat cash at the margin: A > 1 + r")
         if not self.nu > 2.0:
             raise ValueError("nu must exceed 2 for covariances to exist")
+        if not self.r_E >= self.r:
+            raise ValueError("shareholders cannot require less than cash earns: r_E >= r")
         if not 0.0 <= self.k < 1.0:
             raise ValueError("capital ratio k must be in [0, 1)")
 
@@ -71,7 +76,7 @@ class Params:
 
     @property
     def beta(self) -> float:
-        return 1.0 / (1.0 + self.r)
+        return 1.0 / (1.0 + self.r_E)
 
     @property
     def normal(self) -> bool:

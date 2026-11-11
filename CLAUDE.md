@@ -41,7 +41,7 @@ print the profile, torch version and commit they ran under.
 - `quant/model.py` — one period of the bank: primitives and the transition
 - `quant/quadrature.py` — deterministic rules for the Student-t shocks
 - `quant/twoperiod.py` — the two-period truncation, the paper's own structure,
-  used as the oracle
+  used as the oracle (a known-answer check against the paper's formulas)
 - `quant/numerics.py` — profiles: device, dtype, RNG
 
 ## Numerics

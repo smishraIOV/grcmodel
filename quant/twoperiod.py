@@ -1,4 +1,8 @@
-"""The two-period truncation: the paper's own structure, as an oracle (design.md section 4).
+"""The two-period truncation: the paper's own structure, as an oracle.
+
+An oracle here is a known-answer check: a case where the paper's formulas give
+the exact result, so the numerical code can be tested against them
+(design.md section 4).
 
 With one period left, the bank faces the Froot-Scharfstein-Stein problem of
 Froot & Stein (1998) eq. (2): a riskless opportunity F(I), funded from internal
@@ -47,28 +51,28 @@ GOLDEN = (np.sqrt(5.0) - 1.0) / 2.0
 def final_objective(p: Params, w: torch.Tensor, I: torch.Tensor) -> torch.Tensor:
     """Value of the last operating period at book I, with K at its floor.
 
-    Holding equity above the floor costs tau and buys nothing in a riskless
-    period, so K = L(I) and everything above it is paid out (or, below it,
-    raised). The bank then lends I, earns F(I), repays depositors and
-    liquidates:
+    The bank moves equity from w to K, lends I, earns F(I) and the return on
+    cash, repays depositors and liquidates one period later:
 
-        J = w - C((L - w)^+) - beta tau L + beta F(I) - I + D (1 - beta (1 + r_D))
+        J = w - L - C((L - w)^+) + beta [F(I) + (1 + r)(L + D - I) - tau L - (1 + r_D) D]
 
-    The last term is the deposit franchise: deposits cost r_D and fund cash
-    earning r. J is concave in I, because L is convex and C is convex and
-    increasing.
+    K sits at its floor L(I): a unit of equity held costs 1 now and returns
+    beta (1 + r - tau) <= 1 later, so nothing above the floor is held. J is
+    concave in I, because L is convex and C is convex and increasing.
+
+    Written for any r_E. Under the paper's discounting, beta (1 + r) = 1, it
+    reduces to w - C - beta tau L + beta F(I) - I + D (1 - beta (1 + r_D)),
+    which is the form `issuance_threshold` is derived from.
     """
     beta = p.beta
     L = capital_floor(p, I, torch.zeros_like(I))
-    franchise = p.D * (1.0 - beta * (1.0 + p.r_D))
-    return (
-        w
-        - issuance_cost(p, torch.relu(L - w))
-        - beta * p.tau * L
-        + beta * production(p, I)
-        - I
-        + franchise
+    terminal = (
+        production(p, I)
+        + (1.0 + p.r) * (L + p.D - I)
+        - p.tau * L
+        - (1.0 + p.r_D) * p.D
     )
+    return w - L - issuance_cost(p, torch.relu(L - w)) + beta * terminal
 
 
 def final_value(
@@ -122,9 +126,15 @@ def issuance_threshold(p: Params) -> float:
 
         I(w) = (c + k kappa w) / (beta b + k^2 kappa),   c = beta A - 1 - beta tau k - k lam
 
-    and issuance happens while k I(w) > w, i.e. below w = k c / (beta b). Valid when the capital ratio, not
-    the cash constraint, sets the floor: D >= (1 - k) I.
+    and issuance happens while k I(w) > w, i.e. below w = k c / (beta b).
+    Valid when the capital ratio, not the cash constraint, sets the floor:
+    D >= (1 - k) I.
+
+    Derived under the paper's discounting, beta (1 + r) = 1, which the oracle
+    configuration pins.
     """
+    if abs(p.beta * (1.0 + p.r) - 1.0) > 1e-12:
+        raise ValueError("issuance_threshold assumes beta (1 + r) = 1, i.e. r_E = r")
     beta, k = p.beta, p.k
     c = beta * p.A - 1.0 - beta * p.tau * k - k * p.lam
     den = beta * p.b + k * k * p.kappa
@@ -232,7 +242,10 @@ def oracle_params(**overrides) -> Params:
     These numbers exist to make the oracle exact, not to be plausible, and must
     not be recalibrated with the model.
     """
-    base = Params(D=0.95, nu=float("inf"), m=0.1, s_P=0.005, s_N=0.03, pi=0.0002)
+    base = Params(
+        D=0.95, nu=float("inf"), m=0.1, s_P=0.005, s_N=0.03, pi=0.0002,
+        r_E=0.02, tau=0.01,  # the paper's discounting, pinned when the model moved off it
+    )
     return replace(base, **overrides)
 
 
