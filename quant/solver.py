@@ -8,24 +8,11 @@ as G; here it is S, because G is also the paper's effective risk aversion.)
 **Expectations** use the quadrature rule of `quant.quadrature`, so a solve is
 deterministic.
 
-**Interpolation** is linear in w by default, and linear in S. Linear
-interpolation of a concave function is concave; Catmull-Rom (kept as an option)
-is smoother but can bulge into a small convex patch near a kink, and the solver
-gambles on it. On a 33-point grid that showed up as hedge errors in matched
-+/- pairs of 0.03 -- the bank treating a zero exposure as a local minimum --
-and a 1.7e-4 error against the exact no-shock answer. Linear gave zero hedge
-error and 2e-8 on the same grid. In a model whose subject is the value
-function's curvature, an interpolant that invents curvature is the wrong
-trade. The effective risk aversion is read from the expectation over shocks,
-which is smooth, not from the interpolant.
-
-Off the grid:
-
-- above `w_hi`, V rises with slope one, because extra equity is simply paid
-  out. The grid must reach past the payout threshold, and `Solution` reports
-  whether it did;
-- below `w_lo`, the bank issues equity to get back onto the grid (see
-  `interpolate`). `Solution` reports whether `w_lo` is in the walk-away region.
+**The grid, interpolation and policy iteration** are the shared machinery of
+`quant.grid`: multilinear interpolation (linear interpolation of a concave
+function stays concave), equity's off-grid rules, and Adam from two starts with
+repeated policy evaluation. This module supplies the bank's state, controls and
+objective.
 
 **The inner maximization** is gradient ascent (Adam) on unconstrained raw
 controls, for every grid point at once. The controls are mapped so every
@@ -48,9 +35,6 @@ interior point. Capped at 1, the full hedge sat at the edge of a squashed
 control, where the gradient vanishes, and the solver stalled at a ratio of
 0.987.
 
-Each improvement step warm-starts from the last policy, and between
-improvements the fixed policy is evaluated several times (Howard's
-improvement), which is where most of the convergence comes from.
 """
 
 import math
@@ -59,6 +43,7 @@ from dataclasses import dataclass, field
 import torch
 import torch.nn.functional as F
 
+from quant.grid import StateGrid, policy_iteration
 from quant.model import (
     Controls,
     capital_floor,
@@ -85,91 +70,49 @@ class GridSpec:
     n_hermite: int = 5
     n_mixing: int = 8
     n_jump: int = 8
-    interpolation: str = "linear"  # or "cubic" (Catmull-Rom); see `interpolate`
 
 
 @dataclass(frozen=True)
 class Grid:
+    """The bank's grid: equity by GRC stock, over `quant.grid.StateGrid`."""
+
     spec: GridSpec
-    w: torch.Tensor   # (n_w,)
-    s: torch.Tensor   # (n_s,)
+    state: StateGrid
+
+    @property
+    def w(self) -> torch.Tensor:
+        return self.state.axes[0]
+
+    @property
+    def s(self) -> torch.Tensor:
+        return self.state.axes[1]
 
     @property
     def dw(self) -> float:
-        return (self.spec.w_hi - self.spec.w_lo) / (self.spec.n_w - 1)
+        return self.state.step(0)
 
     @property
     def ds(self) -> float:
-        return self.spec.s_hi / (self.spec.n_s - 1)
+        return self.state.step(1)
 
     def states(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Every (w, S) grid point, flattened in row-major (w, S) order."""
-        ww, ss = torch.meshgrid(self.w, self.s, indexing="ij")
-        return ww.reshape(-1), ss.reshape(-1)
+        w, s = self.state.states()
+        return w, s
 
 
 def make_grid(spec: GridSpec, profile: NumericsProfile) -> Grid:
-    if spec.n_s < 2:
-        raise ValueError("the GRC grid needs at least two points")
-    w = torch.linspace(spec.w_lo, spec.w_hi, spec.n_w, dtype=profile.dtype, device=profile.device)
-    s = torch.linspace(0.0, spec.s_hi, spec.n_s, dtype=profile.dtype, device=profile.device)
-    return Grid(spec=spec, w=w, s=s)
+    state = StateGrid.uniform(
+        [(spec.w_lo, spec.w_hi, spec.n_w), (0.0, spec.s_hi, spec.n_s)], profile
+    )
+    return Grid(spec=spec, state=state)
 
 
 def interpolate(
     p: Params, V: torch.Tensor, grid: Grid, w: torch.Tensor, s: torch.Tensor
 ) -> torch.Tensor:
-    """V at arbitrary (w, s). V is (n_w, n_s); w and s broadcast together.
-
-    Linear (or Catmull-Rom, if asked) in w on a grid padded with one linearly
-    extrapolated ghost row at each end; linear in s.
-
-    Off the grid in w, the value of an action the bank can always take:
-
-    - above `w_hi`, pay the excess out: slope one;
-    - below `w_lo`, issue the shortfall and continue as at `w_lo`, floored at
-      zero by walk-away: V(w_lo) - x - C(x), x = w_lo - w.
-
-    The lower rule matters. Clamping to V(w_lo) instead -- assuming the edge
-    is already the walk-away region -- capped the downside of any gamble at a
-    positive number while its upside grew without limit, and the first solve
-    took an unbounded factor position and diverged. Issuing the gap is a
-    lower bound on what the bank can do (two issues cost less than one of
-    the same total, as C is convex), so it errs toward charging the downside.
-    """
-    spec = grid.spec
-    n_w, n_s = spec.n_w, spec.n_s
-    padded = torch.cat([2 * V[:1] - V[1:2], V, 2 * V[-1:] - V[-2:-1]], dim=0)  # (n_w + 2, n_s)
-    flat = padded.reshape(-1)
-
-    w, s = torch.broadcast_tensors(w, s)
-    excess = torch.relu(w - spec.w_hi)
-    shortfall = torch.relu(spec.w_lo - w)
-    u = (torch.clamp(w, spec.w_lo, spec.w_hi) - spec.w_lo) / grid.dw
-    i = torch.clamp(torch.floor(u), 0, n_w - 2)
-    t = u - i
-    v = torch.clamp(s, 0.0, spec.s_hi) / grid.ds
-    j = torch.clamp(torch.floor(v), 0, n_s - 2)
-    q = v - j
-    i, j = i.long(), j.long()
-
-    def along_w(col):
-        # padded row i is grid row i - 1, so rows i..i+3 are grid rows i-1..i+2
-        p0 = flat[i * n_s + col]
-        p1 = flat[(i + 1) * n_s + col]
-        p2 = flat[(i + 2) * n_s + col]
-        p3 = flat[(i + 3) * n_s + col]
-        if spec.interpolation == "linear":
-            return p1 + (p2 - p1) * t
-        return 0.5 * (
-            2 * p1
-            + (p2 - p0) * t
-            + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
-            + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t
-        )
-
-    inside = (1 - q) * along_w(j) + q * along_w(j + 1)
-    return torch.relu(inside + excess - shortfall - issuance_cost(p, shortfall))
+    """V at arbitrary (w, s); V is (n_w, n_s). See `quant.grid` for the rules."""
+    return grid.state.interpolate(V, [w, s], lambda x: issuance_cost(p, x))
 
 
 HEDGE_MAX = 1.2  # hedge ratio bound; > 1 so that a full hedge is interior
@@ -322,12 +265,6 @@ def solve(
 ) -> Solution:
     inputs = p
     p = p.per_period()  # rates stated per year become rates per period (design.md 2.5)
-    if evaluate_steps is None:
-        # Policy evaluation contracts by beta per step, so the number of steps
-        # it needs grows like 1 / (1 - beta): about 50 annually, about 200
-        # quarterly. A fixed 30 left the quarterly solve at its iteration cap,
-        # still 3e-6 from converged.
-        evaluate_steps = max(30, math.ceil(3.0 / (1.0 - p.beta)))
     grid = make_grid(spec, profile)
     rule = student_t_rule(
         shock_correlation(p), p.nu, profile, n_hermite=spec.n_hermite, n_mixing=spec.n_mixing
@@ -341,75 +278,20 @@ def solve(
     # Start risk-neutral: V = w - w_lo is linear, so the first improvements see
     # no curvature at all. Starting from relu(w) -- liquidation value -- put a
     # convex kink at zero, which made gambling look attractive in the first
-    # iterations; the product and hedge controls ran to their bounds there and
-    # stayed, because a saturated sigmoid or tanh has almost no gradient.
-    V = (grid.w - spec.w_lo).unsqueeze(-1).expand(-1, spec.n_s).clone()
-    fresh = RawPolicy.initial(p, n, profile)
-    policy = fresh
-    history = []
+    # iterations, and squashed controls pushed to their bounds there stayed.
+    V0 = (grid.w - spec.w_lo).unsqueeze(-1).expand(-1, spec.n_s).clone()
 
-    def bellman(V_now, c):
-        return torch.relu(continuation(p, grid, rule, jumps, V_now, w, s, c)).reshape(spec.n_w, spec.n_s)
+    def objective(V, raw):
+        return continuation(p, grid, rule, jumps, V, w, s, RawPolicy(*raw).controls(p, grid))
 
-    def ascend(V_now, start: RawPolicy, steps: int) -> tuple[RawPolicy, torch.Tensor]:
-        return ascend_at(V_now, start, steps, lr)
-
-    def ascend_at(V_now, start: RawPolicy, steps: int, rate: float) -> tuple[RawPolicy, torch.Tensor]:
-        """Adam on every grid point's controls at once; returns the policy and its value."""
-        params = [z.detach().clone().requires_grad_(True) for z in start.tensors()]
-        optimizer = torch.optim.Adam(params, lr=rate)
-        for _ in range(steps):
-            optimizer.zero_grad()
-            c = RawPolicy(*params).controls(p, grid)
-            (-continuation(p, grid, rule, jumps, V_now, w, s, c).sum()).backward()
-            optimizer.step()
-        found = RawPolicy(*[z.detach() for z in params])
-        with torch.no_grad():
-            value = continuation(p, grid, rule, jumps, V_now, w, s, found.controls(p, grid))
-        return found, value
-
-    for it in range(max_iterations):
-        # -- improvement, from two starts, keeping the better at each grid point.
-        # The warm start carries the last policy forward, which is what makes
-        # each step cheap. The fresh start is the escape route: a control whose
-        # squashing function has saturated at a bound cannot be pulled back by
-        # its own gradient, so without a second start a bad early step is
-        # permanent.
-        steps = first_improve_steps if it == 0 else improve_steps
-        warm, warm_value = ascend(V, policy, steps)
-        if it == 0:
-            policy = warm
-        else:
-            restart, restart_value = ascend(V, fresh, steps)
-            better = restart_value > warm_value
-            policy = RawPolicy(*[
-                torch.where(better, r, k) for r, k in zip(restart.tensors(), warm.tensors())
-            ])
-
-        # -- evaluation: apply the fixed policy's Bellman operator repeatedly
-        with torch.no_grad():
-            c = policy.controls(p, grid)
-            for _ in range(evaluate_steps):
-                V_next = bellman(V, c)
-                residual = float((V_next - V).abs().max())
-                V = V_next
-        history.append(residual)
-        if verbose:
-            print(f"iteration {it:3d}  residual {residual:.3e}  max V {float(V.max()):.6f}")
-        if residual < tol and it > 0:
-            break
-
-    # -- polish: one long, slow ascent from the converged policy, then a final
-    # evaluation. The value is nearly flat in some controls near their optimum
-    # -- a hedge error of 0.03 costs about 2e-6 -- so Adam at the working rate
-    # jitters by about its step size there. A smaller rate pins them down.
-    policy, _ = ascend_at(V, policy, polish_steps, lr / 10.0)
-    with torch.no_grad():
-        c = policy.controls(p, grid)
-        for _ in range(evaluate_steps):
-            V_next = bellman(V, c)
-            residual = float((V_next - V).abs().max())
-            V = V_next
+    result = policy_iteration(
+        objective, RawPolicy.initial(p, n, profile).tensors(), V0, p.beta,
+        tol=tol, max_iterations=max_iterations, improve_steps=improve_steps,
+        first_improve_steps=first_improve_steps, evaluate_steps=evaluate_steps,
+        polish_steps=polish_steps, lr=lr, verbose=verbose,
+    )
+    V, policy, residual = result.V, RawPolicy(*result.raw), result.residual
+    it, history = result.iterations - 1, result.history
 
     return Solution(
         params=p, grid=grid, rule=rule, jumps=jumps, V=V, policy=policy,
