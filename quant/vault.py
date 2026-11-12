@@ -11,6 +11,10 @@ performance fee on a period's positive excess return; it pays dollar operating
 costs and GRC; it makes good a share of incident losses; and it holds its own
 equity in stablecoins and a spot BTC treasury, hedged with short perps.
 
+Two optional ways to put the firm's own capital behind the vault, both off by
+default: **co-investment**, a stake of its own money in the vault, and a
+**guarantee**, a minimum return promised to depositors.
+
 Stage A of the design (section 4.6): no high-water mark, so a performance fee
 is paid on any positive period, including the recovery from an earlier loss.
 
@@ -65,10 +69,12 @@ def vault_capital_floor(
     """The least operating equity the firm may hold.
 
     Own funds against AUM and the BTC treasury, K >= k_A A + k_BTC q;
-    non-negative cash, K >= g + q; and no negative equity.
+    non-negative cash after GRC, the treasury and the firm's own stake in the
+    vault, K >= g + q + co A; and no negative equity.
     """
     zero = torch.zeros_like(A)
-    return torch.maximum(torch.maximum(p.k_A * A + p.k_BTC * q, g + q), zero)
+    cash = g + q + p.co_invest * A
+    return torch.maximum(torch.maximum(p.k_A * A + p.k_BTC * q, cash), zero)
 
 
 def vault_btc_sensitivity(p: Params, A: torch.Tensor, alloc: torch.Tensor) -> torch.Tensor:
@@ -117,13 +123,26 @@ def vault_outcomes(
     with J the jump severity (zero without a jump). Then
 
         fees   = f_m A + f_p max(R, 0) A
-        A'     = A (1 + r + R) - fees + theta (capacity - A)
-                 - kappa max(-R, 0) A - [jump] omega A                floored at 0
+        cover  = max(psi J sum_i a_i j_i,  max(floor - r - R, 0))     share of A the firm pays
+        R_dep  = R + cover                                            what depositors get
+        A'     = A (1 + r + R_dep) - fees + theta (capacity - A)
+                 - kappa max(-R_dep, 0) A - [jump] omega A            floored at 0
         w'     = (1 + r)(K - g) - tau K + x (mu_BTC + s_BTC eps_BTC) - c_H/2 H^2
-                 + fees - opex - psi A J sum_i a_i j_i
+                 + fees - opex - cover A + co A R
 
     where x = q - H is the firm's own net BTC position. Cash and the BTC
     treasury's riskless part are (1 + r)(K - g), as in the bank form.
+
+    **Compensation and the guarantee** are two ways the firm makes good
+    depositors' losses: a share psi of incident losses, and -- if a guarantee
+    is set -- whatever it takes to lift depositors' period return to the
+    floor. The firm pays the larger of the two, not both. Outflows respond to
+    what depositors actually receive.
+
+    **Co-investment:** the firm keeps co A of its own money in the vault,
+    paid for out of its cash (`vault_capital_floor`). It earns the vault's
+    excess return R, losses and jumps included, and is not covered by the
+    guarantee; its riskless part is already in (1 + r)(K - g).
     """
     n_shock = rule.nodes.shape[0]
     xi = rule.nodes[:, :2]                       # (N, 2) the risky strategies
@@ -161,11 +180,15 @@ def vault_outcomes(
     R = R_cont.unsqueeze(-1) - hit                                   # (..., N, 1 + J)
     A3 = A[..., None, None]
     fees = p.fee_mgmt * A3 + p.fee_perf * torch.relu(R) * A3
+    cover = p.compensation * hit
+    if p.guarantee is not None:
+        cover = torch.maximum(cover, torch.relu(p.guarantee - p.r - R))
+    R_dep = R + cover
     aum = (
-        A3 * (1.0 + p.r + R)
+        A3 * (1.0 + p.r + R_dep)
         - fees
         + p.inflow_speed * (p.capacity - A3)
-        - p.outflow_perf * torch.relu(-R) * A3
+        - p.outflow_perf * torch.relu(-R_dep) * A3
         - occurred * p.outflow_incident * A3
     )
     aum = torch.relu(aum)
@@ -178,7 +201,7 @@ def vault_outcomes(
         - p.opex
     )[..., None, None]
     btc_pnl = (x[..., None] * (p.mu_BTC + p.s_BTC * eps)).unsqueeze(-1)       # (..., N, 1)
-    wealth = own + btc_pnl + fees - p.compensation * hit * A3
+    wealth = own + btc_pnl + fees - cover * A3 + p.co_invest * A3 * R
 
     weights = rule.weights[:, None] * branch.unsqueeze(-2)                    # (..., N, 1 + J)
     m = n_shock * branch.shape[-1]

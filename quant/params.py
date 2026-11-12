@@ -110,6 +110,8 @@ class Params:
     outflow_incident: float = 0.2   # share of AUM that leaves after an incident
     compensation: float = 0.5       # share of incident losses the firm makes good
     k_A: float = 0.02               # own funds required per unit of AUM
+    co_invest: float = 0.0          # the firm's own stake in the vault, share of AUM ("skin in the game")
+    guarantee: float | None = None  # minimum return promised to depositors, per year; None is no guarantee
 
     def __post_init__(self):
         if not (isinstance(self.periods_per_year, int) and self.periods_per_year >= 1):
@@ -150,9 +152,10 @@ class Params:
         floors, position bounds, correlations, nu. For the vault: the
         management fee, operating costs and strategies' returns and losses are
         flows (divide by n); strategy volatilities follow sqrt(n); the inflow
-        speed keeps its annual effect; the performance fee, flow
-        sensitivities, compensation share, capacity and capital requirement
-        are shares or sizes and do not convert.
+        speed keeps its annual effect; the guaranteed return compounds; the
+        performance fee, flow sensitivities, compensation share, capacity,
+        capital requirement and co-investment share are shares or sizes and do
+        not convert.
         """
         n = self.periods_per_year
         if n == 1:
@@ -184,6 +187,7 @@ class Params:
             fee_mgmt=self.fee_mgmt / n,
             opex=self.opex / n,
             inflow_speed=1.0 - (1.0 - self.inflow_speed) ** (1.0 / n),
+            guarantee=None if self.guarantee is None else compound(self.guarantee),
         )
 
     @property
