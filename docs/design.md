@@ -1,8 +1,8 @@
 # Design: a dynamic Froot–Stein (1998) crypto firm, with GRC as a fourth lever
 
-**Status:** the bank version is built (§3). The vault version is designed and
-under review (§4); it becomes the main model once agreed. Built and planned are
-marked section by section, and summarized in §7.
+**Status:** the bank form is built (§3). The vault form's first stage is built
+(§4); it is the main model from here. Built and planned are marked section by
+section, and summarized in §7.
 
 ---
 
@@ -355,10 +355,12 @@ scale of §3.1 fixes $b = A - (1+r)$, so the first-best book is $I^* = 1$.
 
 ---
 
-## 4. The vault form (designed, under review)
+## 4. The vault form (stage A built)
 
-**Status: agreed in outline (2026-11-11); not built.** The main model from here.
-Everything in §2 carries over. Only what is specific to the vault is here.
+**Status: stage A built** (`quant/vault.py`, `quant/vault_solver.py`,
+`quant/vault_results.py`); stage B, the high-water mark, is designed (§4.6).
+The main model from here. Everything in §2 carries over. Only what is specific
+to the vault is here.
 
 ### 4.1 Two balance sheets
 
@@ -436,13 +438,29 @@ Stage A pays a performance fee on any positive period, including the recovery
 from an earlier loss; stage B corrects that. Staging keeps each step checkable
 against something known.
 
-### 4.7 To settle before building
+### 4.7 Scale and parameters
 
-The vault's scale (for example, AUM capacity = 1), and parameter values, all
-illustrative until calibrated: fee levels, the flow sensitivities to
-performance and to incidents, the franchise's capacity, the compensation share,
-operating costs, the capital requirement, and the strategies' returns and
-correlations.
+**Scale:** the franchise's capacity is 1; AUM and the firm's equity are
+measured against it.
+
+**Parameters** (illustrative, all per year where they are rates; converted per
+period as in §2.5):
+
+| | value |
+|---|---|
+| strategies: BTC-backed lending, market-neutral, tokenized treasuries | expected excess return 6%, 4%, 0; mean loss GRC can reduce 1%, 0.5%, 0; volatility 5%, 3%, 0; BTC sensitivity 0.1, 0, 0; jump exposure 1, 0.5, 0; correlation of the two risky ones 0.3 |
+| fees | management 2% of AUM; performance 20% of a period's positive excess return |
+| flows | inflow closes 50% of the gap to capacity a year; outflow of 1 unit of AUM per unit of negative excess return; 20% of AUM leaves after an incident |
+| the firm | operating costs 1% of capacity; compensates 50% of incident losses; own funds of at least 2% of AUM |
+
+**The firm's controls** (`quant/vault_solver.py`): dividends or issuance, GRC
+spend, the BTC treasury, a perp hedge, and the allocation across strategies (a
+softmax, so the shares sum to one). The hedge covers the treasury and the
+vault's BTC sensitivity, so the firm can hedge the BTC exposure of the fee
+income it earns on the vault.
+
+**Two findings that need decisions** (§8): with the default view on BTC the
+firm becomes a BTC holding company, and at these parameters it buys no GRC.
 
 ---
 
@@ -457,10 +475,11 @@ large shocks live (§10). The jump severities use the same construction. A solve
 is therefore deterministic: no seed noise, and no scenario set that changes
 with the batch size.
 
-**The grid solver** (`quant/solver.py`, **built** for the bank version). The
-state $(w, S)$ is two-dimensional, so the infinite-horizon problem is solved on
-a grid, exact up to grid error. The vault version's stage A needs a third
-dimension (AUM).
+**The grid solver** (`quant/grid.py`, **built**; shared by both forms). The
+state is a product grid whose first axis is equity: $(w, S)$ for the bank,
+$(w, S, A)$ for the vault. The infinite-horizon problem is solved on it, exact
+up to grid error. Each form supplies only its controls and objective
+(`quant/solver.py`, `quant/vault_solver.py`).
 
 - **Policy iteration.** At every grid point the controls are chosen by gradient
   ascent (Adam), for all points at once; the fixed policy is then evaluated
@@ -471,12 +490,12 @@ dimension (AUM).
 - **Two starts per improvement**: from the last policy, and from a fresh one,
   keeping the better at each grid point. A squashed control pushed to its bound
   has almost no gradient left to come back.
-- **Linear interpolation in $w$**, linear in $S$. Linear interpolation of a
-  concave function stays concave; a smoother cubic can invent convex patches
-  near kinks, and the solver gambles on them.
-- **Off the grid:** above it, extra equity is paid out (slope one); below it,
-  the bank issues equity back onto the grid, which charges the downside of a
-  gamble properly.
+- **Multilinear interpolation.** Linear interpolation of a concave function
+  stays concave; a smoother cubic can invent convex patches near kinks, and the
+  solver gambles on them.
+- **Off the grid:** in equity, above the grid extra equity is paid out (slope
+  one); below it, the firm issues equity back onto the grid, which charges the
+  downside of a gamble properly. Other axes are clamped.
 - **Start** from a linear, risk-neutral value.
 
 The reasons behind each of these are in §11.
@@ -497,11 +516,24 @@ The reasons behind each of these are in §11.
    is indifferent between holding and paying out, so $K$ is not pinned there.
 4. **Prop. 2 in the dynamic model**: with no view on BTC, a full hedge wherever
    the bank is not near walk-away.
+5. **The riskless vault.** With no shocks, inert GRC and strategies earning the
+   same return, AUM settles where inflows balance growth net of fees, the firm
+   holds its own-funds floor and pays out the rest, and its value has a closed
+   form. Matched at annual and quarterly frequency.
+6. **Prop. 2 for the vault**: with no view and no BTC in the vault, the firm
+   holds no net BTC.
 
-Other tests check correctness rather than a known answer: the accounting, the
-frequency conversion, quadrature accuracy, the hurdle's first-order condition,
-the BTC treasury's use of cash and capital, and that more optimizer steps do
-not move the answer.
+The paper's allocation formula, eq. (12), is not an oracle for the vault: the
+allocation reaches the firm only through future fees and AUM, not through a
+payoff linear in the period's return, so the formula is not exact there.
+Instead the allocation is checked against its first-order condition — every
+strategy held has the highest marginal value.
+
+Other tests check correctness rather than a known answer: the accounting
+(bank and vault, against the formulas written out by hand), the frequency
+conversion, quadrature accuracy, the N-dimensional interpolation, the hurdle's
+and the allocation's first-order conditions, the BTC treasury's use of cash and
+capital, and that more optimizer steps do not move the answer.
 
 **The learner** (planned) comes in when the state outgrows a grid: the vault's
 high-water mark (§4.6), GRC by family, dynamic deposits. It is trained on the
@@ -540,7 +572,7 @@ A first, deliberately tentative cut. Each row is a question, not an answer.
 |---|---|---|---|
 | **v0** | bank version: one non-tradeable risk, one tradeable factor, one new product, one GRC stock, a fixed deposit base at a fixed rate, walk-away, capital charges; state $(w, S)$ | grid, quadrature | **built**; oracles pass |
 | **v1** | jump losses (§2.4); decision frequency (§2.5); BTC as the home asset, with a view, a spot treasury and perp hedges (§2.2) | grid | **built** |
-| **vault A** | the vault version without the high-water mark (§4.6); several strategies (eqs. (11)–(12)) | 3-D grid | designed, under review |
+| **vault A** | the vault version without the high-water mark (§4.6); three strategies | 3-D grid | **built** |
 | **vault B** | the high-water mark | learner, graded against the grid | designed |
 | later | GRC by family (credit, operational, compliance); mechanisms C and D; the bank form revisited, with BTC deposits, depositors who price risk, and a liquidity requirement | learner | planned |
 
@@ -563,6 +595,22 @@ Each stage needs approval before it starts.
 5. **Calibration.** $r_E$ against a target market-to-book ratio; the vault's
    parameters (§4.7); the rest against data, once the model is realistic enough
    for its numbers to be worth reporting.
+6. **How shareholders price BTC risk.** Shareholders discount everything at one
+   required return $r_E$, whatever the firm holds. With a believed BTC premium
+   above $r_E - r$, every dollar of BTC then looks like a positive-NPV project
+   and its risk goes unpriced: in both forms the solve turns the firm into a
+   BTC holding company. The paper prices the market factor in its valuation
+   (Appendix A, eq. (3)); the model dropped that. Options: price BTC risk in
+   shareholders' valuation, so the view becomes an excess over the market's
+   price for BTC; read $\mu_{BTC}$ as that excess and set it small; or raise the
+   capital charge on BTC.
+7. **Why the vault firm buys no GRC.** At the illustrative parameters the vault
+   firm spends nothing on GRC. Depositors bear the vault's losses; the firm
+   feels them only through compensation and outflows, and those are not large
+   enough here to pay for controls. Whether that is the parameters or the
+   mechanism is the next question for the thesis: the franchise channel
+   (outflows after incidents, compensation, fees lost) may need to be larger,
+   longer-lasting, or reputational rather than one-off.
 
 ---
 
@@ -605,10 +653,13 @@ assembled for this project, with no single reference.
 | Cholesky factorization | standard | `quant/quadrature.py` | builds correlated shocks from independent ones | — |
 | Policy iteration with repeated policy evaluation (Howard improvement) | standard | `quant/solver.py` | how the infinite-horizon solve converges | plain value iteration is slower but simpler |
 | Adam, vectorized over the grid | standard | `quant/solver.py` | chooses every grid point's controls at once by gradient ascent; two starts per step, and a slow final pass | the step-budget test guards against it stopping short |
-| Linear interpolation in equity (Catmull-Rom optional) | standard | `quant/solver.py` | reads the value function between grid points | a shape-preserving smooth spline is the alternative |
+| Multilinear interpolation on an N-dimensional grid | standard | `quant/grid.py` | reads the value function between grid points | a shape-preserving smooth spline is the alternative; Catmull-Rom was tried and dropped |
+| Softmax for the vault's allocation | standard | `quant/vault_solver.py` | maps unconstrained parameters to shares that sum to one | a corner allocation is only approached, not reached |
+| A hedge bounded by the franchise's BTC sensitivity | own construction | `quant/vault_solver.py` | lets the firm hedge the BTC exposure of fees it earns on the vault, not only its own treasury | the fee income's true BTC sensitivity is not linear; the bound is a proxy |
+| The allocation's first-order check | own construction | `quant/vault_results.py` | every held strategy has the highest marginal value; replaces eq. (12) as the vault's allocation check | — |
 | Off-grid rules | own construction | `quant/solver.py` | above the grid, pay out the excess; below it, issue equity back onto it | — |
 | Golden-section search | standard | `quant/twoperiod.py`, `quant/solver.py` | one-dimensional optimizer for the oracles | — |
-| Squashed controls (`sigmoid`, `tanh`, `softplus`) | standard | `quant/solver.py` | keep every constraint satisfied by construction | saturated controls lose their gradient; the two-start step and the room past a full hedge are the guards |
+| Squashed controls (`sigmoid`, `tanh`, `softplus`) | standard | `quant/solver.py`, `quant/vault_solver.py` | keep every constraint satisfied by construction | saturated controls lose their gradient; the two-start step and the room past a full hedge are the guards |
 
 ### Modeling and theory
 
@@ -755,6 +806,26 @@ What was decided, when, and why. Newest last.
   3-D grid; then with it, using the learner, checked against the grid. The
   high-water mark adds a fourth state variable, which a grid cannot carry at
   useful resolution.
+
+
+**2026-11-11 — building vault stage A** (while the author was away; for review)
+
+- **The solver was generalized to any number of state dimensions**
+  (`quant/grid.py`), and the bank form rebuilt on it with every test unchanged.
+  The Catmull-Rom option was dropped.
+- **The vault form's stage A was built** with the Phase 0 parameters as
+  proposed (§4.7).
+- **The allocation is checked by its first-order condition, not by eq. (12):**
+  the formula is not exact when allocation reaches the firm only through fees
+  and future AUM.
+- **The firm's hedge covers the franchise's BTC sensitivity** as well as its
+  treasury.
+- **With the default BTC view the vault firm also becomes a BTC holding
+  company** — the same cause as the bank form, and now traced to shareholders'
+  valuation not pricing BTC risk (§8). The vault script defaults to no view
+  until this is decided.
+- **At the illustrative parameters the vault firm buys no GRC** (§8). Recorded
+  as a question, not a result.
 
 ---
 

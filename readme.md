@@ -45,26 +45,33 @@ Todo: no units, ok. But these numbers seem out of place at the moment.
 
 ## Status
 
-The model is being rebuilt as a dynamic version of Froot & Stein (1998): a bank
+The model is a dynamic version of Froot & Stein (1998): a crypto-native firm
 that decides risk management, capital budgeting and capital structure together,
-every period, with no end date. GRC is a fourth lever alongside those three. The
-design, and the reasoning behind each choice, is in
-[`docs/design.md`](docs/design.md).
+every quarter, with no end date. GRC is a fourth lever alongside those three.
+The design, and the reasoning behind each choice, is in
+[`docs/design.md`](docs/design.md); a plain-language account is in
+[`docs/overview.md`](docs/overview.md).
 
-Built so far (v0 foundations):
+Built so far:
 
-- the bank's one-period accounting, with deposits, a capital ratio and GRC as a
-  depreciating stock (`quant/model.py`);
-- fat-tailed shocks with tail dependence, integrated by deterministic
-  quadrature rather than Monte Carlo (`quant/quadrature.py`);
-- a two-period version that reproduces the paper's full-hedging result and its
-  capital-budgeting rule exactly under normal shocks, and measures how far
-  that rule drifts under fat tails (`quant/twoperiod.py`).
+- **two business forms**: a bank taking fixed-rate deposits (`quant/model.py`),
+  and a vault run for fees, whose depositors share its gains and losses
+  (`quant/vault.py`) — the main model;
+- BTC as the firm's home asset, held by conviction and hedged with perps;
+- fat-tailed shocks with tail dependence and heavy-tailed jump losses,
+  integrated by deterministic quadrature rather than Monte Carlo
+  (`quant/quadrature.py`);
+- an infinite-horizon solver on an N-dimensional grid (`quant/grid.py`), checked
+  against known answers: the paper's own results in a two-period version
+  (`quant/twoperiod.py`), and exact no-shock solutions for both forms.
 
-Next: the infinite-horizon solver.
+Next: settle how shareholders price BTC risk, and why the vault firm buys no
+GRC at the current settings (`docs/design.md` §8); then the high-water mark.
 
 ```bash
 uv run pytest
+uv run python scripts/solve_vault.py           # the vault form, exploratory
+uv run python scripts/solve_v0.py              # the bank form
 ```
 
 The previous model (finite horizon, hazard-based failure) is preserved on the

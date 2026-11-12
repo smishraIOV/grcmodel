@@ -51,13 +51,17 @@ a finer equity grid near the issuance kink (`docs/design.md` §2.5).
 
 ## Layout
 
-- `quant/params.py` — every parameter, one economic driver each
-- `quant/model.py` — one period of the bank: primitives and the transition
-- `quant/quadrature.py` — deterministic rules for the Student-t shocks
+- `quant/params.py` — every parameter, one economic driver each, rates per year
+- `quant/model.py` — the bank form, one period: primitives and the transition
+- `quant/vault.py` — the vault form, one period: fees, flows, the firm's books
+- `quant/quadrature.py` — deterministic rules for the Student-t shocks and jumps
+- `quant/grid.py` — the shared N-dimensional grid, interpolation and policy iteration
+- `quant/solver.py`, `quant/vault_solver.py` — each form's controls and objective
+- `quant/results.py`, `quant/vault_results.py` — what a solved firm says
 - `quant/twoperiod.py` — the two-period truncation, the paper's own structure,
   used as the oracle (a known-answer check against the paper's formulas)
-- `quant/solver.py` — the infinite-horizon grid solver (policy iteration)
 - `quant/numerics.py` — profiles: device, dtype, RNG
+- `scripts/solve_v0.py`, `scripts/solve_vault.py` — entry points
 
 ## Numerics
 

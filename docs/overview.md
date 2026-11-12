@@ -41,39 +41,57 @@ hedging, investment and capital.
 
 ## The firm we model
 
-We model a **financial firm on crypto rails**: it takes deposits into vaults,
-lends and invests them, and runs the blockchain infrastructure those assets
-live on. It is a bank in most respects, with some new risks attached.
+We model a **crypto-native financial firm**. Bitcoin is its home asset: it holds
+BTC for the long term, out of conviction, and much of its business arrives in
+BTC — deposits, and the collateral its borrowers post. It also holds dollar
+stablecoins, to offset BTC's swings, to have cash on hand, and to pay its
+costs, which are in dollars. We measure everything in dollars.
+
+The firm runs **vaults**. Depositors put money into a vault and own a share of
+it: they gain when its investments do well and lose when they do badly. The
+firm hires managers to run the vault's investment strategies — lending against
+BTC collateral, market-neutral trading, tokenized treasuries — and decides how
+much of the vault each strategy gets. It earns fees: a small share of the
+vault's size every year, and a share of its profits.
 
 Every quarter, the firm decides:
 
-- **how much to lend**;
+- **how to split the vault** between its strategies;
 - **how much capital to keep**, and how much to pay out to its owners — or,
   after a bad quarter, whether to raise new money;
 - **how much to spend on GRC**;
-- **whether to take on a new line of business**, and how much of it;
-- **how much market risk to hedge** — for example, the risk of crypto prices
-  falling;
+- **how much BTC to hold**, and how much of its BTC risk to hedge;
 - and, if things are bad enough, **whether to shut down**.
 
-It must pay its depositors before its owners see anything, and, like any bank,
-it must hold a minimum amount of capital against what it lends.
+It must hold a minimum amount of its own capital against the size of the vaults
+it runs.
+
+We first built a version in which the firm works like a bank, borrowing from
+depositors at a fixed rate. With its conviction about BTC, that firm ended up
+betting depositors' money on BTC — the familiar danger of a bank whose owners
+keep the upside while depositors carry the downside. In a vault, depositors
+share both, so that danger largely goes away.
 
 ## What can go wrong
 
-The firm faces three kinds of risk:
+The firm faces four kinds of risk:
 
-- **Market risk**, such as crypto prices moving. This can be hedged in
-  financial markets at a fair price, so a sensible firm hedges it away.
+- **Market risk**, mainly the price of BTC. This can be hedged in financial
+  markets, but the firm keeps some of it deliberately, because it believes in
+  BTC.
 - **Everyday losses**: loans that go bad, routine operational mistakes. These
   come all the time and vary in size, but rarely in a dramatic way.
 - **Rare, severe losses**: a drained bridge, a hacked smart contract, a failed
   custodian. These are unlikely in any given year, but when they happen they
-  can wipe out a large part of the firm's capital.
+  can wipe out a large part of a vault.
+- **Losing the franchise**: after poor results or an incident, depositors take
+  their money elsewhere, and the fees go with them. The firm also makes good
+  part of its depositors' losses after an incident, to protect its reputation.
 
-The last two cannot simply be sold off to someone else. The firm has to carry
-them, and that is where GRC comes in: better controls make losses smaller,
-less variable, or less frequent.
+Depositors bear the vault's losses directly, but the firm pays for them
+indirectly, through lost fees and compensation. That is where GRC comes in:
+better controls make losses smaller, less variable, or less frequent, and so
+protect the business the firm has built.
 
 We use **fat-tailed** risk models. Many past financial crises were
 worse than expected because the models behind them assumed that extreme events
@@ -115,11 +133,16 @@ believe it on the harder questions.
 
 ## What comes next
 
-- **Rare, severe losses** (in progress): does GRC become much more valuable
-  when it can prevent the losses that threaten the firm's survival?
-- **Several business lines at once**, so we can see how the firm should spread
-  its scarce capital between them.
-- **Deposits that can leave**, as they do on crypto rails, including runs.
+- **Getting the economics right before reading results.** Two things in the
+  current version need settling. The firm's belief in BTC is so strong relative
+  to what its owners expect to earn that it pours everything into BTC; the
+  model needs to account for how investors value BTC's risk. And at the current
+  settings the firm spends nothing on GRC, because its depositors bear most of
+  the losses; we need to understand whether that is the settings or a real
+  feature.
+- **Paying performance fees only on new highs** — a "high-water mark", so the
+  firm earns nothing extra while it is recovering past losses.
+- **Separate GRC programs** for different kinds of risk.
 - **Calibration**: setting the model's numbers from real-world data, so its
   results describe a real kind of firm rather than an illustrative one.
 
@@ -134,3 +157,8 @@ believe it on the harder questions.
   model would suggest.
 - **Limited liability**: the owners of a firm can lose what they invested,
   but no more; anything beyond that falls on creditors and depositors.
+- **Vault**: a pool of depositors' money invested on their behalf; depositors
+  own shares in it and share its gains and losses.
+- **Assets under management**: the size of the vaults the firm runs.
+- **Management fee / performance fee**: what the firm charges — a share of the
+  vault's size each year, and a share of its profits.
