@@ -91,6 +91,26 @@ class Params:
     a_J: float = 100.0       # effectiveness against jump frequency (prevention)
     rho_J: float = 0.3       # share of jump frequency no program removes
 
+    # -- the vault form (design.md section 4) ------------------------------
+    # Three strategies run by hired managers; the firm sets the allocation.
+    # Order: BTC-backed lending, market-neutral (basis, market-making),
+    # tokenized treasuries. Returns are excess over the riskless rate.
+    vault_mu: tuple[float, float, float] = (0.06, 0.04, 0.0)      # expected excess return, per year
+    vault_loss: tuple[float, float, float] = (0.01, 0.005, 0.0)   # mean loss rate GRC can reduce, per year
+    vault_vol: tuple[float, float, float] = (0.05, 0.03, 0.0)     # volatility, per year
+    vault_btc: tuple[float, float, float] = (0.1, 0.0, 0.0)       # sensitivity to BTC's return
+    vault_jump: tuple[float, float, float] = (1.0, 0.5, 0.0)      # exposure to jump losses
+    vault_rho: float = 0.3          # correlation of the two risky strategies
+    capacity: float = 1.0           # the franchise's full size; fixes the vault's scale
+    fee_mgmt: float = 0.02          # management fee, share of AUM per year
+    fee_perf: float = 0.20          # performance fee, share of a period's positive excess return
+    opex: float = 0.01              # operating costs, dollars per year
+    inflow_speed: float = 0.5       # share of the gap to capacity closed per year
+    outflow_perf: float = 1.0       # extra outflow per unit of negative excess return
+    outflow_incident: float = 0.2   # share of AUM that leaves after an incident
+    compensation: float = 0.5       # share of incident losses the firm makes good
+    k_A: float = 0.02               # own funds required per unit of AUM
+
     def __post_init__(self):
         if not (isinstance(self.periods_per_year, int) and self.periods_per_year >= 1):
             raise ValueError("periods_per_year must be a positive integer")
@@ -102,6 +122,8 @@ class Params:
             raise ValueError("shareholders cannot require less than cash earns: r_E >= r")
         if self.jump_rate > 0 and not self.jump_tail > 2.0:
             raise ValueError("jump_tail must exceed 2 for the jump variance to exist")
+        if not (0.0 <= self.fee_perf < 1.0 and 0.0 <= self.compensation <= 1.0):
+            raise ValueError("fee_perf must be in [0, 1) and compensation in [0, 1]")
         if not 0.0 <= self.k < 1.0:
             raise ValueError("capital ratio k must be in [0, 1)")
 
@@ -125,7 +147,12 @@ class Params:
 
         Sizes and per-event amounts do not convert: issuance costs, the
         capital ratio, the deposit base, jump severity, GRC effectiveness and
-        floors, position bounds, correlations, nu.
+        floors, position bounds, correlations, nu. For the vault: the
+        management fee, operating costs and strategies' returns and losses are
+        flows (divide by n); strategy volatilities follow sqrt(n); the inflow
+        speed keeps its annual effect; the performance fee, flow
+        sensitivities, compensation share, capacity and capital requirement
+        are shares or sizes and do not convert.
         """
         n = self.periods_per_year
         if n == 1:
@@ -151,6 +178,12 @@ class Params:
             mu_BTC=self.mu_BTC / n,
             jump_rate=self.jump_rate / n,
             delta=1.0 - (1.0 - self.delta) ** (1.0 / n),
+            vault_mu=tuple(x / n for x in self.vault_mu),
+            vault_loss=tuple(x / n for x in self.vault_loss),
+            vault_vol=tuple(x / root for x in self.vault_vol),
+            fee_mgmt=self.fee_mgmt / n,
+            opex=self.opex / n,
+            inflow_speed=1.0 - (1.0 - self.inflow_speed) ** (1.0 / n),
         )
 
     @property

@@ -35,12 +35,17 @@ def test_quarters_add_back_up_to_the_year():
     assert n * q.m == pytest.approx(p.m, rel=1e-14)
     assert n * q.jump_rate == pytest.approx(p.jump_rate, rel=1e-14)
     assert n * q.mu_BTC == pytest.approx(p.mu_BTC, rel=1e-14)
+    assert n * q.fee_mgmt == pytest.approx(p.fee_mgmt, rel=1e-14)
+    assert n * q.opex == pytest.approx(p.opex, rel=1e-14)
+    assert [n * x for x in q.vault_mu] == pytest.approx(list(p.vault_mu), rel=1e-14)
+    assert [n * x * x for x in q.vault_vol] == pytest.approx([x * x for x in p.vault_vol], rel=1e-14)
+    assert (1 - q.inflow_speed) ** n == pytest.approx(1 - p.inflow_speed, rel=1e-14)
     assert (1 - q.delta) ** n == pytest.approx(1 - p.delta, rel=1e-14)
 
 
 def test_sizes_do_not_convert():
     p, q = DEFAULTS, DEFAULTS.per_period()
-    for name in ("lam", "kappa", "D", "k", "jump_mean", "jump_tail", "a_A", "a_J", "rho_A", "alpha_max", "q_max", "k_BTC", "nu", "rho_NP"):
+    for name in ("lam", "kappa", "D", "k", "jump_mean", "jump_tail", "a_A", "a_J", "rho_A", "alpha_max", "q_max", "k_BTC", "nu", "fee_perf", "capacity", "k_A", "compensation", "outflow_incident", "outflow_perf", "rho_NP"):
         assert getattr(q, name) == getattr(p, name), name
 
 
