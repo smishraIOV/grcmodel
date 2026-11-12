@@ -1,4 +1,4 @@
-"""Decision frequency: annual statements converted to per-period ones (design.md 2.6)."""
+"""Decision frequency: annual statements converted to per-period ones (design.md 2.5)."""
 
 import math
 from dataclasses import replace

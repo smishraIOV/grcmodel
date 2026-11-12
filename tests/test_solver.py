@@ -1,4 +1,4 @@
-"""The infinite-horizon solver (design.md section 3).
+"""The infinite-horizon solver (design.md section 5).
 
 Coarse grids throughout, so the suite stays fast. Each solve takes a few
 seconds on CPU in float64.

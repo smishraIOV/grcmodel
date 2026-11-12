@@ -1,4 +1,4 @@
-"""Infinite-horizon solution of the v0 bank by policy iteration on a grid (design.md section 3).
+"""Infinite-horizon solution of the v0 bank by policy iteration on a grid (design.md section 5).
 
     V(w, S) = max{ 0, max_c [ flow(w, K) + beta E V(w', S') ] }
 
@@ -321,7 +321,7 @@ def solve(
     verbose: bool = False,
 ) -> Solution:
     inputs = p
-    p = p.per_period()  # rates stated per year become rates per period (design.md 2.6)
+    p = p.per_period()  # rates stated per year become rates per period (design.md 2.5)
     if evaluate_steps is None:
         # Policy evaluation contracts by beta per step, so the number of steps
         # it needs grows like 1 / (1 - beta): about 50 annually, about 200

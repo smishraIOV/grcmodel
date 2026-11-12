@@ -1,4 +1,4 @@
-"""Solve the v0 bank and print what it says (design.md section 5, v0).
+"""Solve the v0 bank and print what it says (design.md section 7, v0).
 
     uv run python scripts/solve_v0.py [--profile reference] [--periods-per-year 1]
 

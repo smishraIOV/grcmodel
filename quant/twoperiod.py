@@ -2,7 +2,7 @@
 
 An oracle here is a known-answer check: a case where the paper's formulas give
 the exact result, so the numerical code can be tested against them
-(design.md section 3).
+(design.md section 5).
 
 With one period left, the bank faces the Froot-Scharfstein-Stein problem of
 Froot & Stein (1998) eq. (2): a riskless opportunity F(I), funded from internal

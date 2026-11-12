@@ -29,7 +29,7 @@ to be merged back.
   bank with an unrealistic counterfactual (equity raised for free, forced
   recapitalization, unlimited liability). Their qualitative point is already
   known, and their numbers mean nothing. Acknowledge such effects in words.
-- **Stages need approval.** `docs/design.md` §5 lists v0–v3; each starts only
+- **Stages need approval.** `docs/design.md` §7 lists the stages; each starts only
   when agreed.
 
 ## Running things
@@ -47,7 +47,7 @@ print the profile, torch version and commit they ran under.
 (default 4, quarterly) sets how often the bank decides, and the solver converts
 on entry (`Params.per_period()`). Use 1 for quick exploration and tests, 4 for
 realistic runs; `scripts/solve_v0.py --periods-per-year 4`. Quarterly runs need
-a finer equity grid near the issuance kink (`docs/design.md` §2.6).
+a finer equity grid near the issuance kink (`docs/design.md` §2.5).
 
 ## Layout
 
@@ -77,7 +77,7 @@ a finer equity grid near the issuance kink (`docs/design.md` §2.6).
   Constrained controls go through `softplus`, not `torch.clamp`, whose gradient
   is zero at the boundary. Floor every `logit` away from 0 and 1.
 - **Keep cost functions dimensionally consistent.** Money is measured in units
-  of the first-best book (`docs/design.md` §2.1), so every money parameter is a
+  of the first-best book (`docs/design.md` §3.1), so every money parameter is a
   multiple of that. "First-best" means the frictionless optimum — what the bank
   would lend if capital were free — not the model's optimal policy, which lends
   less (`quant/params.py`).

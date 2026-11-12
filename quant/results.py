@@ -1,4 +1,4 @@
-"""What a solved bank says: the v0 outputs (design.md sections 1, 2.3, 5).
+"""What a solved bank says: the v0 outputs (design.md sections 1, 3.6, 7).
 
 Everything here reads a `Solution`; nothing re-solves except `grc_value`,
 which compares solves by construction. Expectations run over every outcome,
@@ -120,7 +120,7 @@ class GrcValue:
     bank that raises equity for free, or one forced to recapitalize after any
     loss, is an academic construction: neither bank exists, so the number has
     no quantitative meaning, and the qualitative point is already known. See
-    design.md section 9, the decisions log, for what was tried and why it was
+    design.md section 11, the decisions log, for what was tried and why it was
     removed.
     """
 

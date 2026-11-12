@@ -1,4 +1,4 @@
-"""The v0 bank, one period: primitives and the transition (design.md section 2).
+"""The v0 bank, one period: primitives and the transition (design.md sections 2-3).
 
 Everything here is element-wise and branch-free, so it vectorizes over grid
 points, controls and quadrature nodes at once, and stays differentiable for
@@ -53,7 +53,7 @@ def issuance_cost(p: Params, e: torch.Tensor) -> torch.Tensor:
 def mitigation(G: torch.Tensor, a: float, rho: float) -> torch.Tensor:
     """Share of an exposure left after a GRC stock G: rho + (1 - rho) exp(-a G).
 
-    `rho` is the irreducible floor no program removes (design.md section 2.4).
+    `rho` is the irreducible floor no program removes (design.md section 2.3).
     """
     return rho + (1.0 - rho) * torch.exp(-a * G)
 
@@ -194,7 +194,7 @@ class Outcomes:
 def outcomes(
     p: Params, c: Controls, G_next: torch.Tensor, rule: ShockRule, jumps: JumpRule | None
 ) -> Outcomes:
-    """w' over the continuous shocks and, if any, the jump losses (design.md 2.5).
+    """w' over the continuous shocks and, if any, the jump losses (design.md 2.4).
 
     A jump takes a share J of the book, on top of everything else, so with a
     jump w' falls by I J. It impairs an asset rather than paying cash out --
