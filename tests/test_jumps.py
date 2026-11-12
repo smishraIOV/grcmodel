@@ -1,4 +1,4 @@
-"""v1: heavy-tailed jump losses (design.md section 3.5)."""
+"""v1: heavy-tailed jump losses (design.md section 2.5)."""
 
 from dataclasses import replace
 

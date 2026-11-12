@@ -2,7 +2,7 @@
 
 An oracle here is a known-answer check: a case where the paper's formulas give
 the exact result, so the numerical code can be tested against them
-(design.md section 4).
+(design.md section 3).
 
 With one period left, the bank faces the Froot-Scharfstein-Stein problem of
 Froot & Stein (1998) eq. (2): a riskless opportunity F(I), funded from internal
@@ -13,8 +13,13 @@ The first period then picks the new product's size alpha and the hedge H
 against E[P(w')]. Under normal shocks, Stein's lemma turns the first-order
 conditions into the paper's results exactly:
 
-    Prop. 2   H* = b_M I                     -- tradeable risk is fully hedged
+    Prop. 2   H* = b_BTC I                     -- tradeable risk is fully hedged
     eq. (9)   alpha* = (pi - G cov_NP) / (G var_N),   G = -E[P''] / E[P']
+    eq. (15)  x* = mu_BTC / (G s_BTC^2)        -- with a view on BTC, the bank
+                                                  keeps this much net exposure
+
+Prop. 2 is the mu_BTC = 0 case of the third line: with no view, it hedges
+everything.
 
 `tests/test_twoperiod.py` checks both against a numerical optimum that knows
 nothing about either formula. Under the Student-t, Stein's lemma fails, and the
@@ -201,6 +206,7 @@ class FrootStein:
     G: float          # effective risk aversion, -E[P''] / E[P']
     alpha: float      # eq. (9): alpha* = (pi - G cov_NP) / (G var_N)
     hurdle: float     # eq. (10): mu* = G cov_NP, the hurdle for a small position
+    btc: float        # eq. (15) analogue: net BTC exposure x* = mu_BTC / (G s_BTC^2)
 
 
 def froot_stein(
@@ -226,7 +232,10 @@ def froot_stein(
     phi_B = float(mitigation(profile.tensor(G_next), p.a_B, p.rho_B))
     cov_NP = p.s_N * fixed.I * phi_B * p.s_P * p.rho_NP
     var_N = p.s_N**2
-    return FrootStein(G=G, alpha=(p.pi - G * cov_NP) / (G * var_N), hurdle=G * cov_NP)
+    btc = p.mu_BTC / (G * p.s_BTC**2) if p.s_BTC > 0 else float("nan")
+    return FrootStein(
+        G=G, alpha=(p.pi - G * cov_NP) / (G * var_N), hurdle=G * cov_NP, btc=btc
+    )
 
 
 def oracle_params(**overrides) -> Params:
@@ -246,6 +255,7 @@ def oracle_params(**overrides) -> Params:
         D=0.95, nu=float("inf"), m=0.1, s_P=0.005, s_N=0.03, pi=0.0002,
         r_E=0.02, tau=0.01,  # the paper's discounting, pinned when the model moved off it
         jump_rate=0.0,       # the paper has no jumps, and the oracle's quadratic region needs none
+        mu_BTC=0.0, s_BTC=0.10, b_BTC=0.5,  # no view by default: Prop. 2 is the check
         periods_per_year=1,  # the oracle's periods are the paper's dates; nothing to convert
     )
     return replace(base, **overrides)

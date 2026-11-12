@@ -1,12 +1,12 @@
-"""The v0 bank, one period: primitives and the transition (design.md section 3).
+"""The v0 bank, one period: primitives and the transition (design.md section 2).
 
 Everything here is element-wise and branch-free, so it vectorizes over grid
 points, controls and quadrature nodes at once, and stays differentiable for
 the later learner. Shapes broadcast: controls carry a leading batch shape,
 shocks a trailing node axis.
 
-Shock vector order, everywhere: (xi_P, xi_N, eps_M) -- the book's payoff
-shock, the new product's, and the tradeable factor's. All unit variance.
+Shock vector order, everywhere: (xi_P, xi_N, eps_BTC) -- the book's payoff
+shock, the new product's, and BTC's dollar return. All unit variance.
 """
 
 from dataclasses import dataclass
@@ -17,7 +17,7 @@ import torch
 from quant.params import Params
 from quant.quadrature import JumpRule, ShockRule
 
-SHOCKS = ("xi_P", "xi_N", "eps_M")
+SHOCKS = ("xi_P", "xi_N", "eps_BTC")
 
 
 def shock_correlation(p: Params) -> np.ndarray:
@@ -53,7 +53,7 @@ def issuance_cost(p: Params, e: torch.Tensor) -> torch.Tensor:
 def mitigation(G: torch.Tensor, a: float, rho: float) -> torch.Tensor:
     """Share of an exposure left after a GRC stock G: rho + (1 - rho) exp(-a G).
 
-    `rho` is the irreducible floor no program removes (design.md section 3.4).
+    `rho` is the irreducible floor no program removes (design.md section 2.4).
     """
     return rho + (1.0 - rho) * torch.exp(-a * G)
 
@@ -67,14 +67,22 @@ def shareholder_flow(p: Params, w: torch.Tensor, K: torch.Tensor) -> torch.Tenso
     return w - K - issuance_cost(p, torch.relu(K - w))
 
 
-def capital_floor(p: Params, I: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
+def capital_floor(
+    p: Params, I: torch.Tensor, g: torch.Tensor, q: torch.Tensor | None = None
+) -> torch.Tensor:
     """The least operating equity K the controls allow.
 
-    Three constraints at once: the capital ratio K >= k I; non-negative cash,
-    K - g + D - I >= 0; and no negative equity, K >= 0.
+    Three constraints at once: the capital ratio K >= k I + k_BTC q;
+    non-negative cash, K - g + D - I - q >= 0; and no negative equity, K >= 0.
+    The BTC treasury q is bought spot, so it uses cash and carries its own
+    capital charge.
     """
+    if q is None:
+        q = torch.zeros_like(I)
     zero = torch.zeros_like(I)
-    return torch.maximum(torch.maximum(p.k * I, I + g - p.D), zero)
+    ratio = p.k * I + p.k_BTC * q
+    cash = I + g + q - p.D
+    return torch.maximum(torch.maximum(ratio, cash), zero)
 
 
 @dataclass(frozen=True)
@@ -82,8 +90,8 @@ class Controls:
     """One period's decision, taken before the shocks.
 
     K: operating equity after dividends or issuance. g: GRC spend.
-    I: the lending book. alpha: size of the new product. H: hedge sold on the
-    tradeable factor.
+    I: the lending book. alpha: size of the new product.
+    q: the BTC treasury, held spot. H: BTC hedged away with short perps.
     """
 
     K: torch.Tensor
@@ -91,6 +99,19 @@ class Controls:
     I: torch.Tensor
     alpha: torch.Tensor
     H: torch.Tensor
+    q: torch.Tensor | None = None
+
+    def treasury(self) -> torch.Tensor:
+        return self.q if self.q is not None else torch.zeros_like(self.I)
+
+
+def net_btc(p: Params, c: Controls) -> torch.Tensor:
+    """The bank's net BTC exposure in dollars: book loading + treasury - hedge.
+
+    What equity gains or loses when BTC moves. Gross holdings do not matter on
+    their own; only what is left after the hedge.
+    """
+    return p.b_BTC * c.I + c.treasury() - c.H
 
 
 def next_grc(p: Params, G: torch.Tensor, g: torch.Tensor) -> torch.Tensor:
@@ -104,11 +125,18 @@ def next_wealth(
     """Equity at the close of the period: assets less what depositors are owed.
 
         w' = F(I) - I phi_A m + I phi_B s_P xi_P       the book
-           + (1 + r) R                                 cash, R = K - g + D - I
+           + (1 + r) R + (1 + r) q                     cash and the BTC treasury's
+                                                       riskless part, R = K - g + D - I - q
            + alpha (pi + s_N xi_N)                     the new product
-           + (b_M I - H) s_M eps_M - c_H/2 H^2         the factor, net of the hedge
+           + x (mu_BTC + s_BTC eps_BTC) - c_H/2 H^2    BTC: net exposure x = b_BTC I + q - H
            - tau K                                     carrying equity
            - (1 + r_D) D                               depositors, principal and interest
+
+    BTC's dollar return is r + mu_BTC + s_BTC eps_BTC, where mu_BTC is the
+    excess return the firm *believes* in. The treasury's riskless part cancels
+    against the cash it used, so q enters only through the net exposure x --
+    and through the cash and capital it ties up (`capital_floor`). Hedging with
+    short perps gives up the believed premium on what is hedged.
 
     The deposit principal is subtracted in full and comes back next period as
     part of R when the base is rolled over. Adding it back here as well would
@@ -117,21 +145,22 @@ def next_wealth(
     Controls have shape (...,); `shocks` has shape (N, 3); the result is
     (..., N).
     """
-    xi_P, xi_N, eps_M = shocks[:, 0], shocks[:, 1], shocks[:, 2]
+    xi_P, xi_N, eps_BTC = shocks[:, 0], shocks[:, 1], shocks[:, 2]
 
     def col(x: torch.Tensor) -> torch.Tensor:
         return x.unsqueeze(-1)
 
     I, K, g, alpha, H = col(c.I), col(c.K), col(c.g), col(c.alpha), col(c.H)
+    x = col(net_btc(p, c))
     G_next = col(G_next)
     phi_A = mitigation(G_next, p.a_A, p.rho_A)
     phi_B = mitigation(G_next, p.a_B, p.rho_B)
 
     book = production(p, I) - I * phi_A * p.m + I * phi_B * p.s_P * xi_P
-    cash = (1.0 + p.r) * (K - g + p.D - I)
+    cash = (1.0 + p.r) * (K - g + p.D - I)   # R + q: the treasury's riskless part
     product = alpha * (p.pi + p.s_N * xi_N)
-    factor = (p.b_M * I - H) * p.s_M * eps_M - 0.5 * p.c_H * H * H
-    return book + cash + product + factor - p.tau * K - (1.0 + p.r_D) * p.D
+    btc = x * (p.mu_BTC + p.s_BTC * eps_BTC) - 0.5 * p.c_H * H * H
+    return book + cash + product + btc - p.tau * K - (1.0 + p.r_D) * p.D
 
 
 def jump_probability(p: Params, G_next: torch.Tensor) -> torch.Tensor:
@@ -165,7 +194,7 @@ class Outcomes:
 def outcomes(
     p: Params, c: Controls, G_next: torch.Tensor, rule: ShockRule, jumps: JumpRule | None
 ) -> Outcomes:
-    """w' over the continuous shocks and, if any, the jump losses (design.md 3.5).
+    """w' over the continuous shocks and, if any, the jump losses (design.md 2.5).
 
     A jump takes a share J of the book, on top of everything else, so with a
     jump w' falls by I J. It impairs an asset rather than paying cash out --

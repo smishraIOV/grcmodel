@@ -1,11 +1,11 @@
-"""Parameters of the bank (docs/design.md section 3).
+"""Parameters of the bank (docs/design.md section 2).
 
 Plain floats, frozen. Every parameter is one economic driver; the comment on
 each says which. All values are illustrative, not calibrated.
 
 **Every rate is stated per year.** The model runs at `periods_per_year`
 decisions a year, and `per_period()` converts the annual statement into what
-one period sees (design.md section 3.6). Sizes and per-event amounts do not
+one period sees (design.md section 2.6). Sizes and per-event amounts do not
 convert. With `periods_per_year = 1` the conversion is the identity, so it is
 safe to apply twice; the solver applies it once, on entry.
 
@@ -13,10 +13,17 @@ Use 1 for fast exploratory runs and tests, and 4 (the default, quarterly) for
 realistic ones. Each extra period a year brings the discount factor closer to
 one, so a solve takes more iterations to converge.
 
-Units (design.md section 3.1): money is measured so that the first-best book --
-what a bank with unlimited free capital would lend -- is exactly 1. That pins
-the curvature of the return on the book, `b`, at every frequency: F'(1) must
-equal the return on cash over one period.
+Units (design.md section 2.1): money is measured so that the first-best book is
+exactly 1. That pins the curvature of the return on the book, `b`, at every
+frequency: F'(1) must equal the return on cash over one period.
+
+**"First-best"** is the economist's term for the optimum with no frictions at
+all: here, what the bank would lend if capital were free and unlimited, where
+the last unit lent earns exactly what cash earns (F'(I) = 1 + r). It is a
+reference point for the units, not the model's solution. The model's optimal
+policy lends less, because capital is costly and scarce -- the "second-best" --
+and the gap between the two is the underinvestment Froot-Stein is about. Used
+in this sense throughout the code.
 """
 
 import math
@@ -31,7 +38,7 @@ class Params:
     # -- rates and the opportunity (per year) -----------------------------
     r: float = 0.02          # riskless rate; cash earns it
     r_E: float = 0.06        # shareholders' required return; beta = 1/(1+r_E). Departure from the
-                             # paper, design.md section 8: to be set against a target market-to-book
+                             # paper, design.md section 7: to be set against a target market-to-book
     A: float = 1.08          # gross return on the first unit lent over a year, F'(0)
 
     # -- frictions: what makes the bank care about risk ------------------
@@ -54,16 +61,23 @@ class Params:
     rho_NP: float = 0.5      # correlation of its payoff with the book's
     alpha_max: float = 1.0   # bound on its size, so a risk-seeking region stays finite
 
-    # -- the tradeable factor (risk management) --------------------------
-    b_M: float = 0.5         # the book's loading on the factor (crypto collateral prices)
-    s_M: float = 0.10        # the factor's standard deviation, per year
-    c_H: float = 0.0         # hedging cost, c_H/2 * H^2. Zero: fairly tradeable, Prop. 2 applies
-    x_max: float = 1.0       # bound on the unhedged factor exposure, |b_M I - H|, for the same reason
+    # -- BTC: the tradeable factor, and the firm's view on it --------------
+    # Money is in dollars (the numeraire). BTC is the firm's home asset: its
+    # book is partly BTC-backed, and it holds a BTC treasury out of conviction.
+    # It believes BTC beats the riskless rate by mu_BTC a year, so it does not
+    # hedge all of it away -- the paper's eq. (15) case, a bank with a view on
+    # the priced factor (design.md section 2.2).
+    b_BTC: float = 0.5       # the book's loading on BTC (BTC-backed lending)
+    s_BTC: float = 0.60      # BTC's dollar volatility, per year
+    mu_BTC: float = 0.10     # the firm's believed excess return on BTC, per year
+    k_BTC: float = 0.10      # capital charge on the BTC treasury: K >= k I + k_BTC q
+    q_max: float = 1.0       # bound on the BTC treasury, so a risk-seeking region stays finite
+    c_H: float = 0.0         # cost of hedging with short perps, c_H/2 * H^2; zero is fair
 
     # -- shocks ----------------------------------------------------------
     nu: float = 5.0          # Student-t degrees of freedom; math.inf is the normal case
 
-    # -- jump losses (v1, design.md section 3.5) --------------------------
+    # -- jump losses (v1, design.md section 2.5) --------------------------
     jump_rate: float = 0.1   # jumps per year at zero GRC (Poisson; at most one a period)
     jump_mean: float = 0.05  # mean share of the book lost in a jump
     jump_tail: float = 2.5   # Pareto tail index of the severity; > 2 keeps the variance finite
@@ -92,7 +106,7 @@ class Params:
             raise ValueError("capital ratio k must be in [0, 1)")
 
     def per_period(self) -> "Params":
-        """The same bank, with every rate restated for one period (design.md 3.6).
+        """The same bank, with every rate restated for one period (design.md 2.6).
 
         Returned with `periods_per_year = 1`, so applying it again changes
         nothing. The conventions:
@@ -101,7 +115,7 @@ class Params:
         - the book's gross return compounds, A^(1/n), so b still puts the
           first-best book at 1;
         - flows that accrue with time divide by n: the mean loss rate, the
-          product's excess return, the carrying cost tau;
+          product's and BTC's excess returns, the carrying cost tau;
         - volatilities divide by sqrt(n), the square-root-of-time rule.
           Independent periods' variances add up to the year's. Under fat
           tails this is a convention, not an identity: a fat-tailed year is
@@ -133,7 +147,8 @@ class Params:
             pi=self.pi / n,
             s_P=self.s_P / root,
             s_N=self.s_N / root,
-            s_M=self.s_M / root,
+            s_BTC=self.s_BTC / root,
+            mu_BTC=self.mu_BTC / n,
             jump_rate=self.jump_rate / n,
             delta=1.0 - (1.0 - self.delta) ** (1.0 / n),
         )

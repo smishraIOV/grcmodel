@@ -1,4 +1,4 @@
-"""The infinite-horizon solver (design.md section 4).
+"""The infinite-horizon solver (design.md section 3).
 
 Coarse grids throughout, so the suite stays fast. Each solve takes a few
 seconds on CPU in float64.
@@ -11,6 +11,7 @@ import torch
 
 from quant.numerics import REFERENCE
 from quant.params import DEFAULTS
+from quant.model import net_btc
 from quant.solver import GridSpec, riskless_steady_state, solve
 
 P = REFERENCE
@@ -20,9 +21,11 @@ SPEC = GridSpec(n_w=33, n_s=5, s_hi=0.08, w_lo=-0.4, w_hi=0.6, n_hermite=3, n_mi
 # v0's configuration: no jumps, which the v1 tests add (tests/test_jumps.py).
 # Annual periods, so the suite converges quickly; the quarterly model is
 # checked separately in tests/test_frequency.py.
+# No view on BTC (mu_BTC = 0) and the pre-BTC volatility, so the full-hedging
+# oracle applies; the BTC view is tested in tests/test_btc.py.
 BASE = replace(
     DEFAULTS, m=0.02, s_P=0.03, a_A=100.0, a_B=100.0, pi=0.002, jump_rate=0.0,
-    periods_per_year=1,
+    mu_BTC=0.0, s_BTC=0.10, periods_per_year=1,
 )
 
 
@@ -46,7 +49,7 @@ def test_value_is_nonnegative_and_increasing(base_solution):
 
 def test_riskless_bank_matches_the_closed_form():
     """No shocks, inert GRC: V is known exactly above the steady-state floor."""
-    p = replace(BASE, s_P=0.0, s_N=0.0, s_M=0.0, a_A=0.0, a_B=0.0, nu=float("inf"))
+    p = replace(BASE, s_P=0.0, s_N=0.0, s_BTC=0.0, a_A=0.0, a_B=0.0, nu=float("inf"))
     # The steady state sits just above the kink where issuance starts. Linear
     # interpolation is exact there on the coarse grid; Catmull-Rom bulged over
     # the kink by 1.7e-4, which is part of why it is no longer the default.
@@ -56,21 +59,28 @@ def test_riskless_bank_matches_the_closed_form():
     above = sol.grid.w >= exact.K + 0.05
     got = sol.V[above, 0]
     want = exact.value(sol.grid.w[above])
-    assert torch.allclose(got, want, atol=1e-6), float((got - want).abs().max())
+    # 1e-5, not tighter: the BTC treasury's optimum here is exactly zero, and a
+    # squashed control only approaches zero (about 1e-6 left, tying up capital).
+    assert torch.allclose(got, want, atol=1e-5), float((got - want).abs().max())
 
 
 def test_tradeable_risk_is_hedged_away_from_walk_away(base_solution):
     """Prop. 2 in the dynamic model, where the bank is risk-averse.
 
-    Under Catmull-Rom interpolation this failed with matched +/- errors of
-    0.03: the interpolant had a convex patch and the solver gambled on it.
+    With no view on BTC (mu_BTC = 0), the hedge ratio -- the share of gross BTC
+    exposure hedged away -- must be 1. Within half a percent: the value is
+    nearly flat in the hedge near its optimum, so the last fraction of a
+    percent is barely identified. Under Catmull-Rom interpolation this failed
+    with matched +/- errors several times larger: the interpolant had a convex
+    patch and the solver gambled on it.
     """
     sol = base_solution
     c = sol.controls()
     w, _ = sol.grid.states()
     safe = w >= 0.0
-    residual = BASE.b_M * c.I - c.H
-    assert float(residual[safe].abs().max()) < 1e-3
+    gross = BASE.b_BTC * c.I + c.treasury()
+    hedged = 1.0 - net_btc(BASE, c) / gross
+    assert float((hedged[safe] - 1.0).abs().max()) < 5e-3
 
 
 def test_free_equity_buys_a_buffer(base_solution):

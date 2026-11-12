@@ -68,10 +68,10 @@ def test_shocks_average_out_of_expected_wealth():
 
 
 def test_hedging_removes_the_factor_exposure():
-    """With H = b_M I the factor drops out of w' entirely."""
+    """With H = b_BTC I the factor drops out of w' entirely."""
     p = DEFAULTS
     shocks = P.tensor([[0.0, 0.0, -3.0], [0.0, 0.0, 3.0]])
-    c = controls(I=0.8, H=p.b_M * 0.8)
+    c = controls(I=0.8, H=p.b_BTC * 0.8)
     w = next_wealth(p, c, t(0.0), shocks)
     assert float(w[0]) == pytest.approx(float(w[1]), abs=1e-14)
 

@@ -46,8 +46,8 @@ def test_t_kurtosis_reaches_the_true_value(nu, tol):
 def test_shared_scale_gives_tail_dependence():
     """Uncorrelated components still move together in the tail under the t.
 
-    xi_P and eps_M have zero correlation. Under the normal they are independent
-    and E[xi_P^2 eps_M^2] = 1; under the t the shared scale pushes it above 1.
+    xi_P and eps_BTC have zero correlation. Under the normal they are independent
+    and E[xi_P^2 eps_BTC^2] = 1; under the t the shared scale pushes it above 1.
     """
     def co_moment(nu):
         x, w = student_t_rule(CORR, nu, P).nodes, student_t_rule(CORR, nu, P).weights

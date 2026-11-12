@@ -1,4 +1,4 @@
-"""Infinite-horizon solution of the v0 bank by policy iteration on a grid (design.md section 4).
+"""Infinite-horizon solution of the v0 bank by policy iteration on a grid (design.md section 3).
 
     V(w, S) = max{ 0, max_c [ flow(w, K) + beta E V(w', S') ] }
 
@@ -33,9 +33,20 @@ constraint holds by construction:
 
     I     = I_max sigmoid(z_I)                 the book
     g     = delta S_hi sigmoid(z_g)            keeps S' on the grid
-    K     = floor(I, g) + softplus(z_K)        capital ratio, cash, no negative equity
+    q     = q_max sigmoid(z_q)                 the BTC treasury, bought spot
+    K     = floor(I, g, q) + softplus(z_K)     capital ratio, cash, no negative equity
     alpha = alpha_max sigmoid(z_alpha)
-    H     = b_M I - x_max tanh(z_x)            residual factor exposure bounded by x_max
+    H     = 1.2 sigmoid(z_h) (b_BTC I + q)     hedge ratio in [0, 1.2]: perps hedge
+
+The hedge can reduce BTC exposure but not create long exposure. Long exposure
+beyond the book's comes only from the spot treasury, which uses cash and
+capital; otherwise synthetic exposure through perps would always win and the
+treasury would never be held.
+
+The ratio runs to 1.2, a small bounded over-hedge, so that a full hedge is an
+interior point. Capped at 1, the full hedge sat at the edge of a squashed
+control, where the gradient vanishes, and the solver stalled at a ratio of
+0.987.
 
 Each improvement step warm-starts from the last policy, and between
 improvements the fixed policy is evaluated several times (Howard's
@@ -161,6 +172,9 @@ def interpolate(
     return torch.relu(inside + excess - shortfall - issuance_cost(p, shortfall))
 
 
+HEDGE_MAX = 1.2  # hedge ratio bound; > 1 so that a full hedge is interior
+
+
 @dataclass
 class RawPolicy:
     """Unconstrained parameters, one per control per grid point."""
@@ -169,27 +183,33 @@ class RawPolicy:
     z_g: torch.Tensor
     z_K: torch.Tensor
     z_alpha: torch.Tensor
-    z_x: torch.Tensor
+    z_h: torch.Tensor
+    z_q: torch.Tensor
 
     @classmethod
     def initial(cls, p: Params, n: int, profile: NumericsProfile) -> "RawPolicy":
-        """Lend most of the first-best book, hedge fully, hold a thin buffer."""
+        """Lend most of the first-best book, hedge almost fully, hold a thin
+        buffer and little BTC treasury."""
         def full(x):
             return torch.full((n,), x, dtype=profile.dtype, device=profile.device)
 
-        return cls(z_I=full(0.5), z_g=full(-2.0), z_K=full(-3.0), z_alpha=full(-3.0), z_x=full(0.0))
+        return cls(
+            z_I=full(0.5), z_g=full(-2.0), z_K=full(-3.0), z_alpha=full(-3.0),
+            z_h=full(1.3), z_q=full(-4.0),
+        )
 
     def tensors(self) -> list[torch.Tensor]:
-        return [self.z_I, self.z_g, self.z_K, self.z_alpha, self.z_x]
+        return [self.z_I, self.z_g, self.z_K, self.z_alpha, self.z_h, self.z_q]
 
     def controls(self, p: Params, grid: Grid) -> Controls:
         spec = grid.spec
         I = spec.I_max * torch.sigmoid(self.z_I)
         g = p.delta * spec.s_hi * torch.sigmoid(self.z_g)
-        K = capital_floor(p, I, g) + F.softplus(self.z_K)
+        q = p.q_max * torch.sigmoid(self.z_q)
+        K = capital_floor(p, I, g, q) + F.softplus(self.z_K)
         alpha = p.alpha_max * torch.sigmoid(self.z_alpha)
-        H = p.b_M * I - p.x_max * torch.tanh(self.z_x)
-        return Controls(K=K, g=g, I=I, alpha=alpha, H=H)
+        H = HEDGE_MAX * torch.sigmoid(self.z_h) * (p.b_BTC * I + q)
+        return Controls(K=K, g=g, I=I, alpha=alpha, H=H, q=q)
 
 
 def continuation(
@@ -260,12 +280,14 @@ class RisklessSteadyState:
 
 def riskless_steady_state(p: Params, profile: NumericsProfile) -> RisklessSteadyState:
     p = p.per_period()
-    if (p.s_P, p.s_N, p.s_M, p.a_A, p.jump_rate) != (0.0, 0.0, 0.0, 0.0, 0.0):
-        raise ValueError("the riskless oracle needs s_P = s_N = s_M = a_A = jump_rate = 0")
+    if (p.s_P, p.s_N, p.s_BTC, p.mu_BTC, p.a_A, p.jump_rate) != (0.0,) * 6:
+        raise ValueError(
+            "the riskless oracle needs s_P = s_N = s_BTC = mu_BTC = a_A = jump_rate = 0"
+        )
 
     def closing(I):
         K = capital_floor(p, I, torch.zeros_like(I))
-        c = Controls(K=K, g=torch.zeros_like(I), I=I, alpha=p.alpha_max * torch.ones_like(I), H=p.b_M * I)
+        c = Controls(K=K, g=torch.zeros_like(I), I=I, alpha=p.alpha_max * torch.ones_like(I), H=p.b_BTC * I)
         return K, next_wealth(p, c, torch.zeros_like(I), profile.zeros(1, 3)).squeeze(-1)
 
     def objective(I):
@@ -299,7 +321,7 @@ def solve(
     verbose: bool = False,
 ) -> Solution:
     inputs = p
-    p = p.per_period()  # rates stated per year become rates per period (design.md 3.6)
+    p = p.per_period()  # rates stated per year become rates per period (design.md 2.6)
     if evaluate_steps is None:
         # Policy evaluation contracts by beta per step, so the number of steps
         # it needs grows like 1 / (1 - beta): about 50 annually, about 200
