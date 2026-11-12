@@ -75,3 +75,28 @@ def test_with_no_view_and_no_btc_in_the_vault_the_firm_holds_no_net_btc():
     w, _, _ = sol.states()
     safe = w >= 0.0
     assert float((c.q - c.H)[safe].abs().max()) < 1e-3
+
+
+def test_allocation_satisfies_its_first_order_condition(no_view):
+    """Every strategy the vault holds has the highest marginal value; any
+    strategy it does not hold has no higher one (within optimizer tolerance)."""
+    from quant.vault_results import allocation_gradient
+
+    sol = no_view
+    grad = allocation_gradient(sol)
+    alloc = sol.controls().alloc
+    operating = sol.V.reshape(-1) > 0.05
+    held = alloc > 0.01
+    top = grad.max(-1, keepdim=True).values
+    scale = grad.abs().max(-1, keepdim=True).values.clamp(min=1e-12)
+    gap = (top - grad) / scale                 # 0 for the best strategy
+    assert float(gap[held & operating[:, None]].max()) < 0.02
+
+
+def test_thresholds_are_ordered(no_view):
+    from quant.vault_results import thresholds
+
+    th = thresholds(no_view)
+    both = ~(th.walk_away.isnan() | th.payout.isnan())
+    assert bool((th.walk_away[both] < th.payout[both]).all())
+

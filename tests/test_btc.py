@@ -4,7 +4,6 @@ and hedging with perps (design.md section 2.2)."""
 from dataclasses import replace
 
 import pytest
-import torch
 
 from quant.model import Controls, capital_floor, net_btc, next_wealth, shock_correlation
 from quant.numerics import REFERENCE

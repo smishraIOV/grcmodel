@@ -21,7 +21,6 @@ earns fees on. As in the bank form it may run slightly past a full hedge, so
 that a full hedge is an interior point.
 """
 
-import math
 from dataclasses import dataclass, field
 
 import torch
