@@ -1,57 +1,37 @@
 # Design: a dynamic Froot–Stein (1998) bank, with GRC as a fourth lever
 
-Status: **v0 built; v1 under way.** Built (`quant/`): the one-period model,
-the quadrature (a deterministic way of computing expected values from a small
-set of weighted scenarios, in place of random simulation), the two-period
-oracle (a known-answer check), the infinite-horizon grid solver, the outputs
-(effective risk aversion, hurdles, thresholds, GRC's value to the bank), and
-v1's jump losses, all at a configurable decision frequency (quarterly by
-default, §3.6). Still to come in v1: several products, and GRC lowering the
-cost of hedging. The previous model is frozen on the `legacy` branch.
+**Status:** v0 built; v1 under way. What is built and what is planned is marked
+section by section, and summarized in §6. The previous model is on the `legacy`
+branch.
 
-Decisions already taken (2026-11-10):
+**How to read this document.**
 
-- The modeling objective is the **integrated framework of Froot & Stein
-  (1998)**: risk management, capital budgeting and capital structure decided
-  jointly, all priced by one endogenous risk aversion. Froot, Scharfstein &
-  Stein (1993) supplies the mechanism that makes the bank care about risk.
-- **Infinite horizon, stationary policy**, as the main approach. A finite
-  horizon only where something forces it.
-- **Discrete time.**
-- The practical setting is the one in `readme.md`: a **financial intermediary
-  on crypto rails** that takes deposits into vaults, invests them, and runs the
-  tokenized infrastructure they live on.
-- How that firm's risks split into hedgeable and non-hedgeable is **not
-  settled**, and is to be worked out iteratively (§5).
-- **Abstraction level:** keep only the paper's core economic drivers, at the
-  level of detail where the problem can be solved computationally as an
-  optimization. Matching every detail of the paper is not a goal.
-- **A practical model, not a replication.** The paper's simplifying
-  assumptions exist to keep its analysis tractable; a computational model does
-  not need them. Departures are fine, but each one is justified and listed in
-  §8.
-- **Walk-away is in:** shareholders can abandon the firm, and the firm fails.
-- **"Partly tradeable" means hedgeable at a price above fair.** GRC mechanism D
-  works by lowering that price.
-- **`quant/` is replaced, not kept alongside.**
-- **Depositors are in from v0**, as a fixed deposit base $D$ at a fixed rate
-  $r_D$, rolled over each period. Interest is senior to dividends. Depositors
-  do not price risk. If gambling for resurrection appears, it is reported, not
-  suppressed.
-- **No negative equity, and a minimum capital ratio.** A bank below its
-  requirement either recapitalizes or shrinks its book. If neither is worth
-  it, it shuts down. There is no operating with negative equity.
-- Deposits and withdrawals become **dynamic later** (v3): flows in and out, and
-  runs, as they behave on crypto rails.
+| section | what it is for |
+|---|---|
+| §1 | what Froot & Stein (1998) actually build: the reference point |
+| §2 | where GRC fits, and what the model reports about it |
+| §3 | **the model**: state, controls, accounting, functional forms |
+| §4 | how it is solved, and the known-answer checks (oracles) |
+| §5 | the crypto-rails bank's risks, sorted by whether they can be hedged (open) |
+| §6 | stages, and what is built |
+| §7 | open questions |
+| §8 | every departure from the paper, with its reason |
+| §9 | methods and concepts introduced without prior discussion |
+| §10 | decisions log: what was decided, when, and why |
+
+Start with §2 and §3. §10 holds the history; the other sections state only what
+the model is.
+
+**Notation.** $G$ is the paper's effective risk aversion. The GRC stock is $S$,
+in this document and in the code.
 
 ---
 
-## 1. What the 1998 paper actually builds
+## 1. What the 1998 paper builds
 
-Read from NBER working paper w5403 (1996), the version of the JFE paper that is
-freely available. Equation numbers below are that version's. The JFE version
-adds the RAROC comparison; that section still needs checking against the
-published text.
+Read from NBER working paper w5403 (1996), the freely available version of the
+JFE paper. Equation numbers below are that version's. The JFE version adds a
+RAROC comparison, not yet checked against the published text (§7).
 
 **Three dates.**
 
@@ -65,8 +45,9 @@ published text.
 
   $$w = Z_P + \alpha Z_N + Z_H + K(1-\tau) \qquad (1)$$
 
-- **t = 2: the FSS problem.** A non-stochastic investment $F(I)$, concave,
-  funded by internal wealth plus external finance $e$ at convex cost $C(e)$:
+- **t = 2: the Froot–Scharfstein–Stein (FSS) problem.** A non-stochastic
+  investment $F(I)$, concave, funded by internal wealth plus external finance
+  $e$ at convex cost $C(e)$:
 
   $$P(w) = \max_I\ F(I) - I - C(e), \quad I = w + e \qquad (2)$$
 
@@ -90,8 +71,8 @@ $V = \{E P(w) - \gamma\,\mathrm{cov}(P(w), M)\}/(1+r)$ (3).
 Two things the authors name as missing (§V): **a dynamic element**, in which
 headquarters pools information about the bank's risks only at intervals and
 desk managers price with the last $G$ they were given; and **agency at the desk
-level**, the reason banks impose position limits. The first of these is exactly
-what this project adds.
+level**, the reason banks impose position limits. The first is what this
+project adds.
 
 ---
 
@@ -99,70 +80,59 @@ what this project adds.
 
 Froot & Stein give the bank three levers: $K$, $H$ and $\alpha$. GRC is a
 **fourth**: a costly, persistent way to change the **non-tradeable** risk the
-bank cannot sell in the market. That is the right home for it. Tradeable risk
-is hedged at zero NPV, so GRC spent on it is wasted. Non-tradeable risk is
-exactly what operational controls, compliance programs and underwriting act
-on.
+bank cannot sell in the market. Tradeable risk is hedged at zero NPV, so GRC
+spent on it is wasted. Non-tradeable risk is what operational controls,
+compliance programs and underwriting act on.
 
-Four ways a unit of GRC could act. They are not mutually exclusive. Which of
-them apply to which risk is the brainstorm in §5.
+Ways a unit of GRC can act. They are not mutually exclusive; which apply to
+which risk is the subject of §5.
 
-| mechanism | effect on the non-tradeable risk | what it is worth |
-|---|---|---|
-| **A. mean** | lowers the expected loss | worth it to a risk-neutral firm; no Froot–Stein content |
-| **B. spread** | lowers the variance or tail | worth $\approx \tfrac12 G\,\Delta\mathrm{var}$ in value terms: the Froot–Stein channel |
-| **C. covariance** | lowers the correlation between a product's risk and the existing book's | lowers the hurdle in (10) *for other products*. GRC as an enabler of capital budgeting |
-| **D. tradeability** | turns non-tradeable risk into tradeable risk: audited contracts become insurable, a documented book becomes saleable | moves risk from the $G$-priced bucket to the $\gamma$-priced one. The most distinctively Froot–Stein mechanism |
+| mechanism | effect on the non-tradeable risk | why it is worth something | status |
+|---|---|---|---|
+| **A. mean** | lowers the expected loss on the book | worth it to any firm, constrained or not | **built** (§3.4) |
+| **B. spread** | lowers the variance of the book's loss | worth $\approx \tfrac12 G\,\Delta\mathrm{var}$: the Froot–Stein channel | **built** (§3.4) |
+| **J. prevention** | lowers the frequency of jump losses | removes expected loss and tail risk at once | **built** (§3.5) |
+| **C. covariance** | lowers the correlation between a product's risk and the book's | lowers the hurdle (10) for other products: GRC as an enabler of capital budgeting | planned (v2) |
+| **D. tradeability** | turns non-tradeable risk into tradeable risk: audited contracts become insurable, a documented book becomes saleable | moves risk from the $G$-priced bucket to the $\gamma$-priced one; the most distinctively Froot–Stein mechanism | planned (v1), as $c_H(S)$ |
 
 **What is reported:** GRC's value to this bank — the bank with a program
 against the same bank without one — and how that value moves with its capital,
 its risks and the size of its losses.
 
-**What is deliberately not measured: a "Froot–Stein premium".** The appeal was
-to split GRC's value into what any firm would pay and what only a
-capital-constrained firm pays. Two ways were built and both were removed
-(2026-11-11):
-
-- *By mechanism* (mean versus spread). Stopped working once GRC prevents jumps,
-  which removes expected loss and tail risk at once.
-- *Against a frictionless twin*, the same bank able to raise equity for free.
-  Nobody raises equity for free, so the comparison is an academic construction
-  with no quantitative meaning, and the qualitative point it would make is
-  already known from the paper. It also mixed in a second effect: the real bank
-  walks away from losses large enough to sink it, so preventing those losses
-  protects depositors rather than shareholders. Separating the two would need a
-  bank forced to recapitalize after any loss — unlimited liability, which is no
-  more realistic.
+**What is not measured: a separate "Froot–Stein premium".** Splitting GRC's
+value into what any firm would pay and what only a capital-constrained firm
+pays requires comparing the bank with one that does not exist — a bank that
+raises equity for free, or one forced to recapitalize after any loss. Such
+numbers have no quantitative meaning, and the qualitative point is already
+known from the paper. Two attempts were built and removed (§10).
 
 **Acknowledged, not measured: limited liability weakens the incentive to
-invest in GRC.** For losses that threaten survival, shareholders bear only
-part of the damage and depositors the rest, so the bank may spend less on
-preventing them than their full cost would justify. The model shows this
-qualitatively; it does not put a number on it.
+invest in GRC.** For losses that threaten survival, shareholders bear only part
+of the damage and depositors the rest, so the bank may spend less on preventing
+them than their full cost would justify.
 
 ---
 
-## 3. The dynamic model
+## 3. The model
 
 ### 3.1 Units
 
 Money is measured so that the **first-best book is 1**: the amount a bank with
-unlimited free capital would lend each period. Every quantity is then a
-multiple of that, which retires the arbitrary 16 in the old readme.
+unlimited free capital would lend each period. Every money quantity is a
+multiple of that.
 
 ### 3.2 State, controls, timing
 
-**State:** $(w_t, G_t)$ — book equity at the start of the period, and the GRC
-stock. One GRC family in v0. The deposit base $D$ is a fixed parameter in v0,
-not state.
+**State:** $(w_t, S_t)$ — book equity at the start of the period, and the GRC
+stock. One GRC stock; GRC by family is planned (v2). The deposit base $D$ is a
+fixed parameter, not state; dynamic deposits are planned (v3).
 
-**One decision per period, taken before the period's shocks.** Earlier drafts
-split the period in two, as the paper does: positions first, then a riskless
-funding stage after the shocks. Here the lending book itself carries the
-non-tradeable risk, because for a bank it *is* the main non-tradeable risk. So
-everything is chosen together and the shocks land on all of it. The
-Froot–Stein channel runs through the *next* period: a bad draw leaves less
-equity, and next period the bank must either raise costly equity or lend less.
+**One decision per period, taken before the period's shocks.** The lending book
+itself carries the non-tradeable risk, because for a bank it *is* the main
+non-tradeable risk, so everything is chosen together and the shocks land on all
+of it. The Froot–Stein channel runs through the *next* period: a bad draw
+leaves less equity, and next period the bank must raise costly equity or lend
+less.
 
 **Controls at the start of period $t$:**
 
@@ -187,11 +157,10 @@ K_t = w_t - d_t + e_t \ \ge\ k\,I_t,
 R_t = K_t - g_t + D - I_t \ \ge 0
 $$
 
-$K_t$ is the equity the bank operates with. $k$ is a **minimum capital
-ratio** against the book, the regulatory constraint of an ordinary bank:
-risk-weighted assets with a single weight. $k = 0$ leaves only "no negative
-equity". A bank that a bad period leaves below the requirement has three
-choices:
+$K_t$ is the equity the bank operates with. $k$ is a **minimum capital ratio**
+against the book, the regulatory constraint of an ordinary bank: risk-weighted
+assets with a single weight. $k = 0$ leaves only "no negative equity". A bank
+left below its requirement by a bad period has three choices:
 
 - recapitalize, at cost $C(e)$;
 - deleverage, by shrinking $I_t$ until $K_t \ge k I_t$;
@@ -200,125 +169,108 @@ choices:
 It is never forced to shut. Shutting is chosen when the other two are worth
 less than nothing.
 
-$R_t$ is cash, what was funded and not lent. These two constraints are what
-make capital scarce. The capital ratio adds a second route for the Froot–Stein
-channel: a loss now shrinks the book the bank is *allowed* to lend, not only
-the book it can fund.
+$R_t$ is cash: what was funded and not lent. These two constraints make capital
+scarce. The capital ratio gives the Froot–Stein channel a second route: a loss
+shrinks the book the bank is *allowed* to lend, not only the book it can fund.
 
-Later: risk weights per asset (the new product $\alpha$, the hedge), and a
-liquidity requirement on $R_t$. In v0, $\alpha$ carries no capital charge.
+Planned (v3): risk weights per asset (the new product, the hedge), and a
+liquidity requirement on $R_t$. The new product currently carries no capital
+charge.
 
-**GRC stock:** $G_{t+1} = (1-\delta)G_t + g_t$. Mitigation uses the
-post-spend stock $G_{t+1}$, so spend protects in the period it is made.
+**GRC stock:** $S_{t+1} = (1-\delta)S_t + g_t$. Mitigation uses the
+post-spend stock $S_{t+1}$, so spend protects in the period it is made.
 
 **Shocks land, and the books close:**
 
 $$
 w_{t+1} =
-\underbrace{F(I_t) - I_t\,\ell_t}_{\text{book}}
+\underbrace{F(I_t) - I_t\,\ell_t - I_t J_t}_{\text{book}}
 + \underbrace{(1+r)\,R_t}_{\text{cash}}
 + \underbrace{\alpha_t(\pi + s_N\,\xi_N)}_{\text{new product}}
-+ \underbrace{(I_t\,b_M - H_t)\,\varepsilon_M - h(H_t)}_{\text{tradeable, hedged}}
++ \underbrace{(I_t\,b_M - H_t)\,s_M\,\varepsilon_M - h(H_t)}_{\text{tradeable, hedged}}
 - \tau K_t
 - (1 + r_D)\,D
 $$
 
-- $\ell_t = \phi_A(G_{t+1})\,m + \phi_B(G_{t+1})\,s_P\,\xi_P$ is the book's
-  non-tradeable loss rate. It scales with the book: lending twice as much
-  carries twice the credit risk.
+- $\ell_t = \phi_A(S_{t+1})\,m - \phi_B(S_{t+1})\,s_P\,\xi_P$ is the book's
+  continuous non-tradeable loss rate, where $\xi_P$ is the book's payoff shock.
+  It scales with the book: lending twice as much carries twice the credit risk.
+- $J_t$ is the jump loss, a share of the book: zero in most periods (§3.5).
 - $b_M$ is the book's loading on the tradeable factor (crypto collateral
   prices, say), and $H_t$ sells it off. $h(H)$ is the hedging cost, zero when
   the factor is fairly tradeable.
-- $\tau K_t$ is an optional extra deadweight cost of carrying equity. Its
-  default is zero: the cost of holding equity comes from shareholders
-  discounting at $r_E > r$ while the cash that equity funds earns only $r$
-  (§3.3, §8).
+- $\tau K_t$ is an optional extra deadweight cost of carrying equity, zero by
+  default: the cost of holding equity comes from shareholders discounting at
+  $r_E > r$ while the cash that equity funds earns only $r$ (§3.3).
 - Depositors are owed $(1+r_D)D$ at the close, so $w_{t+1}$ is assets less
   that. The base is rolled over: the re-deposited $D$ arrives as cash next
-  period through $R_{t+1}$. Adding it back here as well would count it twice;
-  an earlier draft did. Interest is senior to everything the shareholders
-  receive.
+  period through $R_{t+1}$, and is not added back here. Interest is senior to
+  everything shareholders receive.
 
 **Walk-away.** At the start of any period, shareholders may abandon the firm
 and receive 0. Depositors then receive the assets and bear the shortfall,
 $(-w_t)^+$. With a negative $w_t$ the choice is whether recapitalizing to
-$K \ge 0$, at cost $C(e)$, is worth more than nothing. Failure is therefore a
-decision, not a hazard parameter.
+$K \ge 0$, at cost $C(e)$, is worth more than nothing. Failure is a decision,
+not a hazard parameter.
 
 **Gambling for resurrection.** Depositors are paid a fixed rate whatever the
-bank's condition, and shareholders are protected by limited liability. So
-close to the walk-away boundary, the floor at zero makes equity value *convex*
-in $w$: shareholders keep the upside and depositors take the downside. This
-works against the Froot–Stein concavity, and the model is free to show
-either effect winning. The capital ratio limits how far this can go, because a
-bank near the boundary is also near its requirement. How much risk-shifting
-survives a given $k$ is a result too. The diagnostic is the sign of $G(w)$. Where $G < 0$
-the bank seeks risk, under-hedges and over-sizes positions. Where that region
-starts, as a function of capital, is itself a result.
+bank's condition, and shareholders have limited liability. Close to the
+walk-away boundary, the floor at zero makes equity value *convex* in $w$:
+shareholders keep the upside and depositors take the downside. This works
+against the Froot–Stein concavity, and the model is free to show either effect
+winning. The capital ratio limits how far it can go, because a bank near the
+boundary is also near its requirement. Where the effective risk aversion falls
+— or turns negative — as capital approaches the boundary is an output.
 
 ### 3.3 The Bellman equation
 
 $$
-V(w, G) = \max\Big\{\, 0,\ \max_{d, e, g, I, \alpha, H}\ \big[\, d - e - C(e) + \beta\, E\, V(w', G') \,\big] \Big\}
+V(w, S) = \max\Big\{\, 0,\ \max_{d, e, g, I, \alpha, H}\ \big[\, d - e - C(e) + \beta\, E\, V(w', S') \,\big] \Big\}
 $$
 
-subject to the two balance-sheet constraints of §3.2 (capital ratio and
-non-negative cash), with
-$\beta = 1/(1+r_E)$, the shareholders' required return. The outer
-$\max\{0, \cdot\}$ is the walk-away. A single
-stage per period, so the stationary problem is one fixed point.
+subject to the balance-sheet constraints of §3.2 (capital ratio and
+non-negative cash), with $\beta = 1/(1+r_E)$, the shareholders' required return
+per period. The outer $\max\{0, \cdot\}$ is the walk-away. One stage per
+period, so the stationary problem is one fixed point.
 
-Concavity of $V$ in $w$ is not assumed. It comes out of $F$, $C$, the
-constraint $K \ge 0$, and the cost of carrying equity, $r_E - r$ (plus $\tau$
-if set). The walk-away floor pushes
-the other way.
+Concavity of $V$ in $w$ is not assumed. It comes from $F$, $C$, the capital
+constraints, and the cost of carrying equity, $r_E - r$ (plus $\tau$ if set).
+The walk-away floor pushes the other way.
 
-**Dynamic counterparts of the paper's results.** Each one is a test or an
-output:
+**Dynamic counterparts of the paper's results.**
 
-- $G(w, G) = -E[V_{ww}(w', G')] / E[V_w(w', G')]$, evaluated on the
-  next-period distribution, is a **state-dependent** effective risk aversion.
-  The hurdle (10) becomes a schedule in capital, $\mu^*(w)$.
-- (14) becomes the **payout boundary** $\bar w$: the bank pays out above it,
-  where $V_w = 1$. The cost of carrying equity sets where it sits; as
-  $r_E \to r$ (with $\tau = 0$) the bank hoards and $G \to 0$. Expect a
-  threshold policy. Test for it rather than
-  impose it.
-- Prop. 2 should hold where $V$ is concave: with $h \equiv 0$, $H$ hedges
-  fully. $H$ stays a free control and the test checks the solver picks it.
-  **Near the walk-away boundary it may fail.** That is the risk-shifting
-  region, so the oracle applies only where $G > 0$.
+| paper | here | status |
+|---|---|---|
+| $G = -E P_{ww} / E P_w$ | a **state-dependent** effective risk aversion $G(w, S)$, measured as the price of risk on the next-period distribution (§9) | **built**, `quant/results.py` |
+| hurdle (10) | a schedule in capital: the required return on a small position, measured as a price of risk (§9) | **built** for the single product; the multi-product schedule is planned (v1) |
+| capital structure (14) | the **payout boundary** $\bar w$: the bank pays out above it. The cost of carrying equity sets where it sits; as $r_E \to r$ with $\tau = 0$ the bank holds a buffer | **built**, found by the solver rather than imposed |
+| Prop. 2 | full hedging where $V$ is concave and $h \equiv 0$; $H$ stays a free control. May fail near the walk-away boundary, the risk-shifting region | **built**, an oracle (§4) |
 
 ### 3.4 Functional forms
 
-Chosen so that each parameter is one economic driver, the one-period limit has
-closed forms for the oracles, and every form is smooth and element-wise. That
-last property is for the later learner under PyTorch or JAX; the exact solver
-does not need it.
+Each parameter is one economic driver, the one-period limit has closed forms for
+the oracles, and every form is smooth and element-wise, for the later learner.
 
 **Return on the book: quadratic.**
 
 $$F(I) = A\,I - \tfrac{b}{2} I^2$$
 
-$A$ is how good the opportunity is; $b$ is how fast it runs out. The
-units of §3.1 fix $b = A - (1+r)$, so the first-best book is $I^* = 1$. It
-replaces the exponential form, which had no closed form against a quadratic
-issuance cost.
+$A$ is how good the opportunity is; $b$ is how fast it runs out. The units of
+§3.1 fix $b = A - (1+r)$, so the first-best book is $I^* = 1$.
 
 **Issuance cost: linear plus quadratic.**
 
 $$C(e) = \lambda e + \tfrac{\kappa}{2} e^2$$
 
-$\lambda$ is the proportional cost and produces a pecking order. $\kappa$ is
-the convex part, which in the paper is what generates $G$. **$\kappa$ is a
-switch, not a calibration:** in a model with no end date, $V$ may be concave
-through the walk-away and issuance boundaries alone. Whether the Froot–Stein
-effect survives $\kappa = 0$ is a result in itself. A fixed issuance cost is
-more realistic and is left out because it is a discontinuity the learner
-cannot differentiate through.
+$\lambda$ is the proportional cost and produces a pecking order. $\kappa$ is the
+convex part, which in the paper is what generates $G$. **$\kappa$ is a switch,
+not a calibration:** with no end date, $V$ may be concave through the walk-away
+and issuance boundaries alone, and whether the Froot–Stein effect survives
+$\kappa = 0$ is open (§7). A fixed issuance cost is more realistic but is left
+out, because it is a discontinuity the learner cannot differentiate through.
 
-**Shocks: multivariate Student-$t$.** $(\xi_P, \xi_N, \varepsilon_M)$ is a
-scale mixture of normals,
+**Continuous shocks: multivariate Student-$t$.** $(\xi_P, \xi_N, \varepsilon_M)$
+is a scale mixture of normals,
 
 $$
 \xi = \frac{Z}{\sqrt{W/\nu}}, \qquad Z \sim N(0, \Sigma), \qquad W \sim \chi^2_\nu,
@@ -326,60 +278,52 @@ $$
 
 with **one $W$ shared** across all components, rescaled to unit variance.
 
-- $\nu$ is a parameter. As $\nu \to \infty$ the model is normal, and that is
-  where the oracle tests run. The main configuration uses $\nu \approx 4$–$5$.
-  It needs $\nu > 2$ for covariances to exist, which (10) needs, and $\nu > 4$
-  for finite kurtosis.
-- The shared $W$ is what gives **tail dependence**: when it is small, every
-  risk is large at once. That is the crisis property a normal model misses, and
-  it is distinct from fat tails in each margin alone. Copulas, which separate
-  the two, come later.
+- $\nu$ is a parameter. As $\nu \to \infty$ the model is normal, which is where
+  the oracles run. The main configuration uses $\nu \approx 4$–$5$. Covariances
+  need $\nu > 2$, which (10) needs; finite kurtosis needs $\nu > 4$.
+- The shared $W$ gives **tail dependence**: when it is small, every risk is
+  large at once. That is the crisis property a normal model misses, distinct
+  from fat tails in each margin alone. Copulas, which separate the two, are a
+  later option.
 - $\Sigma$ carries the correlations the paper prices: $\rho_{NP}$ between the
   new product and the book, the term in (10).
-- Symmetric in v0, so it fattens the tail of gains as well as losses.
-  One-sided heavy-tailed losses (event counts times heavy-tailed severities, for
-  exploits and operational events) arrive with the jump component in v1.
+- Symmetric, so it fattens the tail of gains as well as losses. One-sided
+  heavy-tailed losses are the jump component (§3.5).
 
 **GRC mitigation: exponential with an irreducible floor.**
 
-$$\phi_j(G) = \rho_j + (1 - \rho_j)\,e^{-a_j G}, \qquad j \in \{A, B\}$$
+$$\phi_j(S) = \rho_j + (1 - \rho_j)\,e^{-a_j S}, \qquad j \in \{A, B, J\}$$
 
-$a_A$ acts on the mean loss and $a_B$ on its spread: mechanisms A and B of §2,
-one effectiveness each. $\rho_j$ is the share of the risk no program removes.
-Without it, enough spend drives any risk to zero, which is how the old model
-ended up reading an effectiveness as "removes 992%". Break-evens are reported
-over $(a_A, a_B)$, and $\rho$ is reported as an assumption rather than hidden in
-the form.
+$a_A$ acts on the mean loss, $a_B$ on its spread, and $a_J$ on jump frequency:
+one effectiveness per mechanism (§2). $\rho_j$ is the share of the risk no
+program removes; without it, enough spend drives any risk to zero.
 
 **Hedging cost: quadratic.** $h(H) = \tfrac{c_H}{2} H^2$. With $c_H = 0$ the
 factor is fairly tradeable and Prop. 2 applies. With $c_H > 0$ it is "partly
 tradeable" (§5), and the quadratic gives a partial hedge rather than an
-all-or-nothing one. Mechanism D enters in v1 as $c_H(G)$, falling in the GRC
+all-or-nothing one. Planned (v1): mechanism D as $c_H(S)$, falling in the GRC
 stock.
 
-**Cost of carrying equity:** the spread $r_E - r$, through the discount
-factor. $\tau K$ stays available as an extra linear friction, zero by default.
+**Cost of carrying equity:** the spread $r_E - r$, through the discount factor.
+$\tau K$ is available as an extra linear friction, zero by default.
 
-### 3.5 Jump losses (v1)
+### 3.5 Jump losses
 
-The continuous shocks of v0 are frequent and moderate. The risks that matter
-most on crypto rails — a drained bridge, a protocol exploit, a custodian
-failure — are rare and large. v1 adds them as **jump losses**.
+**Built (v1).** The continuous shocks are frequent and moderate. The risks that
+matter most on crypto rails — a drained bridge, a protocol exploit, a custodian
+failure — are rare and large.
 
 - **At most one jump per period**, with probability
-  $p_J = 1 - e^{-\lambda_J \phi_J(G')}$. $\lambda_J$ is the rate at zero GRC.
-- **Severity is a share of the book**, Pareto with tail index $\zeta$, scaled to a
-  mean $\mu_J$, and capped at 1: a jump cannot take more than the whole book. The
-  loss is $I \cdot J$. Like credit losses, it impairs an asset rather than
+  $p_J = 1 - e^{-\lambda_J \phi_J(S')}$. $\lambda_J$ is the rate at zero GRC.
+- **Severity is a share of the book**, Pareto with tail index $\zeta$, scaled to
+  a mean $\mu_J$, and capped at 1: a jump cannot take more than the whole book.
+  The loss is $I \cdot J$. Like credit losses, it impairs an asset rather than
   paying cash out.
-- **GRC acts on frequency** (prevention), through
-  $\phi_J(G) = \rho_J + (1 - \rho_J) e^{-a_J G}$, with the same irreducible
-  floor as the other mechanisms. Acting on severity (containment) is a later
-  option.
+- **GRC acts on frequency** (prevention), through $\phi_J$. Acting on severity
+  (containment) is a later option.
 - **Integration.** The severity uses the same tail-placed quadrature as the
-  $t$'s mixing variable, so nodes crowd into the far tail. The jump
-  probability enters the quadrature **weights**, so it is exactly
-  differentiable in GRC spend, with no sampling device needed.
+  $t$'s mixing variable (§4). The jump probability enters the quadrature
+  **weights**, so it is exactly differentiable in GRC spend.
 
 Defaults (illustrative): $\lambda_J = 0.1$ a year, $\mu_J = 5\%$ of the book,
 $\zeta = 2.5$, $a_J = 100$, $\rho_J = 0.3$. A 5% loss of a book of 0.8 is 0.04,
@@ -387,10 +331,9 @@ about two-thirds of the bank's minimum capital; the tail goes far beyond it.
 
 ### 3.6 Decision frequency
 
-The bank decides **quarterly** in the main model, and the frequency is a
-parameter, `periods_per_year`. Every rate is stated **per year**, and
-`Params.per_period()` converts the annual statement into what one period sees.
-The conventions were agreed before they were coded:
+**Built.** The bank decides **quarterly** in the main model, and the frequency
+is a parameter, `periods_per_year`. Every rate is stated **per year**, and
+`Params.per_period()` converts the annual statement into what one period sees:
 
 | what | annual → per period ($n$ periods a year) | why |
 |---|---|---|
@@ -402,103 +345,84 @@ The conventions were agreed before they were coded:
 | GRC depreciation | $1 - (1-\delta)^{1/n}$ | the same share lost over a year |
 | issuance costs, capital ratio, deposit base, jump severity, GRC effectiveness and floors, position bounds, correlations, $\nu$ | unchanged | sizes and per-event amounts, not rates |
 
-**Use 1 to explore, 4 for realistic runs.** At quarterly frequency the
-discount factor per period is closer to one, so a solve needs more policy
-evaluation steps; the solver scales them with $1/(1-\beta)$. The tests run
-annually, apart from `tests/test_frequency.py`, which checks the conversion and
-solves the quarterly model, including the exact no-shock oracle.
-
-One trap found on the way: a quarter's profit is a quarter of a year's, so the
-steady state sits much closer to the kink where issuance starts. On a coarse
-grid, linear interpolation across that kink understated the value by 0.006.
-Quarterly runs need a finer grid in equity than annual ones.
+**Use 1 to explore, 4 for realistic runs.** At quarterly frequency the discount
+factor per period is closer to one, so a solve needs more policy-evaluation
+steps; the solver scales them with $1/(1-\beta)$. A quarter's profit is small,
+so the steady state sits close to the kink where issuance starts, and quarterly
+runs need a finer equity grid than annual ones.
 
 ---
 
 ## 4. How it is solved
 
-**Exact, for v0.** The state $(w, G)$ is two-dimensional, so value iteration on
-a grid is exact up to grid error, and the discount guarantees convergence.
+**Expectations by quadrature, not Monte Carlo.** Quadrature computes an
+expected value from a small set of weighted scenarios, deterministically. The
+$t$'s scale-mixture form makes this two nested rules: one over the shared
+variance factor $W$, then Gauss–Hermite over $Z$. The rule over $W$ places its
+points uniformly in log-probability, so they crowd into the tail where the
+large shocks live (§9). The jump severities use the same construction. A solve
+is therefore deterministic: no seed noise, and no scenario set that changes
+with the batch size.
 
-**Expectations by quadrature, not Monte Carlo.** The scale-mixture form of the
-$t$ makes this two nested rules: one over the shared variance factor $W$, then
-Gauss–Hermite over $Z$. The rule over $W$ places its points by probability,
-uniformly in log-probability, so they crowd into the tail where the large
-shocks live. The textbook choice for this integral, generalized
-Gauss–Laguerre, was tried first and measured to understate the tail badly: a
-kurtosis of 7.3 against a true 9 at $\nu = 5$, even with 64 points, against 8.8
-with 12 for the rule now used (`quant/quadrature.py`). The jump severities use
-the same tail-placed construction. The grid solution is then deterministic. No seed noise,
-no scenario sets that differ by batch size, no "10% across draws". That removes
-the whole class of sampling problems in the old `CLAUDE.md` traps list.
+**The grid solver** (`quant/solver.py`, **built**). The state $(w, S)$ is
+two-dimensional, so the infinite-horizon problem is solved on a grid, exact up
+to grid error.
 
-**The cost is in the inner maximization.** It runs over six controls at every
-grid point. That is the part where array tooling matters: a gradient-based
-inner maximization under PyTorch or JAX, vectorized over the grid. The grid
-solver and the later learner should share one backend, so the learner can be
-graded against the grid on identical arithmetic.
+- **Policy iteration.** At every grid point the controls are chosen by gradient
+  ascent (Adam), for all points at once; the fixed policy is then evaluated
+  repeatedly. The two alternate until the value stops changing.
+- **Controls are squashed** (`sigmoid`, `tanh`, `softplus`) so every constraint
+  holds by construction.
+- **Two starts per improvement**: from the last policy, and from a fresh one,
+  keeping the better at each grid point. A squashed control pushed to its bound
+  has almost no gradient left to come back.
+- **Linear interpolation in $w$**, linear in $S$. Linear interpolation of a
+  concave function stays concave; a smoother cubic can invent convex patches
+  near kinks, and the solver gambles on them.
+- **Off the grid:** above it, extra equity is paid out (slope one); below it,
+  the bank issues equity back onto the grid, which charges the downside of a
+  gamble properly.
+- **Start** from a linear, risk-neutral value.
 
-**As built (`quant/solver.py`).** PyTorch, policy iteration: Adam on every grid
-point's controls at once, then repeated evaluation of the fixed policy. Three
-choices were forced by what the first solves did:
+The reasons behind each of these are in §10.
 
-- **Linear interpolation in $w$, not cubic.** Catmull-Rom bulged into a small
-  convex patch near the payout kink and the solver gambled on it: hedge errors
-  of 0.03 in matched $\pm$ pairs. Linear interpolation of a concave function is
-  concave, and hedged exactly.
-- **Two starts per improvement.** The product size and the hedge are bounded
-  through `sigmoid`/`tanh`; a control pushed to its bound early has almost no
-  gradient left to come back. Each step also optimizes from a fresh start and
-  keeps the better per grid point. The first solve also starts from a linear,
-  risk-neutral value rather than $\max(w, 0)$, whose kink invited gambling.
-- **Below the grid the bank issues equity back onto it**, rather than having
-  its value clamped. Clamping capped the downside of any gamble and the first
-  solve diverged.
-
-The GRC stock is written $S$ in the code, because $G$ is also the paper's
-effective risk aversion.
-
-**Oracles:**
+**Oracles** — known-answer checks, all built and run in the test suite:
 
 1. **Two-period truncation, normal shocks.** With one period left the value is
-   the paper's $P(w)$ of (2), and the first period's choices of $\alpha$ and
-   $K$ reproduce (9), (10) and (14). Exact under normality by Stein's lemma.
-   Under the $t$ it is not exact, and how far the mean-variance hurdle (10) is
-   from the true one becomes a **result**: how wrong the paper's rule is when
-   tails are fat.
+   the paper's $P(w)$ of (2), and the first period's choices reproduce Prop. 2
+   and eq. (9), with the hurdle (10) taking the sign of the covariance. Exact
+   under normality by Stein's lemma (§9); under the $t$ it is an approximation.
 2. **No shocks, inert GRC.** The infinite-horizon value is known exactly above
    the steady state: the bank holds its capital floor, lends a fixed book and
-   pays out the rest. Checks the solver's *level*, not only its shape. Built;
-   matches to 2e-8.
-3. $r_E = r$ with $\tau = 0$: equity is free to carry, so the bank holds a
-   buffer well above its floor. Above some level it is indifferent between
-   holding and paying out, so $K$ is not pinned there. Built.
-4. Prop. 2: full hedging of the tradeable factor where the bank is risk-averse.
-   Built; exact to 1e-3 at every state with $w \ge 0$.
-5. ~~No non-tradeable risk: no premium over a frictionless twin.~~ Removed
-   with the twin (§2).
+   pays out the rest. Checks the solver's *level*, not only its shape, at annual
+   and quarterly frequency.
+3. **Free equity.** With $r_E = r$ and $\tau = 0$, carrying equity costs
+   nothing, so the bank holds a buffer well above its floor. Above some level it
+   is indifferent between holding and paying out, so $K$ is not pinned there.
+4. **Prop. 2 in the dynamic model**: full hedging of the tradeable factor
+   wherever the bank is not near walk-away.
 
-**The learner** comes in when the state outgrows a grid: several GRC families,
-then deposits. It is trained on the same stationary problem and **graded
-against the grid** wherever the grid can still reach. An infinite horizon is
-precisely where a critic belongs. The `svg-critic` branch's reason for being
-parked — it lost to full backpropagation through time at short finite horizons
-— does not carry over to this setting.
+Other tests check correctness rather than a known answer: the accounting, the
+frequency conversion, quadrature accuracy, the hurdle's first-order condition,
+and that more optimizer steps do not move the answer.
 
-**Carried over from the current code:** `quant/numerics.py` and the profile
+**The learner** (planned, v2) comes in when the state outgrows a grid: GRC by
+family, then dynamic deposits. It is trained on the same stationary problem and
+**graded against the grid** wherever the grid can still reach. With an infinite
+horizon, a critic is natural; the `svg-critic` branch's reason for being parked
+— it lost to full backpropagation through time at short finite horizons — does
+not carry over.
+
+**Carried over from the legacy model:** `quant/numerics.py` and the profile
 rule, CPU-drawn randomness for the learner's rollouts, the softplus/logit
 guards, and the testing discipline.
 
-**Not carried over:** the hazard stack, the terminal franchise,
-`initial_grc_stock` as a hand-solved fixed point (it becomes the stationary
-distribution), the finite-horizon rollout as the main objective, and the
-static-model lineage.
-
 ---
 
-## 5. Risk classification for the crypto-rails bank (open, iterative)
+## 5. Risk classification for the crypto-rails bank (open)
 
 A first, deliberately tentative cut. Each row is a question, not an answer.
+"Partly tradeable" means hedgeable at a price above fair.
 
 | risk | tradeable? | instrument, if any | GRC mechanism |
 |---|---|---|---|
@@ -506,48 +430,45 @@ A first, deliberately tentative cut. Each row is a question, not an answer.
 | Interest-rate / funding-rate risk | **yes** | T-bills, rate swaps, on-chain fixed-rate markets | none |
 | Stablecoin depeg | **partly** | thin depeg cover, diversification across issuers | B (exposure limits), D? |
 | Idiosyncratic credit (crypto borrowers, protocols) | **no** | — | A, B (underwriting); C (concentration limits) |
-| Smart-contract exploit, bridge drain | **partly** | on-chain cover protocols: thin, costly, capacity-limited | B (audits shrink the tail), **D (audits make cover purchasable)** |
-| Custody / key management | **partly** | custody insurance, limited capacity | A, B, D |
+| Smart-contract exploit, bridge drain | **partly** | on-chain cover protocols: thin, costly, capacity-limited | J (audits prevent), **D (audits make cover purchasable)** |
+| Custody / key management | **partly** | custody insurance, limited capacity | A, J, D |
 | Operational incidents | **no** | — | A, B |
-| Compliance / license | **no** | — | A (fewer breaches); B (a lost license is the tail) |
-
-Questions for the next pass:
-
-- **Decided:** the "partly" bucket is tradeable at a **cost**, a hedge priced
-  above fair, which the paper does not do. GRC through D lowers that cost.
-  Still open: whether the cost is linear or convex in the amount hedged.
-- Is the existing book $\varepsilon_P^N$ the vault/lending business, with each
-  new strategy a new product $\alpha_i$? That reading makes eq. (12) the
-  question of how much the bank allocates to each strategy.
-- The paper's open dynamic question — how often headquarters should refresh
-  $G$ — has a direct reading here: how often the risk function re-prices
-  strategy hurdles. Worth keeping in view as a v1 or v2 result.
+| Compliance / license | **no** | — | J (fewer breaches; a lost license is the tail) |
 
 ---
 
 ## 6. Staging
 
-| stage | adds | solved by | done when |
+| stage | adds | solved by | status |
 |---|---|---|---|
-| **v0** | one non-tradeable risk, one tradeable factor, one new product, one GRC family, a fixed deposit base at a fixed rate, walk-away; state $(w, G)$ | grid VI with quadrature | the four oracles in §4 pass, and the sign of $G(w)$ is mapped |
-| **v1** | **built first:** one-sided jump losses with heavy-tailed severity (§3.5). **Still to come:** several products with a covariance matrix (eqs (11)–(12)), the hurdle schedule $\mu^*(w)$, mechanism D as $c_H(G)$ | grid | GRC's value is reported across capital levels and jump settings |
-| **v2** | GRC by family (credit, operational, compliance), mechanisms C and D | learner, checked against the grid on the v1 slice | learner within tolerance of the grid where both run |
-| **v3** | deposits as a dynamic stock: inflows, withdrawals and runs, as on crypto rails; then depositors who price risk, as an alternative to the fixed rate; risk weights per asset and a liquidity requirement | learner ($D$ becomes a state variable) | the extension changes some answer; otherwise it is not merged |
+| **v0** | one non-tradeable risk, one tradeable factor, one new product, one GRC stock, a fixed deposit base at a fixed rate, walk-away, a minimum capital ratio; state $(w, S)$ | grid, quadrature | **built**; oracles 1–4 pass |
+| **v1** | jump losses with heavy-tailed severity (§3.5); decision frequency (§3.6) | grid | **built** |
+| | several products with a covariance matrix (eqs (11)–(12)) and their hurdle schedule; mechanism D as $c_H(S)$ | grid | planned |
+| **v2** | GRC by family (credit, operational, compliance); mechanism C | learner, graded against the grid on the v1 slice | planned |
+| **v3** | deposits as a dynamic stock: inflows, withdrawals and runs, as on crypto rails; depositors who price risk; risk weights per asset and a liquidity requirement | learner ($D$ becomes state) | planned; merged only if it changes some answer |
 
-Each stage needs approval before it starts. v0 is a few sessions.
+Each stage needs approval before it starts.
 
 ---
 
 ## 7. Open questions
 
-1. ~~Default~~ — decided: walk-away is in.
-2. **Payout.** Needed, because it is the dynamic form of the capital-structure
-   choice; see §3.2 step 1. One payout point, at the start of the period. It is
-   likely to reduce to a threshold $\bar w$; test that rather than impose it.
-3. ~~Package layout~~ — decided: replace `quant/`.
-4. **RAROC.** Check the JFE text for the comparison section, and decide whether
-   it becomes a v1 output: standalone-risk pricing against the
-   covariance-with-book pricing in (10).
+1. **RAROC.** Check the JFE text for its comparison section, and decide whether
+   it becomes an output: standalone-risk pricing against the covariance-with-
+   book pricing of (10).
+2. **Cost of "partly tradeable" hedging.** Linear or convex in the amount
+   hedged? Quadratic is assumed (§3.4); linear would give all-or-nothing hedges.
+3. **What the book and the products are.** Is the book the vault/lending
+   business, with each new strategy a product $\alpha_i$? That reading makes
+   eq. (12) the question of how much the bank allocates to each strategy.
+4. **How often to re-price.** The paper's open dynamic question — how often
+   headquarters should refresh $G$ — reads here as how often the risk function
+   re-prices strategy hurdles.
+5. **Does the effect survive $\kappa = 0$?** Whether the Froot–Stein channel
+   needs a convex issuance cost in a model with no end date.
+6. **Calibration.** $r_E$ against a target market-to-book ratio; the rest of the
+   parameters against data, once the model is realistic enough for its numbers
+   to be worth reporting.
 
 ---
 
@@ -558,16 +479,15 @@ computational model for practical analysis rather than a closed-form argument.
 
 | departure | the paper | here | why |
 |---|---|---|---|
-| Horizon | three dates | infinite, stationary | a bank is a going concern; a finite horizon needs a terminal value, and in the legacy model that constant carried a third of firm value |
+| Horizon | three dates | infinite, stationary | a bank is a going concern; a finite horizon needs a terminal value, which carried a third of firm value in the legacy model |
 | Timing | riskless investment after the risk is borne | one decision per period; the book itself is risky | for a bank the lending book *is* the main non-tradeable risk, and its credit risk grows with its size |
-| Shocks | normal | multivariate Student-$t$, shared variance factor | fat tails and tail dependence are what crises are made of; the normal case is kept as a limit ($\nu \to \infty$) for the oracles |
-| Liabilities | none explicit; $\tau$ stands for the cost of equity relative to debt | a fixed deposit base at a fixed rate, senior to dividends | the practical setting is a deposit-taking intermediary, and leverage is what makes ordinary losses dangerous |
-| Failure | none | walk-away under limited liability; depositors bear the shortfall | failure becomes a decision rather than an asserted hazard rate, and risk-shifting can be observed rather than ruled out |
-| Regulation | none | minimum capital ratio $K \ge kI$ | ordinary bank regulation; it gives the Froot–Stein channel a second route (a loss shrinks the book the bank may lend) |
+| Shocks | normal | multivariate Student-$t$ with a shared variance factor, plus heavy-tailed jumps | fat tails and tail dependence are what crises are made of; the normal case is kept as a limit for the oracles |
+| Liabilities | none explicit; $\tau$ stands for the cost of equity relative to debt | a fixed deposit base at a fixed rate, senior to dividends | the setting is a deposit-taking intermediary, and leverage is what makes ordinary losses dangerous |
+| Failure | none | walk-away under limited liability; depositors bear the shortfall | failure is a decision rather than an asserted hazard rate, and risk-shifting can be observed rather than ruled out |
+| Regulation | none | minimum capital ratio $K \ge kI$ | ordinary bank regulation; it gives the Froot–Stein channel a second route |
 | Hedging | tradeable risk hedged at fair prices | hedging at a cost $c_H$ for "partly tradeable" risk | crypto-rails risks (exploit cover, custody insurance) are hedgeable only thinly and expensively |
 | GRC | absent | a fourth lever acting on non-tradeable risk | the project's purpose |
-| **Discounting** | at the riskless rate $r$; the cost of equity is a separate deadweight $\tau K$ | at the shareholders' required return $r_E > r$; cash earns $r$; $\tau = 0$ by default | discounting an infinite stream of bank profits at the riskless rate capitalizes them into an implausibly large franchise. In the first solves the bank was worth over 1 at zero equity, so it would recapitalize from any loss and walk-away never occurred. Discounting at a cost of equity gives the carrying cost of capital ($r_E - r$) and a franchise of realistic size from one parameter. $r_E$ is to be set against a target **market-to-book ratio**, which is observable, rather than chosen directly |
-
+| Discounting | at the riskless rate $r$; the cost of equity is a separate deadweight $\tau K$ | at the shareholders' required return $r_E > r$; cash earns $r$; $\tau = 0$ by default | at the riskless rate an infinite stream of bank profits capitalizes into an implausibly large franchise (§10). A cost of equity gives the carrying cost of capital and a franchise of realistic size from one parameter, to be set against an observable market-to-book ratio |
 
 ---
 
@@ -575,12 +495,11 @@ computational model for practical analysis rather than a closed-form argument.
 
 Concepts brought into the code or this document by Claude, not taken from the
 papers and not discussed before use. Accepted for now (2026-11-11), and kept
-here so any of them can be revisited. From now on a new concept is raised
-before it is used (`CLAUDE.md`).
+here so any of them can be revisited. New concepts are now raised before they
+are used (`CLAUDE.md`).
 
-**Source** says where each comes from: *standard* means textbook or widely used
-technique; *own construction* means assembled for this project, with no single
-reference.
+*Standard* means a textbook or widely used technique; *own construction* means
+assembled for this project, with no single reference.
 
 ### Numerical methods
 
@@ -592,8 +511,8 @@ reference.
 | Cholesky factorization | standard | `quant/quadrature.py` | builds correlated shocks from independent ones | — |
 | Policy iteration with repeated policy evaluation (Howard improvement) | standard | `quant/solver.py` | how the infinite-horizon solve converges | plain value iteration is slower but simpler |
 | Adam, vectorized over the grid | standard | `quant/solver.py` | chooses every grid point's controls at once by gradient ascent; two starts per step, and a slow final pass | the step-budget test guards against it stopping short |
-| Linear interpolation in equity (Catmull-Rom optional) | standard | `quant/solver.py` | reads the value function between grid points | Catmull-Rom invented convexity near kinks and the bank gambled on it; a shape-preserving smooth spline is the alternative |
-| Off-grid rules | own construction | `quant/solver.py` | above the grid, pay out the excess; below it, issue equity back onto it | clamping below the grid made the first solve diverge |
+| Linear interpolation in equity (Catmull-Rom optional) | standard | `quant/solver.py` | reads the value function between grid points | a shape-preserving smooth spline is the alternative |
+| Off-grid rules | own construction | `quant/solver.py` | above the grid, pay out the excess; below it, issue equity back onto it | — |
 | Golden-section search | standard | `quant/twoperiod.py`, `quant/solver.py` | one-dimensional optimizer for the oracles | — |
 | Squashed controls (`sigmoid`, `tanh`, `softplus`) | standard | `quant/solver.py` | keep every constraint satisfied by construction | saturated controls lose their gradient; the two-start step is the guard |
 
@@ -601,10 +520,110 @@ reference.
 
 | concept | source | where | what it does | if revisited |
 |---|---|---|---|---|
-| Stein's lemma | standard probability | `quant/twoperiod.py`, `quant/results.py` | why the paper's formulas (9), (10) are exact under normal shocks and approximate under fat tails; the basis of the two-period oracle | — |
+| Stein's lemma | standard probability | `quant/twoperiod.py`, `quant/results.py` | why the paper's formulas (9), (10) are exact under normal shocks and approximate under fat tails; the basis of oracle 1 | — |
 | Student-$t$ as a scale mixture of normals, one shared factor | standard | `quant/quadrature.py`, §3.4 | fat tails and tail dependence from one parameter $\nu$ | copulas would separate marginal tails from dependence |
 | Pareto jump severity | standard in operational-risk modeling | `quant/quadrature.py`, §3.5 | heavy-tailed one-sided losses | lognormal, or an empirical exploit-loss distribution |
 | Effective risk aversion from first derivatives | own construction | `quant/results.py` | measures the paper's $G$ as the price of risk, $-E[V_w (w' - Ew')] / (E[V_w] \mathrm{Var}(w'))$; equals the paper's $G$ under normality by Stein's lemma | the right generalization under fat tails is a choice, not a theorem |
 | Hurdle as a measured price of risk | own construction | `quant/results.py` | $-E[V_w \varepsilon] / E[V_w]$ for a small position with payoff shock $\varepsilon$; equals eq. (10) under normality, exact in general | — |
-| Frictionless twin | own construction | **removed** | a premium measured against a bank raising equity for free | removed as an academic construction with no quantitative meaning (§2) |
-| GRC value split by mechanism | own construction | **removed** | the first premium measure (mean versus spread) | dropped once jumps made prevention act on both (§2) |
+| Frictionless twin | own construction | **removed** | a premium measured against a bank raising equity for free | removed as an academic construction with no quantitative meaning (§10) |
+| GRC value split by mechanism | own construction | **removed** | the first premium measure (mean versus spread) | removed once jumps made prevention act on both (§10) |
+
+---
+
+## 10. Decisions log
+
+What was decided, when, and why. Newest last.
+
+**2026-11-10 — direction**
+
+- **The model is the integrated framework of Froot & Stein (1998):** risk
+  management, capital budgeting and capital structure decided jointly, priced
+  by one endogenous risk aversion. The legacy model had drifted from that
+  thesis: its financing friction was switched off and GRC's value came from
+  asserted hazard rates.
+- **Infinite horizon, stationary policy; discrete time.** The legacy model's
+  finite horizon needed a terminal constant that carried a third of firm value
+  and caused most of its instabilities.
+- **A practical model, not a replication; keep only the paper's core economic
+  drivers,** at the level of detail where the problem solves as an
+  optimization. Departures are justified and listed (§8).
+- **The setting stays the crypto-rails intermediary** of `readme.md`. How its
+  risks split into hedgeable and not is worked out iteratively (§5).
+- **`quant/` was replaced,** not kept alongside; the legacy model is on its own
+  branch.
+- **Walk-away is in;** failure is the shareholders' decision. Limited liability
+  comes with it, and is the baseline.
+- **Payout is in,** at one point, the start of the period: it is the dynamic
+  form of the capital-structure decision. Without it, capital either piles up
+  and $G$ vanishes, or a fixed rule assumes the target capital the model is
+  meant to find.
+- **Depositors from the start:** a fixed base at a fixed rate, senior to
+  dividends, not pricing risk. Gambling for resurrection, if it appears, is
+  reported rather than suppressed. Dynamic deposits and runs are later (v3).
+- **No negative equity, and a minimum capital ratio.** A bank below its
+  requirement recapitalizes, deleverages or shuts.
+- **"Partly tradeable" means hedgeable at a price above fair;** GRC can lower
+  that price (mechanism D).
+- **Functional forms** (§3.4): quadratic return and issuance cost, so the
+  one-period limit has closed forms; an irreducible floor on mitigation, so no
+  spend removes a risk entirely; a quadratic hedging cost, so hedging is
+  partial rather than all-or-nothing.
+- **One decision per period, with the book itself risky,** replacing the
+  paper's riskless final stage: for a bank the book is the main non-tradeable
+  risk.
+- **Student-$t$ shocks with a shared variance factor,** because models that
+  assumed normal tails and independent risks underestimated past crises.
+- **An accounting correction:** an early draft added the rolled-over deposits
+  back into closing equity, counting them twice. Closing equity is assets less
+  what depositors are owed.
+
+**2026-11-10 — building v0**
+
+- **Discount at the shareholders' required return $r_E$,** not the riskless
+  rate. At the riskless rate the bank was worth more than the whole first-best
+  book even at zero equity, so it recapitalized from any loss and walk-away
+  never occurred. The cost of carrying equity becomes $r_E - r$, replacing
+  $\tau$ (§8).
+- **Linear interpolation, not Catmull-Rom.** Catmull-Rom bulged into a convex
+  patch near the payout kink; the solver gambled on it, leaving hedge errors of
+  0.03 in matched $\pm$ pairs, and it missed the exact no-shock answer by
+  1.7e-4. Linear interpolation hedged exactly and matched to 2e-8.
+- **Below the grid the bank issues equity back onto it.** Clamping the value
+  there capped the downside of any gamble while the upside grew, and the first
+  solve took an unbounded position and diverged. The unhedged factor exposure
+  is also bounded.
+- **Two starts per improvement, and a risk-neutral starting value.** The first
+  solves pushed the product size and hedge to their bounds early — the
+  starting value $\max(w, 0)$ has a convex kink that makes gambling look
+  attractive — and squashed controls could not come back.
+- **The GRC grid was widened:** at its first range, spend hit the cap.
+- **The tail-placed quadrature replaced generalized Gauss–Laguerre,** which
+  understated the $t$'s kurtosis (§9).
+- **Effective risk aversion and hurdles are measured from first derivatives,**
+  because a linearly interpolated value function has no curvature between grid
+  points (§9).
+
+**2026-11-11 — v1 and reporting**
+
+- **Jump losses added** (§3.5), so GRC has the rare, severe losses that
+  threaten survival to act on.
+- **No Froot–Stein premium is measured.** First split by mechanism (mean versus
+  spread), which stopped isolating anything once GRC prevented jumps — that
+  removes expected loss and tail risk at once. Then measured against a
+  frictionless twin able to raise equity for free, which also mixed in limited
+  liability: the real bank walks away from the worst losses, so preventing them
+  protects depositors. Separating those would need a bank forced to
+  recapitalize — unlimited liability. Both comparisons rest on banks that do
+  not exist, so their numbers mean nothing, and their qualitative point is
+  known. Removed. Limited liability's drag on GRC incentives is acknowledged
+  in words (§2).
+- **No model results in the docs yet.** The model is not robust enough for its
+  numbers to be taken seriously; results are reported once it is more
+  realistic and the learner has run large scenario sets.
+- **Decision frequency is a parameter, quarterly by default** (§3.6), with the
+  conversion conventions agreed before coding. Annual runs are for quick
+  exploration. Policy-evaluation steps scale with the discount factor, because
+  a fixed budget left the quarterly solve unconverged.
+- **New concepts are raised before they are used,** after Gauss–Laguerre went
+  into the code without discussion. §9 lists everything introduced that way.
+- **US spelling throughout.**
