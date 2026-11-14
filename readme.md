@@ -97,10 +97,12 @@ Built so far:
 
 An earlier single dollar vault and a bank form were built and removed.
 
-Next: a what-if tool for a CFO or risk manager, built on the accounting — the
-user's own firm and policy in, what can happen out (`docs/plan-tool.md`). The
-search for the best policy (grid solvers, and an actor-critic learner still
-to build) continues as research (`docs/plan-integrated.md`).
+The what-if tool for a CFO or risk manager is built (`docs/plan-tool.md`): the
+user's own firm and policy in, what can happen out, with a dashboard. Its
+assumptions are illustrative. **Next: calibration**
+(`docs/plan-calibration.md`). The search for the best policy (grid solvers,
+and an actor-critic learner still to build) continues as research
+(`docs/plan-integrated.md`).
 
 ```bash
 uv run python -m scripts.dashboard   # the what-if dashboard, in a browser on this machine

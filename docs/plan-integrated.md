@@ -29,7 +29,7 @@ together, every period, with no end date, and **GRC** (governance, risk,
 compliance) as a fourth lever. One end goal is a **decision-support tool for
 the CFO of a real business**.
 
-Built and committed on branch `rework` (all tests pass with `uv run pytest`;
+Built and committed (on `main` since 2026-11-14; all tests pass with `uv run pytest`;
 the slow solver tests take several minutes):
 
 | file | what it is |

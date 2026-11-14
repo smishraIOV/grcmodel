@@ -17,9 +17,10 @@ the CFO's questions — over academic completeness.
 through one loan book: the integrated firm's one-period accounting is built,
 and it is solved on a coarse 4-D grid. The actor-critic learner, which is to
 solve it at useful resolution, is not built. What is built and what is planned
-is summarized in §7. **The current plan** (`docs/plan-tool.md`) builds a
-what-if tool on the accounting first; the search for the best policy — the
-grid solvers and the learner — continues as research
+is summarized in §7. **The what-if tool is built** (`docs/plan-tool.md`), on
+the accounting; its assumptions are illustrative, and **the current plan is
+calibration** (`docs/plan-calibration.md`). The search for the best policy —
+the grid solvers and the learner — continues as research
 (`docs/plan-integrated.md`).
 
 ---

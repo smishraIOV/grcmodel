@@ -1,12 +1,13 @@
 # Plan: a what-if tool for a CFO or risk manager
 
-Written 2026-11-13, agreed with the user the same day. This is the project's
-current plan. Read it first, then `CLAUDE.md` (working rules) and
-`docs/design.md` (the specification). Where this plan and the design
-disagree, the design wins; update this plan.
+Written 2026-11-13, agreed with the user the same day. The tool it plans is
+built; **the project's current plan is `docs/plan-calibration.md`**, which is
+this plan's step 8. Read this for what the tool is and why. Then `CLAUDE.md`
+(working rules) and `docs/design.md` (the specification). Where this plan and
+the design disagree, the design wins; update this plan.
 
-**Status:** steps 0 to 7, 9 and 10 (the dashboard) are done. Step 8 (calibration) remains and needs the user: data sources, or a real firm's figures. Several choices in the accounting and in step 5 were made by Claude while the user was away and are listed in section 3 for review. Each step needs the user's
-approval as it comes.
+**Status:** steps 0 to 7, 9 and 10 (the dashboard) are done. Step 8 (calibration) remains and has its own plan: `docs/plan-calibration.md`. The choices Claude made while the user was
+away (section 3) were reviewed and accepted.
 
 ---
 
