@@ -83,7 +83,9 @@ Built so far:
 - **assumptions as dials** (`quant/sensitivity.py`): how much each figure
   leans on what cannot be observed, such as how well GRC works;
 - **an interface for other programs** (`quant/api.py`): a request in as JSON,
-  results out as JSON — what a dashboard would be built on;
+  results out as JSON;
+- **a dashboard** (`uv run python -m scripts.dashboard`): one page on your own
+  machine to enter a firm and a policy and see all of the above;
 - the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
   a hedge with perps, a runway of operating costs; BTC at the market's
   expectation plus the firm's bias, with occasional crashes;
@@ -101,6 +103,7 @@ search for the best policy (grid solvers, and an actor-critic learner still
 to build) continues as research (`docs/plan-integrated.md`).
 
 ```bash
+uv run python -m scripts.dashboard   # the what-if dashboard, in a browser on this machine
 uv run pytest               # seconds; add `-m slow` for the solver tests (about five minutes)
 uv run python -m scripts.whatif --ltv 0.7 --stress --years 5   # an example firm: one quarter ahead, under stress, and over five years
 uv run python -m scripts.whatif --ltv 0.5 --b-ltv 0.7 --b-sleeve 0.2 --years 5   # two policies side by side

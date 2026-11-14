@@ -35,7 +35,9 @@ plain sentences. A mistake in a request never raises.
 """
 
 import dataclasses
+import inspect
 import math
+import re
 from dataclasses import fields, is_dataclass, replace
 
 import torch
@@ -54,6 +56,7 @@ from quant.profile import (
     MarketAssumptions,
     ModelFirm,
     RaiseCost,
+    STRATEGIES,
     RiskAssumptions,
     example_facts,
     illustrative,
@@ -287,9 +290,35 @@ def example_request() -> dict:
     }
 
 
+# How to show an input: 'money' is dollars, 'number' a plain number, anything else a share or a
+# yearly rate, shown as a percentage.
+_MONEY = frozenset({
+    "dollar_vault", "dollar_vault_capacity", "btc_vault", "btc_vault_capacity", "equity", "grc_budget",
+    "operating_costs", "amount", "loans", "spend", "equity_kept", "grc_spend", "own_btc", "hedged",
+})
+_NUMBER = frozenset({
+    "runway_months", "decisions_per_year", "raise_cost_after_btc_halves", "raise_cost_after_incident",
+    "dollar_flow_response", "btc_flow_response", "btc_crashes_per_year", "incidents_per_year",
+    "demand_follows_btc", "strategy_correlation", "strategy_incident_exposure", "strategy_crash_loss",
+})
+
+
+def kind(name: str) -> str:
+    """'money', 'number' or 'share', for the input called `name`."""
+    return "money" if name in _MONEY else "number" if name in _NUMBER else "share"
+
+
+def _help(cls) -> dict[str, str]:
+    """Each input's one-line description: the comment beside it in the code."""
+    found = re.findall(r"^\s+(\w+):[^#\n]*#\s*(.+?)\s*$", inspect.getsource(cls), flags=re.MULTILINE)
+    names = {f.name for f in fields(cls)}
+    return {name: text for name, text in found if name in names}
+
+
 def inputs() -> dict:
     """The names of every input a request can carry, by part, with the
-    example firm's values: enough to lay out a form."""
+    example firm's values, how to show each (`kinds`) and a one-line
+    description of each (`help`): enough to lay out a form."""
     profile = illustrative(example_facts())
     model = to_model(profile)
     return {
@@ -299,4 +328,9 @@ def inputs() -> dict:
         "stress": plain(stress_.Stress(name="a name")),
         "want": list(WANTS),
         "allocation_order": list(policy_.ALLOCATION),
+        "strategy_order": list(STRATEGIES),
+        "kinds": {name: kind(name) for cls in (FirmFacts, MarketAssumptions, RiskAssumptions, policy_.Policy,
+                                               RaiseCost, LoanPoint, GrcEffect) for name in (f.name for f in fields(cls))},
+        "help": {"firm": _help(FirmFacts), "market": _help(MarketAssumptions), "risk": _help(RiskAssumptions),
+                 "policy": _help(policy_.Policy)},
     }

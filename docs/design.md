@@ -357,6 +357,15 @@ seeded generator, so a run can be repeated; figures carry sampling error. One
 simulated period agrees with the read-out within that error
 (`tests/test_paths.py`).
 
+**A dashboard** (`dashboard/index.html`, `scripts/dashboard.py`, **built**).
+One page, served on the user's own machine, on top of the interface below: a
+form for the policy, the firm and the assumptions; headline figures; the
+stress scenarios as bars against the capital the firm needs; the paths as
+ranges over the years; the next period as a table; a second policy beside the
+first; and, on request, what a figure leans on. It recomputes as inputs
+change. It draws everything itself: no outside scripts, and nothing about the
+firm leaves the machine.
+
 **An interface for other programs** (`quant/api.py`, `scripts/api.py`,
 **built**). Everything above can be asked for as plain data and comes back as
 plain data (JSON): a request names the firm's facts, any assumptions and

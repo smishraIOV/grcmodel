@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What-if: a firm under a policy</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface-1: #fcfcfb; --text-primary: #0b0b0b; --text-secondary: #52514e;
+    --muted: #898781; --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6; --series-1-soft: #86b6ef; --series-2: #eb6834; --critical: #d03b3b;
+    --wash: rgba(11,11,11,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface-1: #1a1a19; --text-primary: #f0efec; --text-secondary: #c3c2b7;
+      --muted: #898781; --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5; --series-1-soft: #1c5cab; --series-2: #d95926; --critical: #d03b3b;
+      --wash: rgba(255,255,255,0.05);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19; --text-primary: #f0efec; --text-secondary: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-1-soft: #1c5cab; --series-2: #d95926; --critical: #d03b3b;
+    --wash: rgba(255,255,255,0.05);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--text-primary);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 20px 24px 8px; }
+  h1 { font-size: 20px; margin: 0 0 4px; font-weight: 650; }
+  h2 { font-size: 15px; margin: 0 0 2px; font-weight: 650; }
+  h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; color: var(--text-secondary); }
+  p.sub { margin: 0 0 12px; color: var(--text-secondary); }
+  .note { color: var(--text-secondary); max-width: 900px; margin: 0; }
+  .layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; padding: 12px 24px 40px; align-items: start; }
+  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; padding: 12px 16px 40px; } }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  aside .card { padding: 14px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) 118px; gap: 8px; align-items: center; margin: 5px 0; }
+  .row label { color: var(--text-secondary); overflow-wrap: anywhere; }
+  .row .unit { position: relative; }
+  .row .unit span { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; font-size: 12px; }
+  input[type=number], select { width: 100%; padding: 5px 30px 5px 8px; border: 1px solid var(--axis); border-radius: 6px;
+         background: var(--surface-1); color: var(--text-primary); font: inherit; font-variant-numeric: tabular-nums; }
+  select { padding-right: 8px; }
+  input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+  .group { margin: 8px 0 2px; color: var(--text-primary); font-weight: 600; font-size: 13px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
+  details { border-top: 1px solid var(--grid); padding: 8px 0 2px; }
+  details:first-of-type { border-top: 0; }
+  summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--axis); background: var(--surface-1);
+           color: var(--text-primary); cursor: pointer; }
+  button:hover { background: var(--wash); }
+  .check { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  #problems { border-left: 4px solid var(--critical); }
+  #problems ul { margin: 6px 0 0; padding-left: 18px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile .label { color: var(--text-secondary); font-size: 12.5px; }
+  .tile .value { font-size: 24px; font-weight: 650; margin: 2px 0; }
+  .tile .more { color: var(--text-secondary); font-size: 12.5px; }
+  .stale { opacity: 0.45; transition: opacity 120ms; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  svg text { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  svg text.name { fill: var(--text-secondary); }
+  svg text.strong { fill: var(--text-primary); font-weight: 600; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--text-secondary); font-size: 12.5px; margin: 2px 0 6px; }
+  .legend i { display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .legend i.line { width: 16px; height: 0; border-top: 2px solid; }
+  .legend i.box { width: 12px; height: 12px; border-radius: 3px; }
+  .legend i.dot { width: 10px; height: 10px; border-radius: 50%; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 20px 24px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--text-secondary); font-weight: 600; font-size: 12.5px; }
+  th:first-child, td:first-child { text-align: left; white-space: normal; }
+  td.head { color: var(--text-secondary); font-weight: 600; padding-top: 12px; border-bottom: 0; }
+  .scroll { overflow-x: auto; }
+  .flag { color: var(--text-primary); font-weight: 600; }
+  #tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+         border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+         max-width: 320px; display: none; }
+  #tip .t { color: var(--text-secondary); margin-bottom: 4px; }
+  #tip .r { display: flex; justify-content: space-between; gap: 16px; }
+  #tip .r b { font-weight: 650; }
+  #tip .r span { color: var(--text-secondary); }
+  #tip .r span i { display: inline-block; width: 12px; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>What-if: a firm under a policy</h1>
+  <p class="note">Enter a firm and what it does; see what the next period, a set of stresses and the next few years could hold.
+    <strong>The assumptions are illustrative, not calibrated: read shapes, not levels.</strong>
+    Nothing here searches for the best policy.</p>
+</header>
+<div class="layout">
+  <aside>
+    <div class="card" id="policy-card">
+      <h2>The policy</h2>
+      <p class="hint">What the firm does. Dollars in millions; rates per year.</p>
+      <div id="policy"></div>
+      <div class="group">Over several years</div>
+      <div id="horizon"></div>
+      <div class="check"><input type="checkbox" id="second-on"><label for="second-on">Compare with a second policy</label></div>
+      <div id="second" hidden></div>
+      <button id="reset" type="button">Reset to a sound starting policy</button>
+    </div>
+    <div class="card">
+      <h2>The firm and the assumptions</h2>
+      <p class="hint">Hover a name for what it means.</p>
+      <details><summary>The firm's facts</summary><div id="firm"></div></details>
+      <details><summary>Market assumptions</summary><div id="market"></div></details>
+      <details><summary>Risk assumptions</summary><div id="risk"></div></details>
+    </div>
+  </aside>
+  <main>
+    <div class="card" id="problems" hidden><h2>This cannot be run yet</h2><ul></ul></div>
+    <div id="results">
+      <div class="tiles" id="tiles"></div>
+      <div class="card">
+        <h2 id="stress-title">Under stress</h2>
+        <p class="sub">The firm's equity after one period in which the thing named happens. Bars short of the capital the firm needs are marked.</p>
+        <div id="stress-chart"></div>
+        <details><summary>The figures</summary><div class="scroll" id="stress-table"></div></details>
+      </div>
+      <div class="card">
+        <h2 id="paths-title">Over the years</h2>
+        <p class="sub" id="paths-sub"></p>
+        <div class="charts">
+          <div><h3>The firm's equity</h3><div id="equity-chart"></div></div>
+          <div><h3>The chance of having raised equity, and of having failed</h3><div id="chance-chart"></div></div>
+          <div><h3>The dollar vault, on paths still running</h3><div id="dollar-chart"></div></div>
+          <div><h3>The BTC vault, on paths still running</h3><div id="btcvault-chart"></div></div>
+          <div><h3>BTC's price (today = 1)</h3><div id="btc-chart"></div></div>
+        </div>
+        <details><summary>The figures, year by year</summary><div class="scroll" id="paths-table"></div></details>
+      </div>
+      <div class="card">
+        <h2>One period ahead</h2>
+        <p class="sub" id="readout-sub"></p>
+        <div class="scroll" id="readout-table"></div>
+      </div>
+      <div class="card" id="sens-card">
+        <h2>What does this lean on?</h2>
+        <p class="sub">Each assumption that cannot be observed is turned to the low and the high end of a wide range, one at a time.
+          The ranges are not estimates. With a second policy, the figures are the change from the first to the second.</p>
+        <div class="check"><button id="sens-run" type="button">Work it out (about 15 seconds)</button>
+          <select id="sens-output" hidden aria-label="The figure to look at"></select></div>
+        <div id="sens-chart"></div>
+        <details id="sens-details" hidden><summary>The figures</summary><div class="scroll" id="sens-table"></div></details>
+      </div>
+    </div>
+  </main>
+</div>
+<div id="tip" role="status"></div>
+<script>
+"use strict";
+// ---- small helpers -------------------------------------------------------------------
+const $ = (s, r = document) => r.querySelector(s);
+function el(tag, attrs = {}, ...kids) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "text") node.textContent = v; else if (k === "class") node.className = v; else node.setAttribute(k, v);
+  }
+  for (const kid of kids) node.append(kid);
+  return node;
+}
+function svgEl(tag, attrs = {}, text) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+const css = name => `var(--${name})`;
+const money = (x, digits) => {
+  const m = x / 1e6, d = digits ?? (Math.abs(m) >= 100 ? 0 : Math.abs(m) >= 10 ? 1 : 2);
+  return (m < 0 ? "−$" : "$") + Math.abs(m).toFixed(d) + "m";
+};
+const pct = (x, d = 1) => (x < 0 ? "−" : "") + Math.abs(100 * x).toFixed(d) + "%";
+const signed = (text, x) => (x > 0 ? "+" : "") + text;
+const PERIOD = {1: "year", 2: "half-year", 4: "quarter", 12: "month"};
+const WORDS = {btc: "BTC", ltv: "LTV", grc: "GRC"};
+const human = key => key.split("_").map(w => WORDS[w] ?? w).join(" ").replace(/^./, c => c.toUpperCase());
+
+// ---- state -------------------------------------------------------------------------------
+let META = null;
+const state = {firm: null, market: null, risk: null, policy: null, second: null, years: 5, buffer: null, largest: null};
+let timer = null, sequence = 0, last = null, sens = null;
+
+// ---- forms ---------------------------------------------------------------------------------
+const SHOW = {money: v => v / 1e6, share: v => v * 100, number: v => v};
+const READ = {money: v => v * 1e6, share: v => v / 100, number: v => v};
+const UNIT = {money: "$m", share: "%", number: ""};
+
+function numberInput(get, set, kind, label) {
+  const input = el("input", {type: "number", step: "any", "aria-label": label});
+  const shown = SHOW[kind](get());
+  input.value = Number.isFinite(shown) ? +shown.toFixed(4) : "";
+  input.addEventListener("input", () => {
+    if (input.value === "" || !Number.isFinite(+input.value)) return;
+    set(READ[kind](+input.value));
+    schedule();
+  });
+  return el("div", {class: "unit"}, input, el("span", {text: UNIT[kind]}));
+}
+
+function fieldRow(target, key, label, help, kind) {
+  const name = el("label", {text: label});
+  if (help) name.title = help;
+  return el("div", {class: "row"}, name, numberInput(() => target[key], v => { target[key] = v; }, kind, label));
+}
+
+function buildForm(container, target, help, labels = {}) {
+  container.replaceChildren();
+  for (const [key, value] of Object.entries(target)) {
+    const kind = META.kinds[key] ?? "share";
+    if (Array.isArray(value)) {
+      const names = value.length === 4 ? META.allocation_order : META.strategy_order;
+      const head = el("div", {class: "group", text: labels[key] ?? human(key)});
+      if (help[key]) head.title = help[key];
+      container.append(head);
+      value.forEach((_, i) => container.append(el("div", {class: "row"}, el("label", {text: names[i] ?? `${i + 1}`}),
+        numberInput(() => target[key][i], v => { target[key][i] = v; }, kind, `${human(key)}: ${names[i]}`))));
+    } else if (value !== null && typeof value === "object") {
+      const head = el("div", {class: "group", text: labels[key] ?? human(key)});
+      if (help[key]) head.title = help[key];
+      container.append(head);
+      for (const sub of Object.keys(value)) container.append(fieldRow(value, sub, human(sub), "", META.kinds[sub] ?? "share"));
+    } else if (key === "decisions_per_year") {
+      const select = el("select", {"aria-label": "Decisions a year"});
+      for (const [n, text] of [[1, "once a year"], [2, "twice a year"], [4, "every quarter"], [12, "every month"]])
+        select.append(el("option", {value: n, text}));
+      select.value = String(value);
+      select.addEventListener("change", () => { target[key] = +select.value; schedule(); });
+      const name = el("label", {text: "The firm decides"});
+      container.append(el("div", {class: "row"}, name, select));
+    } else {
+      container.append(fieldRow(target, key, labels[key] ?? human(key), help[key], kind));
+    }
+  }
+}
+
+const POLICY_LABELS = {equity_kept: "Equity kept", grc_spend: "GRC spend a year", own_btc: "Own BTC", hedged: "Of its BTC, hedged",
+                       borrower_rate: "Borrower rate", ltv: "Loan-to-value", allocation: "The BTC vault's allocation"};
+
+function buildHorizon() {
+  const box = $("#horizon");
+  box.replaceChildren(
+    el("div", {class: "row"}, el("label", {text: "Years ahead"}),
+       numberInput(() => state.years, v => { state.years = v; }, "number", "Years ahead")),
+    optionalRow("Buffer above the capital needed", "buffer", "Equity the firm keeps above what it needs; more than that is paid out. Blank: what the policy keeps today."),
+    optionalRow("Largest raise shareholders will make", "largest", "Needing more than this at once, the firm fails. Blank: the capital needed today."));
+}
+function optionalRow(label, key, help) {
+  const input = el("input", {type: "number", step: "any", placeholder: "as today", "aria-label": label});
+  if (state[key] !== null) input.value = state[key] / 1e6;
+  input.addEventListener("input", () => { state[key] = input.value === "" ? null : +input.value * 1e6; schedule(); });
+  const name = el("label", {text: label}); name.title = help;
+  return el("div", {class: "row"}, name, el("div", {class: "unit"}, input, el("span", {text: "$m"})));
+}
+
+function buildAll() {
+  buildForm($("#policy"), state.policy, META.help.policy, POLICY_LABELS);
+  buildHorizon();
+  buildForm($("#firm"), state.firm, META.help.firm);
+  buildForm($("#market"), state.market, META.help.market);
+  buildForm($("#risk"), state.risk, META.help.risk);
+  $("#second").hidden = state.second === null;
+  if (state.second !== null) {
+    $("#second").replaceChildren(el("div", {class: "group", text: "The second policy"}), el("div", {id: "second-form"}));
+    buildForm($("#second-form"), state.second, META.help.policy, POLICY_LABELS);
+  }
+}
+
+// ---- talking to the model -------------------------------------------------------------------
+async function post(request) {
+  const response = await fetch("/api", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(request)});
+  return response.json();
+}
+function request(want, withPolicy = true) {
+  const r = {firm: state.firm, market: state.market, risk: state.risk, want, years: state.years, paths: 20000, seed: 0};
+  if (withPolicy) r.policy = state.policy;
+  if (withPolicy && state.second !== null) r.second_policy = state.second;
+  if (state.buffer !== null) r.equity_buffer = state.buffer;
+  if (state.largest !== null) r.largest_raise = state.largest;
+  return r;
+}
+function schedule() { clearTimeout(timer); $("#results").classList.add("stale"); timer = setTimeout(run, 350); }
+
+async function run() {
+  const mine = ++sequence;
+  const want = state.second === null ? ["read_out", "stress", "paths"] : ["read_out", "stress", "compare"];
+  let answer;
+  try { answer = await post(request(want)); }
+  catch (error) { answer = {ok: false, problems: ["The model could not be reached. Is the dashboard's server still running?"]}; }
+  if (mine !== sequence) return;
+  const box = $("#problems");
+  if (!answer.ok) {
+    box.hidden = false;
+    $("ul", box).replaceChildren(...answer.problems.map(text => el("li", {text})));
+    return;
+  }
+  box.hidden = true;
+  last = answer;
+  $("#results").classList.remove("stale");
+  render(answer);
+}
+
+// ---- tooltip ---------------------------------------------------------------------------------
+const tip = $("#tip");
+function showTip(event, title, rows) {
+  tip.replaceChildren(el("div", {class: "t", text: title}));
+  for (const [name, value, color] of rows) {
+    const label = el("span", {});
+    if (color) { const key = el("i", {}); key.style.borderColor = color; label.append(key); }
+    label.append(name);
+    tip.append(el("div", {class: "r"}, label, el("b", {text: value})));
+  }
+  tip.style.display = "block";
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(event.clientX + 14, window.innerWidth - w - 8) + "px";
+  tip.style.top = Math.max(8, Math.min(event.clientY + 14, window.innerHeight - h - 8)) + "px";
+}
+const hideTip = () => { tip.style.display = "none"; };
+
+// ---- chart pieces ------------------------------------------------------------------------------
+function ticks(lo, hi, count = 5) {
+  const span = hi - lo || 1, raw = span / count, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => span / s <= count) ?? 10 * mag;
+  const out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+const scale = (d0, d1, r0, r1) => v => r0 + (v - d0) / ((d1 - d0) || 1) * (r1 - r0);
+
+function frame(container, {width = 520, height = 250, left = 54, right = 64, top = 10, bottom = 26, label}) {
+  const svg = svgEl("svg", {viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": label});
+  container.replaceChildren(svg);
+  return {svg, width, height, x0: left, x1: width - right, y0: height - bottom, y1: top};
+}
+function axes(f, x, y, xTicks, yTicks, xFormat, yFormat) {
+  for (const v of yTicks) {
+    f.svg.append(svgEl("line", {x1: f.x0, x2: f.x1, y1: y(v), y2: y(v), stroke: css("grid"), "stroke-width": 1}));
+    f.svg.append(svgEl("text", {x: f.x0 - 8, y: y(v) + 4, "text-anchor": "end"}, yFormat(v)));
+  }
+  f.svg.append(svgEl("line", {x1: f.x0, x2: f.x1, y1: f.y0, y2: f.y0, stroke: css("axis"), "stroke-width": 1}));
+  for (const v of xTicks) f.svg.append(svgEl("text", {x: x(v), y: f.y0 + 17, "text-anchor": "middle"}, xFormat(v)));
+}
+function path(points) { return points.map(([px, py], i) => `${i ? "L" : "M"}${px.toFixed(1)},${py.toFixed(1)}`).join(""); }
+function crosshair(f, x, xs, onIndex) {
+  const line = svgEl("line", {y1: f.y1, y2: f.y0, stroke: css("axis"), "stroke-width": 1, visibility: "hidden"});
+  const hit = svgEl("rect", {x: f.x0, y: f.y1, width: f.x1 - f.x0, height: f.y0 - f.y1, fill: "transparent"});
+  f.svg.append(line, hit);
+  hit.addEventListener("pointermove", event => {
+    const box = f.svg.getBoundingClientRect(), px = (event.clientX - box.left) / box.width * f.width;
+    let best = 0;
+    xs.forEach((v, i) => { if (Math.abs(x(v) - px) < Math.abs(x(xs[best]) - px)) best = i; });
+    line.setAttribute("x1", x(xs[best])); line.setAttribute("x2", x(xs[best])); line.setAttribute("visibility", "visible");
+    onIndex(event, best);
+  });
+  hit.addEventListener("pointerleave", () => { line.setAttribute("visibility", "hidden"); hideTip(); });
+}
+function legend(container, items) {
+  const box = el("div", {class: "legend"});
+  for (const [kind, color, text, opacity] of items) {
+    const key = el("i", {class: kind});
+    if (kind === "line") key.style.borderColor = color; else key.style.background = color;
+    if (opacity) key.style.opacity = opacity;
+    box.append(el("span", {}, key, text));
+  }
+  container.prepend(box);
+}
+
+// A fan: the median as a line, the middle half and the 5%-95% range as washes of the same hue.
+function fan(container, years, rows, format, label, other) {
+  const f = frame(container, {label});
+  const all = rows.flat().concat(other ? other.map(r => r[2]) : []).filter(Number.isFinite);
+  const lo = Math.min(0, ...all), hi = Math.max(...all) * 1.04 || 1;
+  const x = scale(years[0], years.at(-1), f.x0, f.x1), y = scale(lo, hi, f.y0, f.y1);
+  axes(f, x, y, ticks(years[0], years.at(-1), 6).filter(Number.isInteger), ticks(lo, hi, 4), v => `${v}y`, format);
+  const ok = rows.map((r, i) => [i, r]).filter(([, r]) => r.every(Number.isFinite));
+  const band = (a, b, opacity) => f.svg.append(svgEl("path", {
+    d: path(ok.map(([i, r]) => [x(years[i]), y(r[b])])) + "L" + path(ok.slice().reverse().map(([i, r]) => [x(years[i]), y(r[a])])).slice(1) + "Z",
+    fill: css("series-1"), opacity}));
+  band(0, 4, 0.12); band(1, 3, 0.2);
+  const line = (points, color) => f.svg.append(svgEl("path", {d: path(points), fill: "none", stroke: color, "stroke-width": 2,
+    "stroke-linejoin": "round", "stroke-linecap": "round"}));
+  line(ok.map(([i, r]) => [x(years[i]), y(r[2])]), css("series-1"));
+  if (other) line(other.map((r, i) => [x(years[i]), y(r[2])]).filter(p => Number.isFinite(p[1])), css("series-2"));
+  const end = ok.at(-1);
+  if (end) {
+    f.svg.append(svgEl("circle", {cx: x(years[end[0]]), cy: y(end[1][2]), r: 4, fill: css("series-1"), stroke: css("surface-1"), "stroke-width": 2}));
+    f.svg.append(svgEl("text", {x: f.x1 + 8, y: y(end[1][2]) + 4, class: "strong"}, format(end[1][2])));
+  }
+  crosshair(f, x, years, (event, i) => {
+    const r = rows[i], names = ["5% of paths below", "a quarter below", "median", "three quarters below", "95% below"];
+    const list = [4, 3, 2, 1, 0].map(k => [names[k], Number.isFinite(r[k]) ? format(r[k]) : "–", k === 2 ? css("series-1") : null]);
+    if (other) list.push(["second policy, median", format(other[i][2]), css("series-2")]);
+    showTip(event, `After ${years[i]} years`, list);
+  });
+  const items = [["line", css("series-1"), other ? "first policy, median" : "median"], ["box", css("series-1"), "middle half of paths", 0.32],
+                 ["box", css("series-1"), "5% to 95%", 0.12]];
+  if (other) items.splice(1, 0, ["line", css("series-2"), "second policy, median"]);
+  legend(container, items);
+}
+
+// Lines over the years, each labeled at its end.
+function lines(container, years, series, format, label) {
+  const f = frame(container, {label, right: 96});
+  const hi = Math.max(0.01, ...series.flatMap(s => s.values)) * 1.08;
+  const x = scale(years[0], years.at(-1), f.x0, f.x1), y = scale(0, hi, f.y0, f.y1);
+  axes(f, x, y, ticks(years[0], years.at(-1), 6).filter(Number.isInteger), ticks(0, hi, 4), v => `${v}y`, format);
+  const ends = [];
+  for (const s of series) {
+    const points = s.values.map((v, i) => [x(years[i]), y(v)]);
+    f.svg.append(svgEl("path", {d: path(points), fill: "none", stroke: s.color, "stroke-width": 2, "stroke-dasharray": s.dash ?? "",
+      "stroke-linejoin": "round", "stroke-linecap": "round"}));
+    const [ex, ey] = points.at(-1);
+    f.svg.append(svgEl("circle", {cx: ex, cy: ey, r: 4, fill: s.color, stroke: css("surface-1"), "stroke-width": 2}));
+    ends.push({y: ey, text: `${format(s.values.at(-1))} ${s.short}`});
+  }
+  ends.sort((a, b) => a.y - b.y);                      // keep end labels from sitting on each other
+  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 14) ends[i].y = ends[i - 1].y + 14;
+  for (const e of ends) f.svg.append(svgEl("text", {x: f.x1 + 8, y: e.y + 4, class: "name"}, e.text));
+  crosshair(f, x, years, (event, i) => showTip(event, `After ${years[i]} years`, series.map(s => [s.name, format(s.values[i]), s.color])));
+  legend(container, series.map(s => ["line", s.color, s.name]));
+}
+
+// Horizontal bars from zero, with a line at the capital the firm needs.
+function stressBars(container, results, needed) {
+  const rowH = 30, left = 300, width = 800, height = results.length * rowH + 50;
+  const f = frame(container, {width, height, left, right: 90, top: 22, bottom: 26, label: "The firm's equity after each stress"});
+  const values = results.map(r => r.equity);
+  const lo = Math.min(0, ...values), hi = Math.max(needed, ...values) * 1.05;
+  const x = scale(lo, hi, f.x0, f.x1);
+  for (const v of ticks(lo, hi, 6)) {
+    f.svg.append(svgEl("line", {x1: x(v), x2: x(v), y1: f.y1, y2: f.y0, stroke: css("grid"), "stroke-width": 1}));
+    f.svg.append(svgEl("text", {x: x(v), y: f.y0 + 17, "text-anchor": "middle"}, money(v, 0)));
+  }
+  results.forEach((r, i) => {
+    const cy = f.y1 + rowH * (i + 0.5), short = r.shortfall > 0;
+    const a = x(0), b = x(r.equity), h = 16, rr = Math.min(4, Math.abs(b - a));
+    const d = b >= a
+      ? `M${a},${cy - h / 2}H${b - rr}Q${b},${cy - h / 2} ${b},${cy - h / 2 + rr}V${cy + h / 2 - rr}Q${b},${cy + h / 2} ${b - rr},${cy + h / 2}H${a}Z`
+      : `M${a},${cy - h / 2}H${b + rr}Q${b},${cy - h / 2} ${b},${cy - h / 2 + rr}V${cy + h / 2 - rr}Q${b},${cy + h / 2} ${b + rr},${cy + h / 2}H${a}Z`;
+    const bar = svgEl("path", {d, fill: short ? css("critical") : css("series-1")});
+    f.svg.append(svgEl("text", {x: f.x0 - 10, y: cy + 4, "text-anchor": "end", class: "name"}, r.stress.name));
+    f.svg.append(bar);
+    if (short) f.svg.append(svgEl("text", {x: Math.max(a, b) + 8, y: cy + 4, class: "strong"}, `⚠ short ${money(r.shortfall)}`));
+    const hit = svgEl("rect", {x: 0, y: cy - rowH / 2, width, height: rowH, fill: "transparent", tabindex: 0});
+    const show = event => { bar.setAttribute("opacity", 0.8); showTip(event, r.stress.name, [
+      ["equity after", money(r.equity)], ["change", signed(money(r.equity_change), r.equity_change)],
+      ["short of capital needed", money(r.shortfall)], ["cost of raising that", money(r.cost_of_raising)],
+      ["bad debt", money(r.bad_debt)], ["BTC's price after", r.btc_price.toFixed(2)]]); };
+    hit.addEventListener("pointermove", show);
+    hit.addEventListener("pointerleave", () => { bar.setAttribute("opacity", 1); hideTip(); });
+    f.svg.append(hit);
+  });
+  f.svg.append(svgEl("line", {x1: x(0), x2: x(0), y1: f.y1, y2: f.y0, stroke: css("axis"), "stroke-width": 1}));
+  f.svg.append(svgEl("line", {x1: x(needed), x2: x(needed), y1: f.y1 - 6, y2: f.y0, stroke: css("text-secondary"), "stroke-width": 1}));
+  f.svg.append(svgEl("text", {x: x(needed), y: f.y1 - 10, "text-anchor": "middle", class: "name"}, `capital needed ${money(needed)}`));
+}
+
+// One row per assumption: the figure at the low and at the high end of its range.
+function ranges(container, s, output) {
+  const dials = s.moved_by[output.name].map(name => s.dials.find(d => d.name === name));
+  if (!dials.length) { container.replaceChildren(el("p", {class: "sub", text: "None of these assumptions moves this figure."})); return; }
+  const format = output.kind === "money" ? v => (s.versus ? signed(money(v), v) : money(v)) : v => (s.versus ? signed(pct(v, 2), v) + " pt" : pct(v, 2));
+  const setting = (d, v) => d.unit === "x" ? `${v.toFixed(2)}×` : d.unit === "a year" ? `${v.toFixed(2)} a year` : pct(v, 0);
+  const base = s.base[output.name], rowH = 30, width = 760, height = dials.length * rowH + 54;
+  const f = frame(container, {width, height, left: 280, right: 30, top: 24, bottom: 26, label: `What moves: ${output.name}`});
+  const all = dials.flatMap(d => [s.low[d.name][output.name], s.high[d.name][output.name]]).concat([base]);
+  let lo = Math.min(...all), hi = Math.max(...all);
+  const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.1 || 1; lo -= pad; hi += pad;
+  const x = scale(lo, hi, f.x0, f.x1);
+  for (const v of ticks(lo, hi, 6)) {
+    f.svg.append(svgEl("line", {x1: x(v), x2: x(v), y1: f.y1, y2: f.y0, stroke: css("grid"), "stroke-width": 1}));
+    f.svg.append(svgEl("text", {x: x(v), y: f.y0 + 17, "text-anchor": "middle"}, format(v)));
+  }
+  f.svg.append(svgEl("line", {x1: x(base), x2: x(base), y1: f.y1 - 6, y2: f.y0, stroke: css("text-secondary"), "stroke-width": 1}));
+  f.svg.append(svgEl("text", {x: x(base), y: f.y1 - 10, "text-anchor": "middle", class: "name"}, `as entered ${format(base)}`));
+  dials.forEach((d, i) => {
+    const cy = f.y1 + rowH * (i + 0.5), a = s.low[d.name][output.name], b = s.high[d.name][output.name];
+    f.svg.append(svgEl("text", {x: f.x0 - 12, y: cy + 4, "text-anchor": "end", class: "name"}, d.name));
+    f.svg.append(svgEl("line", {x1: x(a), x2: x(b), y1: cy, y2: cy, stroke: css("series-1"), "stroke-width": 2, "stroke-linecap": "round"}));
+    f.svg.append(svgEl("circle", {cx: x(a), cy, r: 5, fill: css("series-1-soft"), stroke: css("surface-1"), "stroke-width": 2}));
+    f.svg.append(svgEl("circle", {cx: x(b), cy, r: 5, fill: css("series-1"), stroke: css("surface-1"), "stroke-width": 2}));
+    const hit = svgEl("rect", {x: 0, y: cy - rowH / 2, width, height: rowH, fill: "transparent"});
+    hit.addEventListener("pointermove", event => showTip(event, d.name, [
+      [`at ${setting(d, d.low)}`, format(a)], [`as entered (${setting(d, d.base)})`, format(base)], [`at ${setting(d, d.high)}`, format(b)]]));
+    hit.addEventListener("pointerleave", hideTip);
+    f.svg.append(hit);
+  });
+  legend(container, [["dot", css("series-1-soft"), "the assumption at the low end of its range"], ["dot", css("series-1"), "at the high end"]]);
+  const table = el("table", {}, el("tr", {}, ...["assumption", "low end", "figure there", "high end", "figure there"].map(text => el("th", {text}))));
+  for (const d of dials) table.append(el("tr", {}, el("td", {text: d.name}), el("td", {text: setting(d, d.low)}),
+    el("td", {text: format(s.low[d.name][output.name])}), el("td", {text: setting(d, d.high)}), el("td", {text: format(s.high[d.name][output.name])})));
+  $("#sens-table").replaceChildren(table);
+}
+
+// ---- rendering an answer ------------------------------------------------------------------------
+function tile(label, value, more) {
+  return el("div", {class: "tile"}, el("div", {class: "label", text: label}), el("div", {class: "value", text: value}), el("div", {class: "more", text: more}));
+}
+function rowsTable(container, heads, rows) {
+  const table = el("table", {}, el("tr", {}, ...heads.map(text => el("th", {text}))));
+  for (const cells of rows) {
+    if (cells.length === 1) table.append(el("tr", {}, el("td", {class: "head", colspan: heads.length, text: cells[0]})));
+    else table.append(el("tr", {}, ...cells.map(text => el("td", {text}))));
+  }
+  container.replaceChildren(table);
+}
+const READOUT = [
+  ["Capital"], ["equity kept", "equity_kept", money], ["capital needed", "capital_needed", money], ["paid out now", "payout", money],
+  ["raised now", "raised", money], ["cost of raising it", "cost_of_raising", money], ["stakes in the two vaults", "stakes", money],
+  ["stablecoins", "stablecoins", money],
+  ["GRC and the loan book"], ["chance of an incident in a year", "incident_chance", pct], ["loans", "loans", money],
+  ["share of the stablecoins lent", "share_lent", pct], ["expected bad debt a year", "expected_bad_debt", money],
+  ["Expected over a year"], ["interest share", "interest_income", money], ["BTC vault fees", "btc_vault_fees", money],
+  ["operating costs", "operating_costs", money], ["operating costs, share of revenue", "operating_ratio", pct],
+  ["payroll, share of revenue", "payroll_ratio", pct], ["repaid to investors", "compensation", money],
+  ["Investors, expected a year"], ["dollar vault", "dollar_yield", pct], ["elsewhere", "dollar_outside", pct],
+  ["BTC vault, in BTC", "btc_yield", pct], ["elsewhere", "btc_outside", pct],
+  ["How the period may end"], ["expected equity", "expected_equity", money], ["chance of ending with less", "chance_of_loss", pct],
+  ["chance of ending below needs", "chance_below_needed", pct], ["expected gap below needs", "expected_shortfall", money],
+  ["expected cost of refilling", "expected_cost_of_refilling", money],
+];
+function change(format, a, b) {
+  const d = b - a;
+  return format === pct ? signed(pct(d, 2), d) + " pt" : signed(money(d), d);
+}
+
+function render(answer) {
+  const two = answer.compare !== undefined;
+  const r = answer.read_out, paths = two ? answer.compare.paths[0] : answer.paths;
+  const other = two ? answer.compare.paths[1] : null, r2 = two ? answer.compare.read_out[1] : null;
+  const period = PERIOD[r.decisions_per_year] ?? "period", years = paths.years;
+  const end = paths.chance_failed.length - 1;
+
+  $("#tiles").replaceChildren(
+    tile("Revenue a year, expected", money(r.revenue), `operating costs are ${pct(r.operating_ratio, 0)} of it`),
+    tile(`Equity after one ${period}, expected`, money(r.expected_equity), `from ${money(r.equity_kept)} kept`),
+    tile(`Chance of ending the ${period} below capital needs`, pct(r.chance_below_needed), `refilling would cost ${money(r.expected_cost_of_refilling)} on average`),
+    tile(`Chance of having raised equity in ${years} years`, pct(paths.chance_raised[end]), `${money(paths.raised[end] + paths.cost_of_raising[end])} put in on average, cost included`),
+    tile(`Chance of having failed in ${years} years`, pct(paths.chance_failed[end], 2), "shareholders walk away"),
+    tile(`What shareholders take over ${years} years`, money(paths.shareholders_take), `give or take ${money(paths.shareholders_take_error)} from sampling; does not count risk`));
+
+  // -- stress --
+  $("#stress-title").textContent = `Under stress: one ${period}`;
+  stressBars($("#stress-chart"), answer.stress, r.capital_needed);
+  const stressHeads = ["stress", "BTC after", "equity after", "change", "short of needs", "cost of raising", "bad debt", "repaid", "dollar investors", "BTC investors, in BTC"];
+  rowsTable($("#stress-table"), two ? stressHeads.concat(["second policy: equity after", "short of needs"]) : stressHeads,
+    answer.stress.map((s, i) => {
+      const cells = [s.stress.name, s.btc_price.toFixed(2), money(s.equity), signed(money(s.equity_change), s.equity_change), money(s.shortfall),
+                     money(s.cost_of_raising), money(s.bad_debt), money(s.repaid_to_investors), pct(s.dollar_return), pct(s.btc_return)];
+      if (two) cells.push(money(answer.compare.stress[1][i].equity), money(answer.compare.stress[1][i].shortfall));
+      return cells;
+    }));
+
+  // -- paths --
+  $("#paths-title").textContent = `Over ${years} years`;
+  $("#paths-sub").textContent = `${paths.paths.toLocaleString()} random paths under a simple rule: above the capital it needs plus ` +
+    `${money(paths.rule.equity_buffer)} the firm pays the rest out; below what it needs it raises equity; needing more than ` +
+    `${money(paths.rule.largest_raise)} at once, it fails.`;
+  fan($("#equity-chart"), paths.year, paths.equity, v => money(v, 0), "The firm's equity over the years", other?.equity);
+  const chance = [{name: "has raised equity", short: "raised", color: css("series-1"), values: paths.chance_raised},
+                  {name: "has failed", short: "failed", color: css("series-2"), values: paths.chance_failed}];
+  lines($("#chance-chart"), paths.year, chance, v => pct(v, 0), "The chance of having raised equity and of having failed");
+  fan($("#dollar-chart"), paths.year, paths.dollar_vault, v => money(v, 0), "The dollar vault's size over the years", other?.dollar_vault);
+  fan($("#btcvault-chart"), paths.year, paths.btc_vault, v => money(v, 0), "The BTC vault's size over the years", other?.btc_vault);
+  fan($("#btc-chart"), paths.year, paths.btc_price, v => v.toFixed(1), "BTC's price over the years");
+  const n = paths.decisions_per_year, marks = paths.year.map((_, i) => i).filter(i => i % n === 0 || i === end);
+  rowsTable($("#paths-table"), ["year", "equity: 5%", "median", "95%", "has failed", "has raised", "paid out", "raised", "cost of raising", "dollar vault", "BTC vault", "BTC's price"],
+    marks.map(i => [paths.year[i].toString(), money(paths.equity[i][0]), money(paths.equity[i][2]), money(paths.equity[i][4]),
+      pct(paths.chance_failed[i], 2), pct(paths.chance_raised[i]), money(paths.paid_out[i]), money(paths.raised[i]), money(paths.cost_of_raising[i]),
+      money(paths.dollar_vault[i][2] ?? NaN), money(paths.btc_vault[i][2] ?? NaN), paths.btc_price[i][2].toFixed(2)]));
+
+  // -- one period ahead, with the second policy beside it --
+  $("#readout-sub").textContent = two
+    ? `The next ${period} under each policy, and the change from the first to the second. Over ${years} years, on the same paths, ` +
+      `what shareholders take changes by ${signed(money(answer.compare.shareholders_take_gain), answer.compare.shareholders_take_gain)}, ` +
+      `give or take ${money(answer.compare.shareholders_take_gain_error)} from sampling. That figure does not count risk: see the stress table.`
+    : `The next ${period}, averaged over weighted scenarios.`;
+  const rows = READOUT.map(([label, key, format]) => {
+    if (!key) return [label];
+    return two ? [label, format(r[key]), format(r2[key]), change(format, r[key], r2[key])] : [label, format(r[key])];
+  });
+  if (two) rows.push([`Over ${years} years`],
+    ["chance of having failed", pct(paths.chance_failed[end], 2), pct(other.chance_failed[end], 2), change(pct, paths.chance_failed[end], other.chance_failed[end])],
+    ["chance of having raised equity", pct(paths.chance_raised[end]), pct(other.chance_raised[end]), change(pct, paths.chance_raised[end], other.chance_raised[end])],
+    ["paid out, on average", money(paths.paid_out[end]), money(other.paid_out[end]), change(money, paths.paid_out[end], other.paid_out[end])],
+    ["what shareholders take", money(paths.shareholders_take), money(other.shareholders_take), change(money, paths.shareholders_take, other.shareholders_take)]);
+  rowsTable($("#readout-table"), two ? ["", "first policy", "second policy", "change"] : ["", ""], rows);
+}
+
+// ---- the sensitivity, on request ----------------------------------------------------------------
+async function runSensitivity() {
+  const button = $("#sens-run");
+  button.disabled = true; button.textContent = "Working…";
+  let answer;
+  try { answer = await post(request(["sensitivity"])); } catch (error) { answer = {ok: false, problems: ["The model could not be reached."]}; }
+  button.disabled = false; button.textContent = "Work it out again (about 15 seconds)";
+  if (!answer.ok) { $("#sens-chart").replaceChildren(el("p", {class: "sub", text: answer.problems.join(" ")})); return; }
+  sens = answer.sensitivity;
+  const select = $("#sens-output");
+  select.replaceChildren(...sens.outputs.map(o => el("option", {value: o.name, text: o.name})));
+  select.hidden = false; $("#sens-details").hidden = false;
+  if (sens.outputs.some(o => o.name.startsWith("what shareholders take"))) select.value = sens.outputs.find(o => o.name.startsWith("what shareholders take")).name;
+  drawSensitivity();
+}
+function drawSensitivity() { ranges($("#sens-chart"), sens, sens.outputs.find(o => o.name === $("#sens-output").value)); }
+
+// ---- start ----------------------------------------------------------------------------------------
+async function start() {
+  const theme = new URLSearchParams(location.search).get("theme");      // ?theme=light or ?theme=dark overrides the system's
+  if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  META = await (await fetch("/inputs")).json();
+  for (const part of ["firm", "market", "risk", "policy"]) state[part] = structuredClone(META[part]);
+  buildAll();
+  $("#second-on").addEventListener("change", event => {
+    state.second = event.target.checked ? structuredClone(state.policy) : null;
+    buildAll(); schedule();
+  });
+  $("#reset").addEventListener("click", async () => {
+    const answer = await post(request(["read_out"], false));
+    if (!answer.ok) return;
+    state.policy = answer.inputs.policy;
+    if (state.second !== null) state.second = structuredClone(state.policy);
+    buildAll(); schedule();
+  });
+  $("#sens-run").addEventListener("click", runSensitivity);
+  $("#sens-output").addEventListener("change", drawSensitivity);
+  run();
+}
+start();
+</script>
+</body>
+</html>

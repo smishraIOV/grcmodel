@@ -94,6 +94,8 @@ The core:
   it leans on (`--sensitivity`)
 - `scripts/api.py` — answer a JSON request
   (`uv run python -m scripts.api --example > r.json; uv run python -m scripts.api r.json`)
+- `scripts/dashboard.py`, `dashboard/index.html` — the dashboard, served on
+  this machine (`uv run python -m scripts.dashboard`)
 
 Research (`quant/research/`, tests in `tests/research/`, entry points in
 `scripts/research/`):
