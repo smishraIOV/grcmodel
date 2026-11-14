@@ -84,7 +84,7 @@ def by_hand(p, A, c, shock, jump=0.0, S=0.0, bias=None):
         - (p.outflow_incident * A if jump > 0 else 0.0),
         0.0,
     )
-    wealth = ((K - g - q - co * A) + q * (1 + R_btc) - H * (R_btc - p.r) - 0.5 * p.c_H * H * H
+    wealth = ((K - g - q - co * A) + q * (1 + R_btc - p.btc_holding_cost) - H * (R_btc - p.r) - 0.5 * p.c_H * H * H
               - p.tau * K - p.opex + fee + co * A * (1 + R) - cover)
     return wealth, aum, R, L * bad
 
@@ -226,12 +226,12 @@ def test_idle_stablecoins_earn_nothing():
     assert float(out.wealth) == pytest.approx(0.2, abs=1e-15)
 
 
-def test_fully_hedged_btc_earns_the_riskless_rate():
+def test_fully_hedged_btc_earns_the_riskless_rate_less_its_security_cost():
     p = replace(BASE, opex=0.0, lend_co_invest=0.0, loan_demand=0.0)
     c = controls(K=0.3, q=0.2, H=0.2)
     for eps in (-2.0, 0.0, 1.5):
         out = lending_outcomes(p, t([1.0]), c, t([0.0]), one((0.0, eps)), None)
-        assert float(out.wealth) == pytest.approx(0.1 + 0.2 * (1 + p.r), abs=1e-14)
+        assert float(out.wealth) == pytest.approx(0.1 + 0.2 * (1 + p.r - p.btc_holding_cost), abs=1e-14)
 
 
 def test_the_bias_moves_only_the_unhedged_btc():

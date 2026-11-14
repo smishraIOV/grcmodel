@@ -210,7 +210,7 @@ def lending_outcomes(
         A'      = A (1 + R) + cover + theta (cap - A)
                   + eta (R + cover / ((1 - co) A) - y_out) A - [jump] omega A,    floored at 0
         w'      = (K - g - q - co A)                                stablecoins, earning nothing
-                  + q (1 + R_btc) - H (R_btc - r) - c_H/2 H^2       BTC and the short perps
+                  + q (1 + R_btc - h_q) - H (R_btc - r) - c_H/2 H^2  BTC, its security cost, the perps
                   - tau K - opex + fee + co A (1 + R) - cover
 
     `bias` is the firm's expected BTC return above the market's; the firm
@@ -236,7 +236,7 @@ def lending_outcomes(
     L, A1 = col(loans), col(A)
     vault = (A1 - L) + L * payoff - A1 * (phi_A * p.lend_loss + phi_B * p.lend_vol * xi)
     fee = p.interest_share * L * torch.minimum(torch.relu(payoff - 1.0), col(c.rate))
-    btc = (col(c.q) * (1.0 + R_btc) - col(c.H) * (R_btc - p.r)
+    btc = (col(c.q) * (1.0 + R_btc - p.btc_holding_cost) - col(c.H) * (R_btc - p.r)
            - 0.5 * p.c_H * col(c.H) * col(c.H))
     own = col((c.K - c.g - c.q - p.lend_co_invest * A) - p.tau * c.K - p.opex)
 

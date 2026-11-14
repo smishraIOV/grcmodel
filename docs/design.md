@@ -276,8 +276,15 @@ The firm starts the period with equity $w_t$, pays a dividend or raises new
 equity, and operates with $K_t = w_t - d_t + e_t$. It holds that equity as BTC
 and stablecoins (and its co-investment in the vaults). **Stablecoins earn
 nothing.** So holding equity costs shareholders their required return $r_E$ on
-every dollar kept in stablecoins, and $r_E$ less BTC's expected return on every
-dollar kept in BTC. This is what makes capital costly to carry.
+every dollar kept in stablecoins. BTC is expected to earn $r_E$ at the market's
+price, so without anything more a dollar kept in BTC would cost nothing, and
+the firm would have no reason ever to pay out. **Securing BTC is costly**:
+custody, key management, insurance and monitoring for a large holding cost
+about 1.5% of its value a year (a parameter), hedged or not. That is what makes
+capital held in BTC costly to carry, and what the firm's bias must beat for it
+to hold BTC beyond what the business needs. It plays the role of the paper's
+carrying cost $\tau$, applied to BTC only, since stablecoins already carry
+theirs.
 
 **Capital is decided by three controls:** how much equity to keep (the
 dividend or new equity), how to split it between stablecoins and BTC, and how
@@ -420,8 +427,9 @@ funding and basis. With $c_H = 0$ hedging is fair. With $c_H > 0$ the risk is
 all-or-nothing one. Planned: mechanism D as $c_H(S)$, falling in the GRC stock.
 
 **Cost of carrying equity:** through the discount factor
-$\beta = 1/(1+r_E)$ and what equity earns while held (§3.3). $\tau K$ is
-available as an extra linear cost, zero by default.
+$\beta = 1/(1+r_E)$, what equity earns while held, and the security cost of
+the firm's BTC (§3.3). $\tau K$ is available as an extra linear cost on all
+equity, zero by default.
 
 **BTC defaults (illustrative):** volatility 60% a year, a capital charge of 10%
 on the firm's own BTC. The firm's bias $b$ is to be set.
@@ -920,6 +928,11 @@ are today's.
   down.
 - **End goal recorded:** a model that works as a decision-support tool for the
   CFO of a real business.
+- **The firm's BTC carries a security cost of 1.5% a year.** With BTC priced at
+  shareholders' required return, the first solve kept all equity in BTC and
+  paid nothing out: holding a fairly priced asset inside the firm cost
+  nothing. The paper's answer is a carrying cost $\tau$; here it is the real
+  cost of securing a large BTC holding, applied to BTC only.
 - **Operating costs are paid from the firm's own stablecoins,** separate from
   the vault's.
 - **Insurance is a later option** (mechanism D).

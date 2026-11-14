@@ -89,6 +89,7 @@ class Params:
     # Shares with the single vault: inflow_speed, outflow_incident,
     # compensation (also applied to bad debt), k_A, opex, and the jump rule.
     btc_bias: float = 0.0           # the firm's expected BTC return above the market's (r_E), per year
+    btc_holding_cost: float = 0.015 # securing the firm's own BTC (custody, keys, insurance), share per year
     btc_crash_rate: float = 0.5     # sudden BTC crashes per year (a market event; GRC does not change it)
     btc_crash_mean: float = 0.25    # mean share of BTC's price a crash takes
     btc_crash_tail: float = 2.5     # Pareto tail index of the crash size
@@ -155,8 +156,8 @@ class Params:
         speed keeps its annual effect; the performance fee, flow sensitivities, compensation share, capacity,
         capital requirement and co-investment share are shares or sizes and do
         not convert. For the lending vault: the rate at which demand reaches
-        zero and the outside rate compound; the BTC bias and the operating
-        loss are flows; the BTC crash rate divides by n; the loss volatility follows sqrt(n); the demand line's
+        zero and the outside rate compound; the BTC bias, the BTC holding cost and the
+        operating loss are flows; the BTC crash rate divides by n; the loss volatility follows sqrt(n); the demand line's
         height and LTV shift, LTV bounds, liquidation threshold, penalty, trigger
         band, sale discount, interest share, flow response (a share of the vault per unit
         of yield gap, both per period) and capacity do not convert.
@@ -186,6 +187,7 @@ class Params:
             opex=self.opex / n,
             inflow_speed=1.0 - (1.0 - self.inflow_speed) ** (1.0 / n),
             btc_bias=self.btc_bias / n,
+            btc_holding_cost=self.btc_holding_cost / n,
             btc_crash_rate=self.btc_crash_rate / n,
             rate_max=compound(self.rate_max),
             outside_rate=compound(self.outside_rate),
