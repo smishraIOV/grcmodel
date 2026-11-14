@@ -227,6 +227,14 @@ the interest; flow sensitivities; the compensation share; the co-investment
 share; operating costs; the capital requirement. For the BTC vault later: its
 capacity, its strategies, its fees.
 
+**Operating costs** are a fixed dollar amount, about 2% of the lending vault's
+capacity a year, of which about 60% is payroll. Payroll is sticky: it does not
+fall when revenue does, which is what makes a bad period hurt. Cutting it
+after a large shock (layoffs, at a cost) is a later option. The amount is set
+against industry bounds, checked at the terms the firm chooses: **payroll at
+least 30% of revenue, and all operating costs 50–60%** — roughly where banks,
+investment banks and asset managers sit.
+
 ---
 
 ## 3. The firm's goal and decisions
@@ -945,6 +953,11 @@ are today's.
   paid nothing out: holding a fairly priced asset inside the firm cost
   nothing. The paper's answer is a carrying cost $\tau$; here it is the real
   cost of securing a large BTC holding, applied to BTC only.
+- **Operating costs are 2% of the vault's capacity a year, fixed in
+  dollars,** up from 1%, which did not cover a plausible payroll. Bounds
+  agreed: payroll at least 30% of revenue, all operating costs 50–60%, checked
+  at the terms the firm chooses. Payroll is sticky; layoffs after a large
+  shock are a later option.
 - **A runway rule:** at least a year of operating costs is held in
   stablecoins. With a bias on BTC the firm otherwise kept almost all its
   equity in BTC, and selling BTC to pay costs is frictionless in the model, so

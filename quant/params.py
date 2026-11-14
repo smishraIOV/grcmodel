@@ -77,7 +77,8 @@ class Params:
     capacity: float = 1.0           # the vault's full size; fixes the scale
     fee_mgmt: float = 0.02          # management fee, share of AUM per year
     fee_perf: float = 0.20          # performance fee, share of a period's positive excess return
-    opex: float = 0.01              # operating costs, dollars per year
+    opex: float = 0.02              # operating costs, dollars per year, fixed (payroll is sticky)
+    payroll_share: float = 0.60     # share of operating costs that is payroll
     runway: float = 1.0             # operating costs held in stablecoins, in years (lending form); per period after conversion
     inflow_speed: float = 0.5       # share of the gap to capacity closed per year
     outflow_perf: float = 1.0       # extra outflow per unit of negative excess return

@@ -22,6 +22,7 @@ def riskless_params(**overrides):
         DEFAULTS, periods_per_year=1, nu=math.inf, vault_vol=(0.0, 0.0, 0.0), s_BTC=0.0,
         mu_BTC=0.0, jump_rate=0.0, a_A=0.0, a_B=0.0, a_J=0.0,
         vault_mu=(0.03, 0.03, 0.03), vault_loss=(0.0, 0.0, 0.0),
+        opex=0.01,  # pinned: the oracle predates the lending calibration of operating costs
     )
     return replace(base, **overrides)
 

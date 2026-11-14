@@ -88,3 +88,13 @@ def test_the_bias_cannot_beat_the_unbiased_firm_at_market_prices(base, biased):
 def test_answer_does_not_depend_on_the_step_budget(base):
     more = solve_lending(BASE, P, SPEC, improve_steps=80, polish_steps=600)
     assert float((more.V - base.V).abs().max()) < 1e-4    # values are of order 0.1-1
+
+
+def test_operating_costs_sit_within_the_industry_bounds(base):
+    """At a full vault and the terms the firm chooses: payroll at least 30% of
+    revenue, all operating costs 50-60% (design.md section 2.7)."""
+    from quant.lending_results import cost_ratios
+
+    ratios = cost_ratios(base, at_w=0.1, at_A=1.0)
+    assert ratios.revenue > 0
+    assert ratios.within_bounds, ratios
