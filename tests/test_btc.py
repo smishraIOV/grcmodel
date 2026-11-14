@@ -1,5 +1,5 @@
 """BTC as the firm's home asset: a believed excess return, a spot treasury,
-and hedging with perps (design.md section 2.2)."""
+and hedging with perps (design.md section 3.4)."""
 
 from dataclasses import replace
 

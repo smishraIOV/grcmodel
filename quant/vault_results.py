@@ -1,4 +1,4 @@
-"""What a solved vault firm says (design.md sections 1 and 4).
+"""What a solved vault firm says (design.md sections 1 and 2).
 
 Mirrors `quant.results` for the bank form. Everything reads a `VaultSolution`;
 only `grc_value` re-solves.

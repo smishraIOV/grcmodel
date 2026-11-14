@@ -264,7 +264,7 @@ def solve(
     verbose: bool = False,
 ) -> Solution:
     inputs = p
-    p = p.per_period()  # rates stated per year become rates per period (design.md 2.5)
+    p = p.per_period()  # rates stated per year become rates per period (design.md 4.4)
     grid = make_grid(spec, profile)
     rule = student_t_rule(
         shock_correlation(p), p.nu, profile, n_hermite=spec.n_hermite, n_mixing=spec.n_mixing

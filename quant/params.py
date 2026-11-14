@@ -1,11 +1,11 @@
-"""Parameters of the bank (docs/design.md sections 2-3).
+"""Parameters of the bank (docs/design.md sections 2-4).
 
 Plain floats, frozen. Every parameter is one economic driver; the comment on
 each says which. All values are illustrative, not calibrated.
 
 **Every rate is stated per year.** The model runs at `periods_per_year`
 decisions a year, and `per_period()` converts the annual statement into what
-one period sees (design.md section 2.5). Sizes and per-event amounts do not
+one period sees (design.md section 4.4). Sizes and per-event amounts do not
 convert. With `periods_per_year = 1` the conversion is the identity, so it is
 safe to apply twice; the solver applies it once, on entry.
 
@@ -13,7 +13,7 @@ Use 1 for fast exploratory runs and tests, and 4 (the default, quarterly) for
 realistic ones. Each extra period a year brings the discount factor closer to
 one, so a solve takes more iterations to converge.
 
-Units (design.md section 3.1): money is measured so that the first-best book is
+Units (design.md section 4.1): money is measured so that the first-best book is
 exactly 1. That pins the curvature of the return on the book, `b`, at every
 frequency: F'(1) must equal the return on cash over one period.
 
@@ -66,7 +66,7 @@ class Params:
     # book is partly BTC-backed, and it holds a BTC treasury out of conviction.
     # It believes BTC beats the riskless rate by mu_BTC a year, so it does not
     # hedge all of it away -- the paper's eq. (15) case, a bank with a view on
-    # the priced factor (design.md section 2.2).
+    # the priced factor (design.md section 3.4).
     b_BTC: float = 0.5       # the book's loading on BTC (BTC-backed lending)
     s_BTC: float = 0.60      # BTC's dollar volatility, per year
     mu_BTC: float = 0.10     # the firm's believed excess return on BTC, per year
@@ -77,7 +77,7 @@ class Params:
     # -- shocks ----------------------------------------------------------
     nu: float = 5.0          # Student-t degrees of freedom; math.inf is the normal case
 
-    # -- jump losses (v1, design.md section 2.4) --------------------------
+    # -- jump losses (v1, design.md section 4.3) --------------------------
     jump_rate: float = 0.1   # jumps per year at zero GRC (Poisson; at most one a period)
     jump_mean: float = 0.05  # mean share of the book lost in a jump
     jump_tail: float = 2.5   # Pareto tail index of the severity; > 2 keeps the variance finite
@@ -91,7 +91,7 @@ class Params:
     a_J: float = 100.0       # effectiveness against jump frequency (prevention)
     rho_J: float = 0.3       # share of jump frequency no program removes
 
-    # -- the vault form (design.md section 4) ------------------------------
+    # -- the vault form (design.md section 2) ------------------------------
     # Three strategies run by hired managers; the firm sets the allocation.
     # Order: BTC-backed lending, market-neutral (basis, market-making),
     # tokenized treasuries. Returns are excess over the riskless rate.
@@ -130,7 +130,7 @@ class Params:
             raise ValueError("capital ratio k must be in [0, 1)")
 
     def per_period(self) -> "Params":
-        """The same bank, with every rate restated for one period (design.md 2.5).
+        """The same bank, with every rate restated for one period (design.md 4.4).
 
         Returned with `periods_per_year = 1`, so applying it again changes
         nothing. The conventions:

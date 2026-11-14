@@ -1,4 +1,4 @@
-"""The vault form on an infinite horizon (design.md sections 4 and 5)."""
+"""The vault form on an infinite horizon (design.md sections 2 and 5)."""
 
 import math
 from dataclasses import replace

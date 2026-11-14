@@ -11,6 +11,7 @@ to be merged back.
 
 ## Working with me on this repo
 
+- **Write plainly. Avoid using jargon, unless the term is used in everyday language or very common given the context** 
 - **Answer the question that was asked, briefly.** A question is not a work
   order. If the answer reveals something worth fixing, say so in a sentence and
   stop there.
@@ -47,7 +48,7 @@ print the profile, torch version and commit they ran under.
 (default 4, quarterly) sets how often the bank decides, and the solver converts
 on entry (`Params.per_period()`). Use 1 for quick exploration and tests, 4 for
 realistic runs; `scripts/solve_v0.py --periods-per-year 4`. Quarterly runs need
-a finer equity grid near the issuance kink (`docs/design.md` §2.5).
+a finer equity grid near the issuance kink (`docs/design.md` §4.4).
 
 ## Layout
 
@@ -80,11 +81,11 @@ a finer equity grid near the issuance kink (`docs/design.md` §2.5).
 - **Keep forms smooth and element-wise** where the learner will differentiate.
   Constrained controls go through `softplus`, not `torch.clamp`, whose gradient
   is zero at the boundary. Floor every `logit` away from 0 and 1.
-- **Keep cost functions dimensionally consistent.** Money is measured in units
-  of the first-best book (`docs/design.md` §3.1), so every money parameter is a
-  multiple of that. "First-best" means the frictionless optimum — what the bank
-  would lend if capital were free — not the model's optimal policy, which lends
-  less (`quant/params.py`).
+- **Keep cost functions dimensionally consistent.** Money is in dollars at a
+  scale the business fixes (`docs/design.md` §4.1), so every money parameter is
+  a multiple of that. The bank code, until it is removed, uses the first-best
+  book as its unit: the frictionless optimum — what the bank would lend if
+  capital were free — not the model's optimal policy (`quant/params.py`).
 
 ## Oracles
 

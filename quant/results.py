@@ -1,4 +1,4 @@
-"""What a solved bank says: the v0 outputs (design.md sections 1, 3.6, 7).
+"""What a solved bank says: the v0 outputs (design.md sections 1, 7 and appendix B).
 
 Everything here reads a `Solution`; nothing re-solves except `grc_value`,
 which compares solves by construction. Expectations run over every outcome,

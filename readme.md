@@ -1,4 +1,5 @@
 # GRC
+This project is a research exercise.
 
 A quantitative model for **G**overnance, **R**isk and **C**ompliance. 
 GRC is normally treated as a cost center. The thesis here is that GRC (done well) **increases firm value**, and 
@@ -65,8 +66,8 @@ Built so far:
   against known answers: the paper's own results in a two-period version
   (`quant/twoperiod.py`), and exact no-shock solutions for both forms.
 
-Next: settle how shareholders price BTC risk, and why the vault firm buys no
-GRC at the current settings (`docs/design.md` §8); then the high-water mark.
+Next: the stablecoin lending vault on its own (`docs/design.md` §7), with BTC
+valued at the market's expectation plus the firm's bias.
 
 ```bash
 uv run pytest

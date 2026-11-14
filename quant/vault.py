@@ -1,5 +1,5 @@
 """The vault form, one period: two balance sheets and the flows between them
-(design.md section 4).
+(design.md section 2).
 
 **The vault** belongs to depositors. It is allocated across three strategies
 run by hired managers -- BTC-backed lending, market-neutral, tokenized
@@ -15,7 +15,7 @@ Two optional ways to put the firm's own capital behind the vault, both off by
 default: **co-investment**, a stake of its own money in the vault, and a
 **guarantee**, a minimum return promised to depositors.
 
-Stage A of the design (section 4.6): no high-water mark, so a performance fee
+The earlier single-vault stage (design.md sections 2 and 7): no high-water mark, so a performance fee
 is paid on any positive period, including the recovery from an earlier loss.
 
 Shock vector order: (xi_1, xi_2, eps_BTC) -- the two risky strategies' payoff

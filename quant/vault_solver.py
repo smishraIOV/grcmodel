@@ -1,5 +1,5 @@
 """The vault form on an infinite horizon: a 3-D grid over (w, S, A)
-(design.md sections 4 and 5).
+(design.md sections 2 and 5).
 
     V(w, S, A) = max{ 0, max_c [ flow(w, K) + beta E V(w', S', A') ] }
 

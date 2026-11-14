@@ -1,4 +1,4 @@
-"""Solve the vault form and print what it says (design.md sections 4 and 7).
+"""Solve the vault form and print what it says (design.md sections 2 and 7).
 
     uv run python scripts/solve_vault.py [--profile reference] [--periods-per-year 1]
                                          [--btc-view 0.0]

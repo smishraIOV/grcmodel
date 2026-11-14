@@ -1,11 +1,11 @@
-"""Compare ways of putting the firm's own capital behind the vault (design.md section 4).
+"""Compare ways of putting the firm's own capital behind the vault (design.md section 2).
 
     uv run python scripts/vault_scenarios.py [--profile reference] [--periods-per-year 1]
 
 Four scenarios: neither, co-investment only, a guarantee only, both. For each,
 prints convergence, where the firm walks away and pays out at full capacity, its
 operating capital, effective risk aversion and allocation, and what a GRC
-program is worth to it. No BTC view (design.md section 8). Exploratory: numbers
+program is worth to it. No BTC view (design.md section 3.4). Exploratory: numbers
 printed here are not quoted in docs/.
 """
 

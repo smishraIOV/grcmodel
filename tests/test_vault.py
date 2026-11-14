@@ -1,5 +1,5 @@
 """The vault form, one period: fees, flows, compensation and the firm's books
-(design.md section 4)."""
+(design.md section 2)."""
 
 from dataclasses import replace
 
