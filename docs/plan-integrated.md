@@ -6,7 +6,8 @@ without the conversation that produced it. Read this first, then
 especially). Where this plan and the design disagree, the design wins; update
 this plan.
 
-**Status:** planned, not started. Steps need the user's approval as they come
+**Status:** planned, not started. All decisions needed for step 1 are made
+(section 3); the user will say when to start. Steps need the user's approval as they come
 (see "Working rules").
 
 ---
@@ -80,17 +81,16 @@ funding") and §2.3 ("Stablecoin lending as a strategy, hedged").
 
 Made by the user on 2026-11-13:
 
-1. **The BTC vault is larger than the dollar vault.** Proposed starting point:
-   BTC vault capacity 2, dollar vault capacity 1 (the scale stays "dollar
-   vault capacity = 1"). *To confirm:* the ratio of 2.
-2. **Perp funding is r plus a premium.** Proposed: a parameter
-   `perp_premium`, 3% a year above r, illustrative. *To confirm:* the level,
-   and whether the premium applies to **every** perp position. Recommended:
-   yes — one market funding rate. Longs pay it, shorts receive it. Then the
-   BTC vault's long sleeve hedge pays r + premium, and the firm's own short
-   hedge **earns** r + premium, so hedged BTC becomes a carry trade earning
-   r + premium less the 1.5% security cost. That is realistic, but it changes
-   the single-vault results, so the user should agree first.
+1. **The BTC vault is twice the dollar vault** (confirmed): BTC vault
+   capacity 2, dollar vault capacity 1 (the scale stays "dollar vault
+   capacity = 1").
+2. **Perp funding is r plus a 3% a year premium, on every perp position**
+   (confirmed): a parameter `perp_premium` = 0.03, one market funding rate.
+   Longs pay it, shorts receive it. The BTC vault's long sleeve hedge pays
+   r + premium; the firm's own short hedge **earns** r + premium, so hedged
+   BTC becomes a carry trade earning r + premium less the 1.5% security cost.
+   This changes the single-vault solvers' hedging economics too: apply it in
+   `quant/firm.py` (`treasury_close`) and re-run their tests.
 3. **Operating costs are recalibrated for the integrated firm** — a goal of
    this stage, not a one-off. One set of fixed dollar costs for the whole
    firm, set against **combined revenue** (the lending interest share plus
