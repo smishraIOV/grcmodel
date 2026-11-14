@@ -85,6 +85,30 @@ class Params:
     k_A: float = 0.02               # own funds required per unit of AUM
     co_invest: float = 0.0          # the firm's own stake in the vault, share of AUM ("skin in the game")
 
+    # -- the stablecoin lending vault (design.md section 2.2) ----------------
+    # Shares with the single vault: inflow_speed, outflow_incident,
+    # compensation (also applied to bad debt), k_A, opex, and the jump rule.
+    btc_bias: float = 0.0           # the firm's expected BTC return above the market's (r_E), per year
+    lend_capacity: float = 1.0      # the vault's full size; fixes the scale
+    loan_demand: float = 1.5        # loans wanted at a zero rate and the reference LTV
+    rate_max: float = 0.20          # borrower rate at which demand reaches zero, per year
+    ltv_ref: float = 0.50           # reference loan-to-value for loan_demand
+    ltv_demand: float = 1.0         # demand shift per unit of LTV: +10% per 10 points
+    ltv_min: float = 0.30           # bounds on the LTV the firm may offer
+    ltv_max: float = 0.75
+    liq_threshold: float = 0.80     # loan (with interest) to collateral value at which liquidation starts
+    liq_penalty: float = 0.05       # paid by a liquidated borrower to the vault, share of what is owed
+    liq_band: float = 0.01          # width of the smoothed liquidation trigger, in BTC price (start = 1)
+    sale_discount: float = 0.10     # how far below market liquidated collateral sells, at zero GRC
+    a_L: float = 50.0               # GRC effectiveness against the sale discount (mechanism L)
+    rho_L: float = 0.3              # share of the discount no program removes
+    interest_share: float = 0.15    # the firm's share of the interest collected
+    outside_rate: float = 0.05      # what providers could earn elsewhere, per year
+    flow_yield: float = 2.0         # net flows, share of the vault, per unit of yield gap
+    lend_loss: float = 0.002        # mean operating loss, share of the vault per year, at zero GRC
+    lend_vol: float = 0.005         # its volatility, per year
+    lend_co_invest: float = 0.05    # the firm's own stake in the lending vault, share of its size
+
     def __post_init__(self):
         if not (isinstance(self.periods_per_year, int) and self.periods_per_year >= 1):
             raise ValueError("periods_per_year must be a positive integer")
@@ -96,6 +120,10 @@ class Params:
             raise ValueError("jump_tail must exceed 2 for the jump variance to exist")
         if not (0.0 <= self.fee_perf < 1.0 and 0.0 <= self.compensation <= 1.0):
             raise ValueError("fee_perf must be in [0, 1) and compensation in [0, 1]")
+        if not 0.0 < self.ltv_min <= self.ltv_max < self.liq_threshold <= 1.0:
+            raise ValueError("need 0 < ltv_min <= ltv_max < liq_threshold <= 1")
+        if not (0.0 <= self.sale_discount < 1.0 and 0.0 <= self.lend_co_invest < 1.0):
+            raise ValueError("sale_discount and lend_co_invest must be in [0, 1)")
 
     def per_period(self) -> "Params":
         """The same firm, with every rate restated for one period (design.md 4.4).
@@ -119,7 +147,12 @@ class Params:
         flows (divide by n); strategy volatilities follow sqrt(n); the inflow
         speed keeps its annual effect; the performance fee, flow sensitivities, compensation share, capacity,
         capital requirement and co-investment share are shares or sizes and do
-        not convert.
+        not convert. For the lending vault: the rate at which demand reaches
+        zero and the outside rate compound; the BTC bias and the operating
+        loss are flows; the loss volatility follows sqrt(n); the demand line's
+        height and LTV shift, LTV bounds, liquidation threshold, penalty, trigger
+        band, sale discount, interest share, flow response (a share of the vault per unit
+        of yield gap, both per period) and capacity do not convert.
         """
         n = self.periods_per_year
         if n == 1:
@@ -145,6 +178,11 @@ class Params:
             fee_mgmt=self.fee_mgmt / n,
             opex=self.opex / n,
             inflow_speed=1.0 - (1.0 - self.inflow_speed) ** (1.0 / n),
+            btc_bias=self.btc_bias / n,
+            rate_max=compound(self.rate_max),
+            outside_rate=compound(self.outside_rate),
+            lend_loss=self.lend_loss / n,
+            lend_vol=self.lend_vol / root,
         )
 
     @property

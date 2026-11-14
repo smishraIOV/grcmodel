@@ -86,16 +86,24 @@ def student_t_rule(
     corr: np.ndarray,
     nu: float,
     profile: NumericsProfile,
-    n_hermite: int = 7,
+    n_hermite: int | tuple[int, ...] = 7,
     n_mixing: int = 12,
 ) -> ShockRule:
-    """Rule for a unit-variance multivariate t with correlation matrix `corr`."""
+    """Rule for a unit-variance multivariate t with correlation matrix `corr`.
+
+    `n_hermite` is the number of Gauss-Hermite points per direction: one count
+    for all, or one per direction, so a direction whose tail matters more (BTC,
+    where liquidations happen) can get more points than the rest.
+    """
     corr = np.asarray(corr, dtype=np.float64)
     d = corr.shape[0]
+    counts = (n_hermite,) * d if isinstance(n_hermite, int) else tuple(n_hermite)
+    if len(counts) != d:
+        raise ValueError("n_hermite needs one count per shock direction")
     chol = np.linalg.cholesky(corr)
-    x, w = gauss_hermite(n_hermite)
-    z = np.array(list(itertools.product(x, repeat=d)))             # (H, d)
-    wz = np.prod(np.array(list(itertools.product(w, repeat=d))), axis=1)
+    rules = [gauss_hermite(n) for n in counts]
+    z = np.array(list(itertools.product(*[x for x, _ in rules])))               # (H, d)
+    wz = np.prod(np.array(list(itertools.product(*[w for _, w in rules]))), axis=1)
     correlated = z @ chol.T
     v, pv = mixing_rule(nu, n_mixing)
     nodes = (np.sqrt(v)[:, None, None] * correlated[None, :, :]).reshape(-1, d)

@@ -119,6 +119,12 @@ value — the firm sells **only as much collateral as is needed** to repay the
 loan, its interest and a **liquidation penalty** (for example 5%, which goes
 to the vault), and returns the rest to the borrower.
 
+**A smoothed trigger.** The penalty makes what the vault recovers jump at the
+threshold, which would give the solver a wrong slope in the LTV and the rate.
+The share of a loan liquidated therefore rises along a smooth S-shaped
+(logistic) curve over a narrow band of the BTC price around the threshold, 1%
+of the starting price; well past the threshold it is all liquidated.
+
 **The sale discount.** In a crash, collateral sells somewhat below the market
 price: markets are thin and price feeds lag. The discount is a parameter;
 GRC mechanism L (better price feeds, a more reliable liquidation process)
@@ -870,6 +876,9 @@ are today's.
   in the BTC direction than in the others (standard); a short perp pays the
   BTC fall less funding near $r$ (standard); the Prop. 2 test alone lets the
   hedge run to 1.2 times the BTC held, so a full hedge is reachable.
+- **The liquidation trigger is smoothed** over a 1% band of the BTC price, so
+  the penalty does not make the payoff jump (standard numerical smoothing,
+  raised and agreed). A BTC price cannot fall below zero.
 - **Operating costs are paid from the firm's own stablecoins,** separate from
   the vault's.
 - **Insurance is a later option** (mechanism D).
