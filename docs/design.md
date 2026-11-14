@@ -650,9 +650,11 @@ Each stage needs approval before it starts.
 
 ## 8. Open questions
 
-1. **How the learner draws its scenarios.** Plain random draws, a fixed set
-   reused across training steps, or quasi-random points spread evenly over the
-   shocks — to be raised with the learner stage.
+1. **How the learner draws its scenarios.** Decided: random scenarios, drawn
+   fresh each training step, with a fixed seeded set for grading; incidents
+   kept as weighted branches so GRC spend keeps its gradient
+   (`docs/plan-integrated.md`). Open: whether quasi-random points are needed
+   for accuracy.
 2. **Why the earlier vault firm bought no GRC.** Investors bore the vault's
    losses; the firm felt them only through compensation and outflows, and
    raising equity was cheap enough that its capital never became scarce. The
@@ -1015,6 +1017,9 @@ are today's.
   are shared pro rata. The BTC vault hedges its lending sleeve with long BTC
   perps, so it still tracks BTC. The integrated model goes straight to the
   actor-critic learner, without an intermediate 3-D version.
+- **The learner uses random scenarios,** not quadrature (user's choice), with
+  incidents kept as weighted branches. The integrated stage's plan is written
+  out in `docs/plan-integrated.md` so another session can resume it.
 - **The BTC vault on its own loses money** at operating costs of 2% of
   capacity (fees about 1.5%), and puts all of itself in the highest-yield
   strategy: investors in the model are indifferent to risk. Recorded, not
