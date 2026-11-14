@@ -20,9 +20,11 @@ value of an action the firm can always take:
 
 **Policy iteration** (`policy_iteration`): Adam on every grid point's raw
 controls at once, from two starts each step -- the last policy and a fresh one,
-keeping the better per grid point, because a squashed control pushed to its
-bound has no gradient left to come back -- then repeated evaluation of the
-fixed policy, and a final slow polish. The problem supplies only its objective:
+because a squashed control pushed to its bound has no gradient left to come
+back. A grid point's decision changes only where one of the two beats it, so
+each step can only improve. Then repeated evaluation of the fixed policy, and
+a final slow polish. The solve stops when a whole iteration, improvement
+included, no longer moves the value. The problem supplies only its objective:
 flow plus discounted expected value, before the walk-away floor.
 """
 
@@ -132,6 +134,7 @@ def policy_iteration(
     first_improve_steps: int = 400,
     evaluate_steps: int | None = None,
     polish_steps: int = 300,
+    polish_rounds: int = 3,
     lr: float = 0.05,
     verbose: bool = False,
 ) -> IterationResult:
@@ -185,19 +188,45 @@ def policy_iteration(
         if it == 0:
             raw = warm
         else:
-            restart, restart_value = ascend(V, fresh, steps, lr)
-            better = restart_value > warm_value
-            raw = [torch.where(better, r, k) for r, k in zip(restart, warm)]
-        V, residual = evaluate(V, raw)
+            # Keep the decision a grid point already has unless a candidate
+            # beats it there. Adam ends an ascent within about a step of the
+            # best decision, not on it, so taking its result regardless let
+            # the value wobble from one iteration to the next and never settle.
+            with torch.no_grad():
+                best_value = objective(V, raw)
+            for candidate, value in ((warm, warm_value), ascend(V, fresh, steps, lr)):
+                better = value > best_value
+                raw = [torch.where(better, c, k) for c, k in zip(candidate, raw)]
+                best_value = torch.where(better, value, best_value)
+        V_before = V
+        V, _ = evaluate(V, raw)
+        # The change over the whole iteration, improvement included. The last
+        # evaluation step's change alone goes to zero for any fixed policy,
+        # however far from the best one, and stopped the solve while a
+        # decision was still drifting slowly (design.md section 11).
+        residual = float((V - V_before).abs().max())
         history.append(residual)
         if verbose:
             print(f"iteration {it:3d}  residual {residual:.3e}  max V {float(V.max()):.6f}")
         if residual < tol and it > 0:
             break
 
-    # Polish: one long, slow ascent from the converged policy, then a final
-    # evaluation. The value is nearly flat in some controls near their optimum,
-    # so Adam at the working rate jitters by about its step size there.
-    raw, _ = ascend(V, raw, polish_steps, lr / 10.0)
-    V, residual = evaluate(V, raw)
+    # Polish: long, slow ascents from the converged policy, repeated until
+    # they too stop moving the value. The value is nearly flat in some
+    # controls near their optimum, so Adam at the working rate stops within
+    # about its step size of the best decision; the slow ascent closes that
+    # gap, and what it gains at one grid point changes the value at others.
+    for _ in range(polish_rounds):
+        polished, polished_value = ascend(V, raw, polish_steps, lr / 10.0)
+        with torch.no_grad():
+            better = polished_value > objective(V, raw)
+        raw = [torch.where(better, c, k) for c, k in zip(polished, raw)]
+        V_before = V
+        V, _ = evaluate(V, raw)
+        residual = float((V - V_before).abs().max())
+        history.append(residual)
+        if verbose:
+            print(f"polish         residual {residual:.3e}  max V {float(V.max()):.6f}")
+        if residual < tol:
+            break
     return IterationResult(V=V, raw=raw, residual=residual, iterations=it + 1, history=history)

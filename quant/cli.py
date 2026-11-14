@@ -11,7 +11,9 @@ import argparse
 from quant.numerics import DEFAULT_PROFILE, PROFILES, NumericsProfile, get_profile
 
 
-def parse_profile(description: str, argv: list[str] | None = None) -> NumericsProfile:
+def profile_parser(description: str) -> argparse.ArgumentParser:
+    """A parser with the `--profile` option every entry point takes; add the
+    entry point's own options to it."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--profile",
@@ -22,7 +24,11 @@ def parse_profile(description: str, argv: list[str] | None = None) -> NumericsPr
             "from 'reference'; the others trade precision or determinism for speed."
         ),
     )
-    return get_profile(parser.parse_args(argv).profile)
+    return parser
+
+
+def parse_profile(description: str, argv: list[str] | None = None) -> NumericsProfile:
+    return get_profile(profile_parser(description).parse_args(argv).profile)
 
 
 def print_header(profile: NumericsProfile) -> None:
