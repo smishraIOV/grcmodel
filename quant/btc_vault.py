@@ -32,8 +32,8 @@ from quant.quadrature import JumpRule, ShockRule
 
 
 def btc_vault_correlation(p: Params) -> np.ndarray:
-    """The two active strategies' yields correlate; BTC's smooth move is
-    separate in the normal part and shares the tail through the Student-t."""
+    """The two active strategies' yields correlate; BTC's smooth move
+    (the last direction) is separate, and normal (`quant.firm.scenario_rule`)."""
     return np.array(
         [
             [1.0, p.strategy_rho, 0.0],

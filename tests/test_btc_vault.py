@@ -60,8 +60,8 @@ def by_hand(p, A, c, shock, jump=0.0, S=0.0, bias=None):
     co = p.btc_co_invest
     cover = p.compensation * (1 - co) * hit
     prob = 1 - math.exp(-p.btc_crash_rate)
-    mu = (1 + p.r_E + bias) / (1 - prob * p.btc_crash_mean) - 1
-    price = max(1 + mu + p.s_BTC * eps, 0.0) * (1 - crash)
+    m = math.log((1 + p.r_E + bias) / (1 - prob * p.btc_crash_mean)) - p.s_BTC**2 / 2
+    price = math.exp(m + p.s_BTC * eps) * (1 - crash)
     R_btc = price - 1
     aum = max(
         A * (1 + R + cover) * price + p.inflow_speed * (p.btc_capacity - A)
@@ -114,7 +114,8 @@ def test_fees_are_in_btc_so_their_dollar_value_moves_with_the_price():
     down = btc_vault_outcomes(p, t([1.0]), c, t([0.0]), one((0.0, 0.0, -1.0)), None)
     fee = p.fee_mgmt * 1.0
     gap = float(up.wealth - down.wealth)
-    assert gap == pytest.approx(fee * 2 * p.s_BTC, abs=1e-14)
+    middle = (1 + p.r_E) * math.exp(-p.s_BTC**2 / 2)      # the price when BTC's smooth move is at its middle
+    assert gap == pytest.approx(fee * middle * (math.exp(p.s_BTC) - math.exp(-p.s_BTC)), abs=1e-14)
 
 
 def test_cold_custody_carries_only_the_price_and_custody_risk():
@@ -163,7 +164,8 @@ def test_the_bias_moves_only_the_unhedged_btc_and_the_btc_fees():
     firm = btc_vault_outcomes(p, t([1.0]), c, t([0.0]), rule, None)
     market = btc_vault_outcomes(p, t([1.0]), c, t([0.0]), rule, None, bias=0.0)
     in_btc = 0.2 - 0.05 + (p.fee_mgmt + p.btc_co_invest * (1 - p.fee_mgmt)) * 1.0
-    assert float(firm.wealth - market.wealth) == pytest.approx(0.04 * in_btc, abs=1e-14)
+    # at this scenario's price: BTC's smooth move at its middle value
+    assert float(firm.wealth - market.wealth) == pytest.approx(0.04 * in_btc * math.exp(-p.s_BTC**2 / 2), abs=1e-14)
 
 
 def test_the_hedge_may_cover_the_firm_s_stake():

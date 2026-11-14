@@ -13,8 +13,8 @@ its own money in the vault, and holds its equity as stablecoins (earning
 nothing) and BTC, part of the BTC hedged with short perps.
 
 Scenario order: (xi, eps_BTC, crash) -- the vault's operating-loss shock,
-BTC's smooth return shock (both unit variance; uncorrelated in the normal
-part, they share the Student-t's tail), and the share of BTC's price a crash
+the shock to BTC's smooth move (both unit variance and separate: the first
+Student-t, the second normal), and the share of BTC's price a crash
 takes (zero without one). `lending_rule` builds them. Everything is element-wise, so it vectorizes over
 grid points, quadrature nodes and jump outcomes at once.
 """

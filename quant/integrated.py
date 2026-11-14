@@ -49,8 +49,9 @@ _TINY = 1e-300   # keeps 0 / 0 out of an empty vault; never changes a non-empty 
 
 
 def integrated_correlation(p: Params) -> np.ndarray:
-    """The two active BTC strategies' yields correlate; everything else is
-    separate in the normal part and shares the tail through the Student-t."""
+    """The two active BTC strategies' yields correlate; the lending
+    system's shock is separate from them but shares their Student-t tail;
+    BTC's smooth move (the last direction) is separate and normal."""
     corr = np.eye(4)
     corr[1, 2] = corr[2, 1] = p.strategy_rho
     return corr
@@ -58,12 +59,12 @@ def integrated_correlation(p: Params) -> np.ndarray:
 
 def integrated_rule(
     p: Params, profile: NumericsProfile, n_ops: int = 2, n_strategy: int = 2, n_btc: int = 7,
-    n_mixing: int = 6, n_crash: int = 5,
+    n_mixing: int = 6, n_crash: int = 5, even_btc: bool = False,
 ) -> ShockRule:
     """Scenarios over (xi_L, xi_1, xi_2, eps_BTC, crash) (`quant.firm.scenario_rule`)."""
     return scenario_rule(
         p, integrated_correlation(p), (n_ops, n_strategy, n_strategy, n_btc), profile,
-        n_mixing=n_mixing, n_crash=n_crash,
+        n_mixing=n_mixing, n_crash=n_crash, even_btc=even_btc,
     )
 
 

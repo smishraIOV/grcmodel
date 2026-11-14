@@ -22,7 +22,7 @@ from quant.lending import (
 )
 from quant.numerics import REFERENCE
 from quant.params import DEFAULTS
-from quant.quadrature import ShockRule, pareto_jump_rule, student_t_rule
+from quant.quadrature import ShockRule, crash_rule, pareto_jump_rule, student_t_rule
 
 P = REFERENCE
 BASE = replace(DEFAULTS, periods_per_year=1, jump_rate=0.0)
@@ -58,8 +58,8 @@ def by_hand(p, A, c, shock, jump=0.0, S=0.0, bias=None):
     demand = p.loan_demand * max(1 - rate / p.rate_max, 0) * max(1 + p.ltv_demand * (ltv - p.ltv_ref), 0)
     L = min(demand, A)
     prob = 1 - math.exp(-p.btc_crash_rate)
-    mu = (1 + p.r_E + bias) / (1 - prob * p.btc_crash_mean) - 1
-    smooth = max(1 + mu + p.s_BTC * eps, 0.0)
+    m = math.log((1 + p.r_E + bias) / (1 - prob * p.btc_crash_mean)) - p.s_BTC**2 / 2
+    smooth = math.exp(m + p.s_BTC * eps)
     price = smooth * (1 - crash)
     R_btc = price - 1
     owed = 1 + rate
@@ -162,14 +162,24 @@ def test_a_fall_caught_before_a_crash_sells_at_the_threshold():
 
 def test_btc_is_expected_to_earn_the_market_return_plus_the_bias():
     """Crash risk is priced into the smooth part, so the expected end price is
-    1 + r_E + bias (up to the crash rule's small error in its mean). Quarterly:
-    at a year's volatility the floor at a zero price starts to lift the mean."""
-    for bias in (0.0, 0.03):
-        p = replace(DEFAULTS, nu=math.inf, btc_bias=bias).per_period()
-        bias = p.btc_bias
-        rule = lending_rule(p, P, n_ops=1, n_btc=9, n_mixing=1, n_crash=8)
-        price, _ = btc_prices(p, rule.nodes[:, 1], rule.nodes[:, 2], bias)
-        assert float(rule.expect(price)) == pytest.approx(1 + p.r_E + bias, rel=1e-3)
+    1 + r_E + bias, at any decision frequency and with fat-tailed vault
+    shocks. The crash rule's mean share is exact, so this is too."""
+    for n in (1, 4):
+        for bias in (0.0, 0.03):
+            p = replace(DEFAULTS, btc_bias=bias, periods_per_year=n).per_period()
+            rule = lending_rule(p, P, n_ops=2, n_btc=15, n_mixing=3, n_crash=8)
+            price, _ = btc_prices(p, rule.nodes[:, 1], rule.nodes[:, 2], p.btc_bias)
+            assert float(rule.expect(price)) == pytest.approx(1 + p.r_E + p.btc_bias, rel=1e-10)
+
+
+def test_a_crash_takes_part_of_the_price_never_all_of_it():
+    for n in (3, 8, 48):
+        crashes = crash_rule(BASE.btc_crash_mean, BASE.btc_crash_tail, P, n=n)
+        assert float(crashes.weights.sum()) == pytest.approx(1.0, abs=1e-14)
+        assert crashes.mean == pytest.approx(BASE.btc_crash_mean, rel=1e-12)
+        assert 0.0 < float(crashes.severity.min()) and float(crashes.severity.max()) <= 1.0   # 1 only by rounding
+    fine = crash_rule(BASE.btc_crash_mean, BASE.btc_crash_tail, P, n=48)
+    assert float(fine.weights[fine.severity >= 0.99].sum()) < 1e-3     # it was about 1% when capped at all of it
 
 
 def test_the_scenario_rule_folds_in_the_crash_chance():
@@ -235,18 +245,35 @@ def test_fully_hedged_btc_earns_perp_funding_less_its_security_cost():
 
 
 def test_the_bias_moves_only_the_unhedged_btc():
-    """Deciding with the bias and valuing at the market differ by (q - H) b."""
+    """Deciding with the bias and valuing at the market differ by (q - H) b,
+    scaled as every price is in that scenario: BTC's smooth move at its
+    middle value ends at exp(-s^2 / 2) of the expected price."""
     p = replace(BASE, btc_bias=0.04, loan_demand=0.0, btc_crash_rate=0.0)
     c = controls(K=0.3, q=0.2, H=0.05)
     rule = one((0.0, 0.0))
     firm = lending_outcomes(p, t([1.0]), c, t([0.0]), rule, None)
     market = lending_outcomes(p, t([1.0]), c, t([0.0]), rule, None, bias=0.0)
-    assert float(firm.wealth - market.wealth) == pytest.approx(0.15 * 0.04, abs=1e-14)
+    assert float(firm.wealth - market.wealth) == pytest.approx(0.15 * 0.04 * math.exp(-p.s_BTC**2 / 2), abs=1e-14)
 
 
-def test_btc_cannot_fall_below_zero():
-    price, smooth = prices(BASE, -10.0, 0.5)
-    assert float(price) == 0.0 and float(smooth) == 0.0
+def test_btc_s_price_stays_above_zero():
+    """A ten-sigma fall and then a crash taking 99%: almost worthless, never
+    worthless, and no floor is needed."""
+    price, smooth = prices(BASE, -10.0, 0.99)
+    assert 0.0 < float(price) < float(smooth) < 0.01
+
+
+def test_four_quarters_of_btc_s_smooth_move_make_the_year_s():
+    """In the logarithm of the price the square-root-of-time rule is exact:
+    the variances of four quarters add up to the year's, and with no crashes
+    the expected price compounds to the year's."""
+    year = replace(DEFAULTS, btc_crash_rate=0.0, periods_per_year=1)
+    quarter = replace(year, periods_per_year=4).per_period()
+    assert 4 * quarter.s_BTC**2 == pytest.approx(year.s_BTC**2, rel=1e-14)
+    z = student_t_rule([[1.0]], math.inf, P, n_hermite=21, n_mixing=1)
+    one_quarter = float(z.expect(btc_prices(quarter, z.nodes[:, 0], t(0.0), 0.0)[0]))
+    one_year = float(z.expect(btc_prices(year, z.nodes[:, 0], t(0.0), 0.0)[0]))
+    assert one_quarter**4 == pytest.approx(one_year, rel=1e-12) and one_year == pytest.approx(1 + year.r_E, rel=1e-12)
 
 
 def test_an_incident_costs_the_vault_and_the_firm_repays_a_share():

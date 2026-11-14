@@ -7,9 +7,10 @@ and its stake in a vault. Part of its BTC is hedged with short perps H. It
 pays operating costs, fixed in dollars, and GRC. A runway of operating costs
 is kept in stablecoins.
 
-**BTC's market.** BTC's price over a period is a smooth fat-tailed move, then
-possibly a sudden crash. The smooth part's drift is set so the expected end
-price is the market's expectation, 1 + r_E, plus the firm's bias.
+**BTC's market.** BTC's price over a period is a smooth move, then possibly a
+sudden crash, both in the logarithm of the price, so it never reaches zero.
+The smooth part's drift is set so the expected end price is the market's
+expectation, 1 + r_E, plus the firm's bias.
 
 Scenario order, for any vault: the vault's own shocks first, then eps_BTC
 (BTC's smooth move), then the crash size (zero without one).
@@ -22,7 +23,7 @@ import torch
 
 from quant.numerics import NumericsProfile
 from quant.params import Params
-from quant.quadrature import ShockRule, pareto_jump_rule, student_t_rule
+from quant.quadrature import ShockRule, crash_rule, gauss_hermite, normal_grid, student_t_rule
 
 
 def crash_probability(p: Params) -> float:
@@ -37,15 +38,23 @@ def btc_prices(
     """BTC's price at the end of the period, starting from 1, and the price the
     smooth part of the move alone would reach.
 
-    The move is a smooth part, 1 + mu + s eps, then possibly a crash that
-    takes a share `crash` of the price at once. mu is set so the expected end
-    price is 1 + r_E + bias whatever the crash risk: the market's expectation,
-    plus the firm's bias (design.md section 3.4). Prices cannot fall below
-    zero.
+    The move is in the **logarithm** of the price (design.md section 3.4):
+
+        smooth = exp(m + s eps),    eps standard normal
+        price  = smooth (1 - crash)
+
+    where `crash` is the share of the price a crash takes, below one
+    (`quant.quadrature.crash_rule`). The price is therefore always positive:
+    a model that adds a move to the price itself reaches zero, and at BTC's
+    volatility did so far too often. m is set so the expected end price is
+    1 + r_E + bias whatever the crash risk -- the market's expectation, plus
+    the firm's bias:
+
+        m = ln((1 + r_E + bias) / (1 - P(crash) mean share)) - s^2 / 2.
     """
     expected_loss = crash_probability(p) * p.btc_crash_mean
-    mu = (1.0 + p.r_E + bias) / (1.0 - expected_loss) - 1.0
-    smooth = torch.clamp(1.0 + mu + p.s_BTC * eps, min=0.0)
+    m = math.log((1.0 + p.r_E + bias) / (1.0 - expected_loss)) - 0.5 * p.s_BTC * p.s_BTC
+    smooth = torch.exp(m + p.s_BTC * eps)
     return smooth * (1.0 - crash), smooth
 
 
@@ -56,23 +65,47 @@ def scenario_rule(
     profile: NumericsProfile,
     n_mixing: int = 6,
     n_crash: int = 5,
+    even_btc: bool = False,
 ) -> ShockRule:
-    """The Student-t rule over the vault's shocks and BTC's smooth move (the
-    last direction of `corr`), crossed with no crash and each crash size. The
-    crash probability is folded into the weights."""
-    base = student_t_rule(corr, p.nu, profile, n_hermite=counts, n_mixing=n_mixing)
+    """Scenarios over the vault's shocks, BTC's smooth move and the crash.
+
+    `corr` and `counts` list the vault's shocks first and BTC's smooth move
+    last. The vault's shocks are Student-t and share one tail
+    (design.md section 4.2). BTC's smooth move is **normal and separate**: it
+    moves the logarithm of the price, and a Student-t there has no finite
+    expected price. BTC's tail is the crash, whose probability is folded into
+    the weights; a crash still reaches the loan book, the strategies and the
+    firm's own BTC together.
+
+    BTC's smooth move uses Gauss-Hermite points, or with `even_btc` an even
+    grid (`quant.quadrature.normal_grid`): what the firm ends with has kinks
+    in BTC's price, which many evenly spaced points resolve and a few
+    Gauss-Hermite points do not.
+    """
+    corr = np.asarray(corr, dtype=np.float64)
+    d = corr.shape[0] - 1
+    if not (np.allclose(corr[d, :d], 0.0) and np.allclose(corr[:d, d], 0.0)):
+        raise ValueError("BTC's smooth move must be uncorrelated with the vault's shocks")
+    vault = student_t_rule(corr[:d, :d], p.nu, profile, n_hermite=tuple(counts[:d]), n_mixing=n_mixing)
+    z, wz = normal_grid(counts[d]) if even_btc else gauss_hermite(counts[d])
+    eps, eps_weights = profile.tensor(z), profile.tensor(wz)
     if p.btc_crash_rate > 0.0:
-        crashes = pareto_jump_rule(p.btc_crash_mean, p.btc_crash_tail, profile, n=n_crash)
+        crashes = crash_rule(p.btc_crash_mean, p.btc_crash_tail, profile, n=n_crash)
         size = torch.cat([crashes.severity.new_zeros(1), crashes.severity])
         prob = crash_probability(p)
         chance = torch.cat([size.new_ones(1) * (1.0 - prob), prob * crashes.weights])
     else:
-        size, chance = base.weights.new_zeros(1), base.weights.new_ones(1)
-    k = size.shape[0]
+        size, chance = vault.weights.new_zeros(1), vault.weights.new_ones(1)
+    v, b, k = vault.size, eps.shape[0], size.shape[0]
     nodes = torch.cat(
-        [base.nodes.repeat_interleave(k, dim=0), size.repeat(base.size).unsqueeze(-1)], dim=-1
+        [
+            vault.nodes.repeat_interleave(b * k, dim=0),
+            eps.repeat_interleave(k).repeat(v).unsqueeze(-1),
+            size.repeat(v * b).unsqueeze(-1),
+        ],
+        dim=-1,
     )
-    weights = (base.weights[:, None] * chance[None, :]).reshape(-1)
+    weights = (vault.weights[:, None, None] * eps_weights[None, :, None] * chance[None, None, :]).reshape(-1)
     return ShockRule(nodes=nodes, weights=weights)
 
 

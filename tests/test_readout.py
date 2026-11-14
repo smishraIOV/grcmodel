@@ -50,7 +50,8 @@ def test_with_nothing_random_it_is_the_accounting_by_hand():
 
     assert r.loans == pytest.approx(80e6) and r.share_lent == pytest.approx(1.0)   # demand exceeds the vault
     assert r.interest_income == pytest.approx(0.40 * 80e6 * 0.04, rel=1e-12)
-    assert r.expected_bad_debt == 0.0 and r.compensation == 0.0 and r.incident_chance == 0.0
+    assert r.expected_bad_debt == 0.0 and r.incident_chance == pytest.approx(0.0, abs=1e-15)
+    assert r.compensation == pytest.approx(0.0, abs=1e-6)      # dollars; rounding only
     y = 0.5 * 0.03 + 0.25 * 0.06                                   # the BTC vault's yield
     fee = 0.01 + 0.15 * y
     assert r.btc_vault_fees == pytest.approx(fee * 150e6 * 1.06, rel=1e-12)   # paid in BTC, worth 6% more
@@ -66,7 +67,7 @@ def test_with_nothing_random_it_is_the_accounting_by_hand():
     assert r.expected_equity == pytest.approx(expected, rel=1e-12)
     # Costs exceed income here, so the firm ends with less than it kept, for sure,
     # but still above what it needs.
-    assert expected < 19e6 and r.chance_of_loss == 1.0
+    assert expected < 19e6 and r.chance_of_loss == pytest.approx(1.0, abs=1e-12)
     assert r.chance_below_needed == 0.0 and r.expected_shortfall == 0.0
 
 
@@ -93,23 +94,25 @@ def test_the_same_firm_in_cents_gives_the_same_read_out(base):
 
 
 def test_finer_scenarios_do_not_move_it(base):
+    """More points for BTC's move and the crash, then more for the strategies'
+    shocks and incidents. The policy lends 30% of the BTC vault as
+    stablecoins: the BTC vault's yield with a sleeve is the figure that did
+    not settle while BTC's price could reach zero."""
     p = MODEL.params.per_period()
-    fine_set = scenario_set(p, n_btc=121, n_mixing=32, n_crash=48, n_jump=16)
-    fine = read_out(MODEL, POLICY, fine_set)
+    for finer in (dict(n_btc=401, n_crash=96), dict(n_btc=101, n_crash=24, n_strategy=6, n_mixing=16, n_jump=16)):
+        _compare(read_out(MODEL, POLICY, scenario_set(p, **finer)), base, loose=finer["n_btc"] < 201)
+
+
+def _compare(fine, base, loose):
     for name in ("interest_income", "btc_vault_fees", "expected_equity", "dollar_vault_next", "btc_vault_next"):
         assert getattr(fine, name) == pytest.approx(getattr(base, name), rel=2e-3), name
-    for name in ("dollar_yield", "incident_chance"):
+    for name in ("dollar_yield", "btc_yield", "incident_chance"):
         assert getattr(fine, name) == pytest.approx(getattr(base, name), abs=2e-4), name
-    # The BTC vault's yield settles without a sleeve. With one it rests on the few
-    # scenarios in which BTC's price ends near zero, where the sleeve's dollar
-    # losses are large in BTC terms: an open gap (docs/plan-tool.md section 3).
-    assert fine.btc_yield == pytest.approx(base.btc_yield, abs=5e-3)
-    no_sleeve = replace(POLICY, allocation=(0.3, 0.6, 0.1, 0.0))
-    assert read_out(MODEL, no_sleeve, fine_set).btc_yield == pytest.approx(read_out(MODEL, no_sleeve).btc_yield, abs=2e-4)
-    # tail figures rest on few scenarios, and move more
-    assert fine.expected_bad_debt == pytest.approx(base.expected_bad_debt, rel=0.02)
-    assert fine.chance_below_needed == pytest.approx(base.chance_below_needed, abs=0.01)
-    assert fine.chance_of_loss == pytest.approx(base.chance_of_loss, abs=0.015)
+    for name in ("expected_bad_debt", "expected_shortfall"):
+        # the second set has fewer points for BTC than the default, to stay quick
+        assert getattr(fine, name) == pytest.approx(getattr(base, name), rel=0.02 if loose else 0.005), name
+    for name in ("chance_below_needed", "chance_of_loss"):
+        assert getattr(fine, name) == pytest.approx(getattr(base, name), abs=0.005), name
 
 
 def test_grc_spend_lowers_the_chance_of_an_incident(base):

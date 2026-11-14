@@ -41,17 +41,20 @@ class ScenarioSet:
 
 
 def scenario_set(
-    per_period: Params, profile: NumericsProfile = REFERENCE, n_ops: int = 2, n_strategy: int = 2,
-    n_btc: int = 61, n_mixing: int = 24, n_crash: int = 24, n_jump: int = 12,
+    per_period: Params, profile: NumericsProfile = REFERENCE, n_ops: int = 2, n_strategy: int = 4,
+    n_btc: int = 201, n_mixing: int = 8, n_crash: int = 48, n_jump: int = 8,
 ) -> ScenarioSet:
     """Scenarios for one firm at one state. A single state is cheap, so these
-    are far finer than a solver's: BTC's direction, where liquidations and
-    bad debt come from, gets the most points. The counts are where the
-    figures stop moving (tests/test_readout.py): a set as coarse as a
-    solver's misstates investors' yields by a point or more."""
+    are far finer than a solver's. BTC's smooth move is on an even grid and
+    the crash sizes are many, because liquidations and bad debt turn on where
+    BTC's price ends; the strategies' shocks get more points than a solver
+    gives them because the performance fee has a kink at a zero yield. The
+    counts are where the figures stop moving
+    (tests/test_readout.py): a set as coarse as a solver's misstates
+    investors' yields by a point or more."""
     p = per_period
     rule = integrated_rule(p, profile, n_ops=n_ops, n_strategy=n_strategy, n_btc=n_btc,
-                           n_mixing=n_mixing, n_crash=n_crash)
+                           n_mixing=n_mixing, n_crash=n_crash, even_btc=True)
     jumps = pareto_jump_rule(p.jump_mean, p.jump_tail, profile, n=n_jump) if p.jump_rate > 0 else None
     return ScenarioSet(rule=rule, jumps=jumps)
 

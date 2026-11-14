@@ -378,11 +378,26 @@ eq. (15) case — a firm with a view on a priced risk — and the firm's
 effective risk aversion limits how much BTC it holds on that view.
 
 **Holding BTC.** The firm's own BTC is bought spot, so it spends stablecoins
-and is held in full by equity. BTC's price moves are
-fat-tailed (§4.2), with occasional crashes (§4.3). The smooth part of BTC's
-expected move is set so that, crashes included, BTC's expected return is still
-the market's expectation plus the firm's bias. A price cannot fall below
-zero.
+and is held in full by equity.
+
+**BTC's price.** Over a period the price makes a smooth move and then,
+sometimes, a sudden crash (§4.3). Both act on the **logarithm** of the price:
+the price is multiplied by $e^{m + s\varepsilon}$, with $\varepsilon$ normal,
+and a crash multiplies it again by a factor below one. The smooth part's
+drift $m$ is set so that, crashes included, BTC's expected return is the
+market's expectation plus the firm's bias. This is the standard model of a
+price with jumps (Merton, 1976).
+
+*Why.* The first version added a fat-tailed move to the price itself and
+floored it at zero. At BTC's volatility that put far too much weight on BTC
+ending a period almost worthless: about 3% a year at annual decisions and
+0.4% a quarter at quarterly ones, against 0.004% a quarter now. In the
+logarithm the price cannot reach zero, the drift is exact, and four quarters
+compound to exactly one year, so runs at different decision frequencies
+describe the same BTC. The cost is that the smooth move is normal, not
+fat-tailed: a fat-tailed move in the logarithm has no finite expected price.
+BTC's large falls come from crashes, which stay heavy-tailed and are what
+cause bad debt.
 
 **Hedging.** Short perps reduce the firm's BTC exposure but cannot create long
 exposure; otherwise exposure through perps would always beat holding BTC, and
@@ -477,8 +492,9 @@ alone, and whether the Froot–Stein effect survives $\kappa = 0$ is open (§8).
 fixed issuance cost is more realistic but is left out, because it is a jump the
 learner cannot differentiate through.
 
-**Continuous shocks: multivariate Student-$t$.** The shocks — to the firm's
-non-tradeable risks and to BTC — are a scale mixture of normals,
+**Continuous shocks: multivariate Student-$t$.** The shocks to the firm's
+non-tradeable risks — operating losses and the BTC strategies' yields — are a
+scale mixture of normals,
 
 $$
 \xi = \frac{Z}{\sqrt{W/\nu}}, \qquad Z \sim N(0, \Sigma), \qquad W \sim \chi^2_\nu,
@@ -493,8 +509,10 @@ with **one $W$ shared** across all components, rescaled to unit variance.
   large at once. That is the crisis property a normal model misses, distinct
   from fat tails in each margin alone. Copulas, which separate the two, are a
   later option.
-- $\Sigma$ carries the correlations between the firm's non-tradeable risks. BTC
-  is uncorrelated with the others in $\Sigma$, but shares the tail through $W$.
+- $\Sigma$ carries the correlations between the firm's non-tradeable risks.
+- **BTC's smooth move is separate and normal** (§3.4): it does not share $W$.
+  What ties BTC to the firm's other risks is the crash, which reaches the loan
+  book, the strategies and the firm's own BTC together.
 - Symmetric, so it fattens the tail of gains as well as losses. One-sided
   heavy-tailed losses are the jump component (§4.3).
 
@@ -547,9 +565,11 @@ rare and large.
 Defaults (illustrative): $\lambda_J = 0.1$ a year, $\mu_J = 5\%$ of the exposed
 assets, $\zeta = 2.5$, $a_J = 100$, $\rho_J = 0.3$.
 
-**BTC crashes** use the same construction: at most one a period, with a
-heavy-tailed (Pareto) size as a share of BTC's price, capped at the whole
-price. A crash is a market event, so GRC does not change its frequency; GRC
+**BTC crashes**: at most one a period. A crash multiplies the price by
+$e^{-J}$, so it takes the share $1 - e^{-J}$ of it: severe, never total. $J$
+is heavy-tailed (Pareto), scaled so the mean share taken is the parameter. (A
+share drawn directly and capped at the whole price took all of it in about 1%
+of crashes.) A crash is a market event, so GRC does not change its frequency; GRC
 acts on what it costs, through the sale discount (L). Defaults (illustrative):
 0.5 crashes a year, a mean size of 25%, tail index 2.5. The crash sizes are
 crossed with the continuous shocks in the quadrature, the crash probability in
@@ -565,7 +585,7 @@ is a parameter, `periods_per_year`. Every rate is stated **per year**, and
 |---|---|---|
 | interest rates, the required return $r_E$, the borrower rate | $(1+r)^{1/n} - 1$ | money compounds |
 | mean loss rates, excess returns and the BTC bias, fees charged per year, operating costs, carrying cost $\tau$ | $\div n$ | flows that accrue with time |
-| volatilities | $\div \sqrt{n}$ | independent periods' variances add up to the year's. Under fat tails this is a convention, not an identity |
+| volatilities | $\div \sqrt{n}$ | independent periods' variances add up to the year's. Exact for BTC's smooth move, which is normal in the logarithm of the price; under fat tails a convention, not an identity |
 | jump rate, BTC crash rate | $\div n$ | Poisson events per unit of time |
 | GRC depreciation, inflow speed | $1 - (1-\delta)^{1/n}$ | the same share over a year |
 | issuance costs, capital requirements, jump severity, GRC effectiveness and floors, performance-fee share, flow sensitivities, compensation share, co-investment share, capacities, loan-to-value terms, liquidation sale discount, position bounds, correlations, $\nu$ | unchanged | sizes, shares and per-event amounts, not rates |
@@ -594,7 +614,11 @@ supplies only its decisions and objective.
   construction. A solve is therefore deterministic. Directions that need more
   detail get more points: liquidations happen only after large BTC falls, so
   the BTC direction gets about 15 points where the others get 3, and a test
-  checks that more points do not move the answer.
+  checks that more points do not move the answer. The tool's read-out
+  (`quant/readout.py`) works at one state and can afford far more: an even
+  grid of 201 points for BTC's smooth move and 48 crash sizes, because what
+  the firm ends with has kinks in BTC's price that a few points do not
+  resolve.
 - **Policy iteration.** At every grid point the decisions are chosen by
   gradient ascent (Adam), for all points at once; the fixed policy is then
   evaluated repeatedly. The two alternate until the value stops changing.
@@ -738,12 +762,7 @@ Each stage needs approval before it starts.
    re-prices the vaults' allocations and the loan terms.
 9. **Does the effect survive $\kappa = 0$?** Whether the Froot–Stein effect
    needs a convex issuance cost in a model with no end date.
-10. **BTC's price near zero.** The price over a period is one plus a
-   fat-tailed move, floored at zero, so a small but not negligible weight has
-   BTC ending the period almost worthless (about 0.4% a quarter at the
-   defaults). The BTC vault's yield with a lending sleeve rests on those
-   scenarios. Moves in the logarithm of the price would keep it above zero.
-11. **Calibration.** $r_E$ against a target market-to-book ratio; the vaults'
+10. **Calibration.** $r_E$ against a target market-to-book ratio; the vaults'
    parameters (§2.7); the rest against data, once the model is realistic
    enough for its numbers to be worth reporting.
 
@@ -758,7 +777,7 @@ computational model for practical analysis rather than a closed-form argument.
 |---|---|---|---|
 | Horizon | three dates | infinite, stationary | a firm is a going concern; a finite horizon needs a terminal value, which carried a third of firm value in the legacy model |
 | Timing | riskless investment after the risk is borne | one decision per period; the business itself is risky | the firm's main non-tradeable risks sit in what it runs, and grow with its size |
-| Shocks | normal | multivariate Student-$t$ with a shared variance factor, plus heavy-tailed jumps | fat tails and tail dependence are what crises are made of; the normal case is kept as a limit for the oracles |
+| Shocks | normal | multivariate Student-$t$ with a shared variance factor for the firm's non-tradeable risks, plus heavy-tailed jumps; BTC's price moves in its logarithm, a normal smooth move plus heavy-tailed crashes | fat tails and tail dependence are what crises are made of; the normal case is kept as a limit for the oracles |
 | Business | a bank with an existing portfolio | a crypto-native firm running a stablecoin lending vault and a BTC yield vault for fees | banking and insurance fit crypto rails poorly; funds and collateralized lending fit well. A bank form with fixed-rate deposits was built and dropped (§11) |
 | Failure | none | walk-away under limited liability | failure is a decision rather than an assumed hazard rate, and risk-shifting can be observed rather than ruled out |
 | Regulation | none | own funds against the vaults' size | ordinary regulation of asset managers and lenders; it gives the Froot–Stein effect a second route |
@@ -785,6 +804,8 @@ assembled for this project, with no single reference.
 | Gauss–Hermite quadrature | standard | `quant/quadrature.py` | weighted scenario set for the normal part of the shocks | sparse grids if the shock dimension grows |
 | Tail-placed mixing rule | own construction | `quant/quadrature.py` | scenario set for the $t$'s shared volatility factor: Gauss–Legendre nodes uniform in log-probability, placed through the inverse CDF | replaced generalized Gauss–Laguerre (standard), which understated kurtosis (7.3 against 9 at $\nu = 5$, 64 points); accuracy is checked by tests, not by a reference |
 | Tail-placed jump-severity rule | own construction | `quant/quadrature.py` | the same construction for the Pareto jump severity, capped at the whole book | the dropped far tail and the cap shave the mean slightly; tested to within 5% |
+| Even grid under the normal density (trapezoid rule) | standard | `quant/quadrature.py` | scenario set for BTC's smooth move in the read-out, where the integrand has kinks and steps in BTC's price | Gauss–Hermite is better for a smooth integrand with few points; the solvers still use it |
+| Crash sizes in the logarithm, mean share set exactly | own construction, on the tail-placed rule | `quant/quadrature.py` | a crash takes the share $1 - e^{-J}$, $J$ Pareto; the scale is found by bisection so the rule's mean share is exact | — |
 | Cholesky factorization | standard | `quant/quadrature.py` | builds correlated shocks from independent ones | — |
 | Policy iteration with repeated policy evaluation (Howard improvement) | standard | `quant/research/grid.py` | how the infinite-horizon solve converges | plain value iteration is slower but simpler |
 | Adam, vectorized over the grid | standard | `quant/research/grid.py` | chooses every grid point's decisions at once by gradient ascent; two starts per step, and a slow final pass | the step-budget test guards against it stopping short |
@@ -802,6 +823,7 @@ assembled for this project, with no single reference.
 |---|---|---|---|---|
 | Stein's lemma | standard probability | `quant/research/twoperiod.py`, `quant/results.py` | why the paper's formulas (9), (10), (15) are exact under normal shocks and approximate under fat tails; the basis of oracle 1 | — |
 | Student-$t$ as a scale mixture of normals, one shared factor | standard | `quant/quadrature.py`, §4.2 | fat tails and tail dependence from one parameter $\nu$ | copulas would separate marginal tails from dependence |
+| A price with a normal move in its logarithm plus jumps | standard (Merton, 1976) | `quant/firm.py`, §3.4 | BTC's price: always positive, exact drift, periods compound exactly | fat tails in the smooth move would need a distribution with finite exponential moments (not the Student-$t$) |
 | Pareto jump severity | standard in operational-risk modeling | `quant/quadrature.py`, §4.3 | heavy-tailed one-sided losses | lognormal, or an empirical exploit-loss distribution |
 | Effective risk aversion from first derivatives | own construction | `quant/results.py` | measures the paper's $G$ as the price of risk, $-E[V_w (w' - Ew')] / (E[V_w] \mathrm{Var}(w'))$; equals the paper's $G$ under normality by Stein's lemma | the right generalization under fat tails is a choice, not a theorem |
 | Hurdle as a measured price of risk | own construction | `quant/results.py` | $-E[V_w \varepsilon] / E[V_w]$ for a small position with payoff shock $\varepsilon$; equals eq. (10) under normality, exact in general | — |
@@ -1131,6 +1153,15 @@ are today's.
   per mechanism; the firm's facts required, the assumptions pre-filled from
   the model's defaults and marked illustrative. The three conversions are own
   constructions, each an exact restatement of a form already in §4.2.
+- **BTC's price moves in its logarithm** (2026-11-14, raised and agreed
+  before the change; §3.4 gives the reason). The price could reach zero, and
+  did so far too often; found when the BTC vault's yield with a lending
+  sleeve would not settle in the tool's read-out. The smooth move is now
+  normal in the logarithm and the crash takes a share below one. BTC's
+  smooth move no longer shares the Student-$t$'s tail with the firm's other
+  shocks; the crash still ties them together. Every exploratory solve before
+  this ran under the old price model. In the read-out, BTC's smooth move is
+  on an even grid (standard trapezoid rule, §10).
 - **The BTC vault on its own loses money** at operating costs of 2% of
   capacity (fees about 1.5%), and puts all of itself in the highest-yield
   strategy: investors in the model are indifferent to risk. Recorded, not

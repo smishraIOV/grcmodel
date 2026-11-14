@@ -40,7 +40,7 @@ class Params:
     # Money is in dollars (the numeraire); BTC is the firm's home asset. BTC
     # is expected to earn the market's r_E, plus the firm's bias (design.md
     # section 3.4).
-    s_BTC: float = 0.60      # volatility of BTC's smooth move, per year
+    s_BTC: float = 0.60      # volatility of the logarithm of BTC's price (its smooth move), per year
     q_max: float = 1.0       # bound on the firm's own BTC, so a risk-seeking region stays finite
     c_H: float = 0.0         # cost of hedging with short perps, c_H/2 * H^2; zero is fair
     perp_premium: float = 0.03  # perp funding above r, per year: longs pay r + premium, shorts receive it
@@ -94,8 +94,8 @@ class Params:
     btc_bias: float = 0.0           # the firm's expected BTC return above the market's (r_E), per year
     btc_holding_cost: float = 0.015 # securing the firm's own BTC (custody, keys, insurance), share per year
     btc_crash_rate: float = 0.5     # sudden BTC crashes per year (a market event; GRC does not change it)
-    btc_crash_mean: float = 0.25    # mean share of BTC's price a crash takes
-    btc_crash_tail: float = 2.5     # Pareto tail index of the crash size
+    btc_crash_mean: float = 0.25    # mean share of BTC's price a crash takes (always below all of it)
+    btc_crash_tail: float = 2.5     # Pareto tail index of the crash's size in the logarithm of the price
     lend_capacity: float = 1.0      # the vault's full size; fixes the scale
     loan_demand: float = 1.5        # loans wanted at a zero rate and the reference LTV
     rate_max: float = 0.20          # borrower rate at which demand reaches zero, per year
@@ -125,6 +125,10 @@ class Params:
             raise ValueError("shareholders cannot require less than cash earns: r_E >= r")
         if self.btc_crash_rate > 0 and not self.btc_crash_tail > 2.0:
             raise ValueError("btc_crash_tail must exceed 2 for the crash variance to exist")
+        if self.btc_crash_rate > 0 and not 0.0 < self.btc_crash_mean < 1.0:
+            raise ValueError("btc_crash_mean must be between 0 and 1: a crash takes part of the price")
+        if not 1.0 + self.r_E + self.btc_bias > 0.0:
+            raise ValueError("the expected BTC price must be positive: 1 + r_E + btc_bias > 0")
         if not self.sale_discount < 1.0 - self.liq_threshold:
             raise ValueError("sale_discount must be below 1 - liq_threshold, or selling at the threshold leaves bad debt")
         if self.jump_rate > 0 and not self.jump_tail > 2.0:
@@ -146,9 +150,10 @@ class Params:
         - flows that accrue with time divide by n: BTC's excess return, the
           carrying cost tau, the perp funding premium;
         - volatilities divide by sqrt(n), the square-root-of-time rule.
-          Independent periods' variances add up to the year's. Under fat
-          tails this is a convention, not an identity: a fat-tailed year is
-          not four fat-tailed quarters summed;
+          Independent periods' variances add up to the year's. For BTC's
+          smooth move, normal in the logarithm of the price, this is exact.
+          Under fat tails it is a convention, not an identity: a fat-tailed
+          year is not four fat-tailed quarters summed;
         - the jump rate divides by n (Poisson events per unit of time);
         - GRC depreciation keeps the same annual loss: 1 - (1 - delta)^(1/n).
 

@@ -7,7 +7,7 @@ import pytest
 import torch
 
 from quant.numerics import REFERENCE
-from quant.quadrature import student_t_rule
+from quant.quadrature import gauss_hermite, normal_grid, student_t_rule
 
 P = REFERENCE
 CORR = np.array([[1.0, 0.5, 0.0], [0.5, 1.0, 0.0], [0.0, 0.0, 1.0]])
@@ -55,3 +55,15 @@ def test_shared_scale_gives_tail_dependence():
 
     assert co_moment(math.inf) == pytest.approx(1.0, abs=1e-12)
     assert co_moment(5.0) > 1.5
+
+
+def test_the_even_grid_matches_gauss_hermite_on_a_smooth_function():
+    """Total weight, variance, and the expected price exp(s z) at a year's
+    BTC volatility, where its exact value is exp(s^2 / 2)."""
+    x, w = normal_grid(201)
+    assert w.sum() == pytest.approx(1.0, abs=1e-14)
+    assert (w * x).sum() == pytest.approx(0.0, abs=1e-14)
+    assert (w * x * x).sum() == pytest.approx(1.0, rel=1e-12)
+    assert (w * np.exp(0.6 * x)).sum() == pytest.approx(math.exp(0.18), rel=1e-12)
+    z, wz = gauss_hermite(21)
+    assert (w * np.exp(0.6 * x)).sum() == pytest.approx((wz * np.exp(0.6 * z)).sum(), rel=1e-12)

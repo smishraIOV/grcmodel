@@ -61,8 +61,8 @@ def by_hand(p, A_L, A_B, c, shock, J_L=0.0, J_B=0.0, S=0.0):
     a = [float(x) for x in c.alloc[0]]
     # BTC's price
     prob = 1 - math.exp(-p.btc_crash_rate)
-    mu = (1 + p.r_E + p.btc_bias) / (1 - prob * p.btc_crash_mean) - 1
-    smooth = max(1 + mu + p.s_BTC * eps, 0.0)
+    m = math.log((1 + p.r_E + p.btc_bias) / (1 - prob * p.btc_crash_mean)) - p.s_BTC**2 / 2
+    smooth = math.exp(m + p.s_BTC * eps)
     X = smooth * (1 - crash)
     # the loan book
     supply = A_L + a[3] * A_B
@@ -247,8 +247,8 @@ def test_both_sources_earn_the_same_on_every_dollar(shock):
 
 def _price(p, shock):
     prob = 1 - math.exp(-p.btc_crash_rate)
-    mu = (1 + p.r_E + p.btc_bias) / (1 - prob * p.btc_crash_mean) - 1
-    return max(1 + mu + p.s_BTC * shock[3], 0.0) * (1 - shock[4])
+    m = math.log((1 + p.r_E + p.btc_bias) / (1 - prob * p.btc_crash_mean)) - p.s_BTC**2 / 2
+    return math.exp(m + p.s_BTC * shock[3]) * (1 - shock[4])
 
 
 @pytest.mark.parametrize("eps", [-1.0, 0.0, 0.7, 2.0])

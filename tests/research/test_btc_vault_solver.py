@@ -91,11 +91,6 @@ def test_with_no_bias_the_firm_holds_no_btc_of_its_own(base):
     assert float(base.controls().q.max()) < 0.01
 
 
-@pytest.mark.xfail(
-    reason="open: the biased firm's policy, valued at market, beats the unbiased solve by up to "
-           "5e-3, so the unbiased solve stops short of its best (docs/plan-integrated.md section 7)",
-    strict=False,
-)
 def test_the_bias_cannot_beat_the_unbiased_firm_at_market_prices(base, biased):
     V_market = market_value(biased)
     assert bool((V_market <= base.V + 1e-6).all())

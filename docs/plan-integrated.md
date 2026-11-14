@@ -200,6 +200,9 @@ two to three days go into a learner built to solve it finely.
 Exploratory, annual, coarse, and from solves that had not fully settled
 (section 7): shapes only, not to be quoted in docs.
 
+- **All of these ran under the old BTC price model,** in which BTC ended a
+  year almost worthless about 3% of the time (design §3.4). Re-run before
+  relying on any of them.
 - The integrated firm **buys GRC**, which neither vault alone did.
 - It uses the **sleeve when the vaults are small** and not at full size.
 - It holds **exactly its capital floor** at every state looked at, and often
@@ -230,15 +233,22 @@ Found on 2026-11-13 when the perp funding premium made the hedge nearly free.
   squashing functions approach a limit ever more slowly. Not confirmed which
   decision. The polish is capped at 3 rounds; values are good to about 2e-3
   and slightly low.
-- **The BTC vault's unbiased solve stops short of its best.** A firm with a
-  BTC bias of 4% finds a policy that, valued at the market's expectation,
-  beats the unbiased firm's solved value by up to 5e-3 at some state, though
-  both solves report tiny residuals and the unbiased answer does not move
-  with the step budget. A policy the unbiased firm could have chosen is
-  better than the one found: a local best, not the best. Not located;
-  possibly a small unhedged BTC position near walk-away (design §3.4), which
-  a start from almost no BTC cannot find. The test is marked as a known
-  failure (`tests/research/test_btc_vault_solver.py`).
+- **After BTC's price moved to its logarithm (2026-11-14, design §3.4):**
+  - the BTC vault's unbiased solve no longer loses to the biased firm's
+    policy valued at market (it did, by up to 5e-3; the test passes again).
+    Not investigated why; under the old price model BTC reached zero about
+    3% of the time a year, which rewards a firm that can walk away;
+  - **the Prop. 2 check fails, and its premise is the problem.** It removes
+    the cost of holding BTC and makes the hedge fair. Capital held as BTC is
+    then free, so the firm keeps all its equity, its value is linear in
+    equity over that buffer, and it is indifferent to hedging: it ends up
+    holding up to a third of the vault in unhedged BTC. It passed before only
+    because the old price model made BTC slightly worse than fair. The check
+    needs restating with capital that costs something (the paper's own
+    condition for the firm to care about risk). Marked as a known failure;
+  - the lending vault alone has operating costs at 60.4% of revenue, just
+    outside the agreed 50–60%. Marked as a known failure, to be settled when
+    costs are recalibrated.
 - **If taken up:** first find the drifting decision; if it is not one
   decision, how decisions at limits are represented needs rethinking — a new
   numerical method, to be discussed first. The learner would inherit the
