@@ -1,8 +1,9 @@
-"""Print what one period holds for a firm under a policy (docs/plan-tool.md
-step 3).
+"""Print what one period holds for a firm under a policy, and what a set of
+stress scenarios would leave (docs/plan-tool.md steps 3 and 4).
 
     uv run python -m scripts.whatif
     uv run python -m scripts.whatif --periods 1 --rate 0.08 --ltv 0.6 --sleeve 0.2
+    uv run python -m scripts.whatif --ltv 0.7 --stress
 
 For now the firm is the made-up example of `quant.profile.example_facts`,
 with illustrative assumptions, and the policy is `quant.policy.starting_policy`
@@ -17,6 +18,8 @@ from quant.numerics import get_profile
 from quant.policy import problems, starting_policy
 from quant.profile import example_facts, illustrative, to_model
 from quant.readout import read_out, report
+from quant.stress import report as stress_report
+from quant.stress import run_all
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -30,6 +33,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--ltv", type=float, help="loan-to-value, e.g. 0.6")
     parser.add_argument("--sleeve", type=float, help="share of the BTC vault lent as stablecoins; "
                                                      "the rest is split evenly over its three strategies")
+    parser.add_argument("--stress", action="store_true", help="also work a set of stress scenarios through")
     args = parser.parse_args(argv)
     profile = get_profile(args.profile)
     print_header(profile)
@@ -52,6 +56,8 @@ def main(argv: list[str] | None = None) -> None:
         return
     print("An example firm with illustrative assumptions: read shapes, not levels.\n")
     print(report(read_out(model, policy, profile=profile)))
+    if args.stress:
+        print("\n" + stress_report(run_all(model, policy, profile=profile)))
 
 
 if __name__ == "__main__":

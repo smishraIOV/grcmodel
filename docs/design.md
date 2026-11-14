@@ -310,6 +310,16 @@ period the firm must raise costly equity or scale back.
 Paying and raising in the same period is never worth it, so only one of $d, e$
 is non-zero in practice. The solver is not told this.
 
+**Stress scenarios** (`quant/stress.py`, **built**). One thing that could
+happen in the next period, worked through the accounting under the user's
+policy: where BTC's price goes by a smooth move, whether a crash then takes a
+further share, and whether there is an incident in the lending system or in
+the BTC vault. It shows what the firm, the vaults and their investors are left
+with, the firm's shortfall below the capital it needs, and what raising that
+would cost. Nothing is averaged and no chance is attached. The same closing
+price reached smoothly or by a crash gives different results, as §2.2 says it
+should: only the crash leaves bad debt.
+
 **A policy as an input** (`quant/policy.py`, **built**). In the what-if tool
 the decisions are not searched for: the user gives them, in dollars and
 yearly rates — equity kept after any payout or raise, GRC spend, the firm's

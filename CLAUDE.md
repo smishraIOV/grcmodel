@@ -75,11 +75,13 @@ The core:
   model's constraints, and turned into the one-period decision
 - `quant/readout.py` — what one period holds for a firm under a policy, in
   dollars, with no solver
+- `quant/stress.py` — named stress scenarios: one outcome worked through the
+  accounting, with what it leaves the firm, the vaults and their investors
 - `quant/numerics.py` — profiles: device, dtype, RNG
 - `quant/cli.py` — what every entry point shares: `--profile` and the run header
 
-- `scripts/whatif.py` — print that read-out for the example firm
-  (`uv run python -m scripts.whatif --rate 0.08 --sleeve 0.2`)
+- `scripts/whatif.py` — print that read-out, and the stress scenarios, for the
+  example firm (`uv run python -m scripts.whatif --rate 0.08 --sleeve 0.2 --stress`)
 
 Research (`quant/research/`, tests in `tests/research/`, entry points in
 `scripts/research/`):

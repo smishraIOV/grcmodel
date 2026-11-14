@@ -73,6 +73,8 @@ Built so far:
 - **the policy as an input** (`quant/policy.py`) and **the one-period
   read-out** (`quant/readout.py`): what the next period holds for that firm
   under the user's own decisions, with no search for the best ones;
+- **stress scenarios** (`quant/stress.py`): what a BTC fall, a crash or an
+  incident would leave the firm, its vaults and their investors;
 - the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
   a hedge with perps, a runway of operating costs; BTC at the market's
   expectation plus the firm's bias, with occasional crashes;
@@ -91,7 +93,7 @@ to build) continues as research (`docs/plan-integrated.md`).
 
 ```bash
 uv run pytest               # seconds; add `-m slow` for the solver tests (about five minutes)
-uv run python -m scripts.whatif --rate 0.08 --sleeve 0.2    # an example firm, one quarter ahead
+uv run python -m scripts.whatif --ltv 0.7 --stress          # an example firm: one quarter ahead, and under stress
 uv run python -m scripts.research.integrated --periods 1
 ```
 
