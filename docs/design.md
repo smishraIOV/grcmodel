@@ -81,7 +81,9 @@ and withdrawals take fee income with them.
 
 **Metric:** GRC's value to the firm — the firm with a program against the same
 firm without one — and how that value moves with its capital, its risks and the
-size of its losses.
+size of its losses. In the what-if tool it is read as the change between two
+policies that differ in GRC spend, over the range of how well GRC is assumed
+to work (§3.2).
 
 ---
 
@@ -354,6 +356,19 @@ The draws come from the distributions the read-out averages over, from a
 seeded generator, so a run can be repeated; figures carry sampling error. One
 simulated period agrees with the read-out within that error
 (`tests/test_paths.py`).
+
+**Assumptions shown as assumptions** (`quant/sensitivity.py`, **built**).
+Much of what a profile assumes cannot be observed: how well GRC works, how
+often incidents happen and how bad they are, how often BTC crashes, what a
+liquidation loses, what investors do after an incident. Each is a dial with a
+range. Every dial is turned to the low and the high end of its range, one at
+a time, and every output is recorded at both: each figure can then be read
+with how much it leans on which assumption, and which it does not depend on
+at all. The ranges are wide on purpose and are not estimates. The same can be
+done for the change between two policies, which is how the tool answers the
+project's question (§1): what more GRC spend is worth is not a number but a
+range, set above all by how well GRC is assumed to work — and with GRC
+assumed to do nothing, the extra spend is only a cost.
 
 **Two policies side by side** (`quant/compare.py`, **built**). The tool does
 not say which policy is best. It shows what changing from one policy to

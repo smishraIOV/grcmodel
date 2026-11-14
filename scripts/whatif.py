@@ -1,12 +1,15 @@
 """Print what one period holds for a firm under a policy, what a set of
 stress scenarios would leave, and where several years may take it; or two
-policies side by side (docs/plan-tool.md steps 3 to 6).
+policies side by side; or how much any of it leans on what cannot be observed
+(docs/plan-tool.md steps 3 to 7).
 
     uv run python -m scripts.whatif
     uv run python -m scripts.whatif --periods 1 --rate 0.08 --ltv 0.6 --sleeve 0.2
     uv run python -m scripts.whatif --ltv 0.7 --stress
     uv run python -m scripts.whatif --years 5 --buffer 8e6
     uv run python -m scripts.whatif --ltv 0.5 --b-ltv 0.7 --b-sleeve 0.2 --years 5
+    uv run python -m scripts.whatif --sensitivity
+    uv run python -m scripts.whatif --b-grc-spend 1.5e6 --years 5 --sensitivity
 
 For now the firm is the made-up example of `quant.profile.example_facts`,
 with illustrative assumptions, and the policy is `quant.policy.starting_policy`
@@ -25,6 +28,8 @@ from quant.paths import rule_from, simulate
 from quant.policy import problems, starting_policy
 from quant.profile import example_facts, illustrative, to_model
 from quant.readout import read_out, report
+from quant.sensitivity import report as sensitivity_report
+from quant.sensitivity import sensitivity
 from quant.stress import report as stress_report
 from quant.stress import run_all
 
@@ -48,6 +53,9 @@ def main(argv: list[str] | None = None) -> None:
                                                      "(default: what the policy keeps today)")
     parser.add_argument("--largest-raise", type=float, help="the most shareholders will put in at once, dollars "
                                                             "(default: the capital needed today)")
+    parser.add_argument("--sensitivity", action="store_true",
+                        help="show how much each figure leans on each assumption that cannot be observed "
+                             "(with a second policy: how much the change between the two does)")
     second = parser.add_argument_group(
         "a second policy to compare with", "the first policy with these changed; giving any prints the two side by side")
     second.add_argument("--b-equity-kept", type=float)
@@ -61,7 +69,8 @@ def main(argv: list[str] | None = None) -> None:
     profile = get_profile(args.profile)
     print_header(profile)
 
-    model = to_model(illustrative(replace(example_facts(), decisions_per_year=args.periods)))
+    firm = illustrative(replace(example_facts(), decisions_per_year=args.periods))
+    model = to_model(firm)
     policy = starting_policy(model)
     changes = {
         "equity_kept": args.equity_kept, "grc_spend": args.grc_spend, "own_btc": args.own_btc,
@@ -93,12 +102,24 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"  - {line}")
             return
         print("An example firm with illustrative assumptions: read shapes, not levels.\n")
+        if args.sensitivity:
+            print(sensitivity_report(sensitivity(
+                firm, policy, versus=second_policy, years=args.years, paths=args.paths, seed=args.seed,
+                largest_raise=args.largest_raise, numerics=profile,
+            )))
+            return
         print(compare_report(compare(
             model, policy, second_policy, names=("first", "second"), years=args.years, paths=args.paths,
             seed=args.seed, largest_raise=args.largest_raise, profile=profile,
         )))
         return
     print("An example firm with illustrative assumptions: read shapes, not levels.\n")
+    if args.sensitivity:
+        print(sensitivity_report(sensitivity(
+            firm, policy, years=args.years, paths=args.paths, seed=args.seed,
+            largest_raise=args.largest_raise, numerics=profile,
+        )))
+        return
     print(report(read_out(model, policy, profile=profile)))
     if args.stress:
         print("\n" + stress_report(run_all(model, policy, profile=profile)))

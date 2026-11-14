@@ -80,13 +80,16 @@ The core:
 - `quant/paths.py` — the firm over several years on random paths, under a rule
   the user sets
 - `quant/compare.py` — two policies for the same firm, side by side
+- `quant/sensitivity.py` — how much each figure leans on each assumption that
+  cannot be observed, one dial at a time
 - `quant/numerics.py` — profiles: device, dtype, RNG
 - `quant/cli.py` — what every entry point shares: `--profile` and the run header
 
 - `scripts/whatif.py` — print that read-out, the stress scenarios and the
   multi-year paths for the example firm
   (`uv run python -m scripts.whatif --ltv 0.7 --stress --years 5`), or two
-  policies side by side (`--ltv 0.5 --b-ltv 0.7 --years 5`)
+  policies side by side (`--ltv 0.5 --b-ltv 0.7 --years 5`), or what any of
+  it leans on (`--sensitivity`)
 
 Research (`quant/research/`, tests in `tests/research/`, entry points in
 `scripts/research/`):
