@@ -67,6 +67,9 @@ Built so far:
   the BTC vault; solved on a coarse 4-D grid (`quant/research/integrated_solver.py`)
   and read out as a CFO would want it (`quant/research/integrated_results.py`,
   `scripts/research/integrated.py`);
+- **a firm profile in real units** (`quant/profile.py`): a firm entered in
+  dollars and yearly rates, mapped onto the model and back — the first step of
+  the what-if tool;
 - the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
   a hedge with perps, a runway of operating costs; BTC at the market's
   expectation plus the firm's bias, with occasional crashes;

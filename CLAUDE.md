@@ -69,6 +69,8 @@ The core:
 - `quant/btc_vault.py` — the BTC yield vault, one period
 - `quant/integrated.py` — both vaults joined through one loan book, one period
 - `quant/quadrature.py` — deterministic rules for the Student-t shocks and jumps
+- `quant/profile.py` — a firm entered in dollars and rates per year, mapped onto
+  the parameters, the firm's state and the scale, and back
 - `quant/numerics.py` — profiles: device, dtype, RNG
 - `quant/cli.py` — what every entry point shares: `--profile` and the run header
 

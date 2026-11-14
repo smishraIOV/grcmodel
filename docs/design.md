@@ -423,6 +423,28 @@ Money is in **US dollars**. The scale is fixed by the business: the lending
 vault's capacity is 1 (§2.7), and every other money quantity — the BTC vault's
 dollar value, the firm's equity — is measured against it.
 
+**The firm profile** (`quant/profile.py`, **built**). A user enters a firm in
+dollars and rates per year, in three parts: the firm's own facts, its market
+assumptions, and its risk assumptions. One mapping turns it into the model's
+parameters, the firm's state and the scale — the dollar vault's capacity in
+dollars is one model unit — and another maps back, so every output can be
+shown in dollars. The model's answers do not depend on the currency unit.
+Tail shapes, bounds and numerical guards are not in the profile and keep
+their defaults. Three inputs are asked as statements a user can answer:
+
+- **the cost of raising equity**, as the all-in cost of raising two amounts.
+  The issuance cost $C(e)$ (§4.2) costs $\lambda + \tfrac{\kappa}{2}e$ per
+  dollar raised, a straight line through the two answers;
+- **what GRC does**, per mechanism: "spending $X$ a year, kept up, removes a
+  share $Y$ of this risk; no spend removes more than $Z$". Then
+  $\rho = 1 - Z$ and $a = -\ln(1 - Y/Z)/S$, at the stock $S$ that spend
+  settles at;
+- **GRC today**, as the yearly GRC budget, assumed steady: the stock is where
+  $S = (1-\delta)S + g$ settles.
+
+The market and risk assumptions can be filled from the model's defaults,
+restated this way and sized to the firm: illustrative, not calibrated.
+
 ### 4.2 Functional forms
 
 These forms are smooth on purpose: the learner (§5) differentiates through
@@ -1087,6 +1109,13 @@ are today's.
   planned: the grid machinery already handles any number of dimensions, a
   coarse solve takes minutes, and it shows what the integrated firm does
   before the learner is built to solve it finely.
+- **A firm is entered as a profile in real units** (2026-11-14, step 1 of
+  `docs/plan-tool.md`; §4.1). Agreed with the user before building: the list
+  of inputs; GRC today entered as a steady yearly budget; the cost of raising
+  equity as the all-in cost at two sizes; GRC's effect as one plain statement
+  per mechanism; the firm's facts required, the assumptions pre-filled from
+  the model's defaults and marked illustrative. The three conversions are own
+  constructions, each an exact restatement of a form already in §4.2.
 - **The BTC vault on its own loses money** at operating costs of 2% of
   capacity (fees about 1.5%), and puts all of itself in the highest-yield
   strategy: investors in the model are indifferent to risk. Recorded, not
