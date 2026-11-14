@@ -86,7 +86,8 @@ def by_hand(p, A_L, A_B, c, shock, J_L=0.0, J_B=0.0, S=0.0):
     A_L_next = max(
         A_L * (1 + gain) + cover_l + p.inflow_speed * (p.lend_capacity - A_L)
         + p.flow_yield * (gain + cover_l / ((1 - co_l) * A_L) - p.outside_rate) * A_L
-        - (J_L > 0) * p.outflow_incident * A_L, 0.0)
+        - (J_L > 0) * p.outflow_incident * A_L
+        - (J_B > 0) * p.outflow_contagion * A_B / (A_L + A_B) * A_L, 0.0)
     # the BTC vault, in BTC terms
     y4 = (gain - p.r - p.perp_premium) / X
     xis = (xi_1, xi_2, 0.0)
@@ -103,7 +104,8 @@ def by_hand(p, A_L, A_B, c, shock, J_L=0.0, J_B=0.0, S=0.0):
     A_B_next = max(
         A_B * (1 + R_b + cover_b) * X + p.inflow_speed * (p.btc_capacity - A_B)
         + p.btc_flow_yield * (R_b + cover_b / (1 - co_b) - p.btc_outside_yield) * A_B
-        - (J_B > 0) * p.outflow_incident * A_B, 0.0)
+        - (J_B > 0) * p.outflow_incident * A_B
+        - (J_L > 0) * p.outflow_contagion * A_L / (A_L + A_B) * A_B, 0.0)
     # the firm
     stake = co_l * A_L + co_b * A_B
     wealth = (
@@ -303,3 +305,20 @@ def test_capital_floor_covers_both_vaults_and_the_hedge_may_cover_the_btc_stake(
 def test_the_integrated_defaults_make_the_btc_vault_twice_the_dollar_vault():
     assert INTEGRATED_DEFAULTS.btc_capacity == 2.0 * INTEGRATED_DEFAULTS.lend_capacity
     assert replace(INTEGRATED_DEFAULTS, btc_capacity=DEFAULTS.btc_capacity) == DEFAULTS
+
+
+def test_an_incident_in_one_vault_costs_the_other_some_of_its_investors():
+    """Both vaults carry the firm's name. The outflow from the vault not hit
+    is the contagion share, scaled by the hit vault's share of the two."""
+    p = replace(BASE, jump_rate=0.1)
+    jumps = pareto_jump_rule(p.jump_mean, p.jump_tail, P, n=1)
+    quiet = replace(p, outflow_contagion=0.0)
+    c = controls(alloc=(0.5, 0.3, 0.2, 0.0))          # no sleeve: the lending incident does not touch the BTC vault
+    A_L, A_B = 0.8, 1.7
+    out = integrated_outcomes(p, t([A_L]), t([A_B]), c, t([0.0]), one(SHOCKS[0]), jumps)
+    ref = integrated_outcomes(quiet, t([A_L]), t([A_B]), c, t([0.0]), one(SHOCKS[0]), jumps)
+    # outcomes: none, lending-system incident, BTC-vault incident
+    assert float(ref.aum_b[0, 1] - out.aum_b[0, 1]) == pytest.approx(p.outflow_contagion * A_L / (A_L + A_B) * A_B, abs=1e-14)
+    assert float(ref.aum_l[0, 2] - out.aum_l[0, 2]) == pytest.approx(p.outflow_contagion * A_B / (A_L + A_B) * A_L, abs=1e-14)
+    assert torch.equal(out.aum_l[0, :2], ref.aum_l[0, :2]) and torch.equal(out.aum_b[0, [0, 2]], ref.aum_b[0, [0, 2]])
+    assert torch.equal(out.wealth, ref.wealth)        # the firm feels it next period, through a smaller vault

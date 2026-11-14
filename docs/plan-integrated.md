@@ -126,6 +126,7 @@ Made by Claude while building step 1 and **confirmed by the user**
    own fees are then charged on top, so the firm is paid twice on the sleeve.
 6. **Withdrawals after an incident come from the vault hit only.** The design
    allows both vaults to lose investors (§2.5); that needs a parameter.
+   (Added 2026-11-14: `outflow_contagion`, design §2.5.)
 7. **The capital requirement is on the two vaults' combined size;** the hedge
    may cover the firm's own BTC and its stake in the BTC vault.
 8. **A floor on the BTC price (1% of its start)** where the sleeve's dollar

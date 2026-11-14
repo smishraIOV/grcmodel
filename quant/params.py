@@ -70,6 +70,8 @@ class Params:
     compensation: float = 0.5       # share of incident losses and bad debt the firm makes good
     inflow_speed: float = 0.5       # share of a vault's gap to capacity closed per year
     outflow_incident: float = 0.2   # share of a vault that leaves after an incident
+    outflow_contagion: float = 0.1  # share of the *other* vault that would leave if the vault hit were the
+                                    # whole business; scaled by the hit vault's share of the two
 
     # -- the BTC yield vault (design.md section 2.3) ------------------------
     # Strategies run by hired managers; the firm sets the allocation. Order:

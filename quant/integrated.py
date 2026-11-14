@@ -21,7 +21,9 @@ none, one in the lending system, or one in the BTC vault's other strategies.
 Each has the chance `jump_probability` of the single-vault models, so with
 one vault empty the model is exactly the other vault alone. An incident in
 the lending system takes a share of every stablecoin there, the sleeve's
-included.
+included. Investors leave the vault hit, and some leave the other one too:
+both carry the firm's name. That second outflow is scaled by the hit vault's
+share of the two, so an incident in an empty vault is no event.
 
 **The firm** earns its share of the interest on the whole loan book and the
 BTC vault's fees, pays one set of operating costs and GRC, repays a share of
@@ -187,6 +189,7 @@ def integrated_outcomes(
         cover_L = psi (1 - co_L) (u B + J_L) A_L
         A_L'    = A_L (1 + R_L) + cover_L + theta (cap_L - A_L)
                   + eta_L (R_L + cover_L / ((1 - co_L) A_L) - y_out) A_L - [J_L > 0] omega A_L
+                  - [J_B > 0] omega_c A_B / (A_L + A_B) A_L       investors leave the other vault too
 
     The BTC vault, in BTC per unit of its BTC, a the allocation:
 
@@ -198,6 +201,7 @@ def integrated_outcomes(
         cover_B = psi (1 - co_B) (J_B sum_{i<=3} a_i j_i + a_4 (u B + J_L) / X)
         A_B'    = A_B (1 + R_B + cover_B) X + theta (cap_B - A_B)
                   + eta_B (R_B + cover_B / (1 - co_B) - y_out_B) A_B - [J_B > 0] omega A_B
+                  - [J_L > 0] omega_c A_L / (A_L + A_B) A_B
 
     The firm, with one set of operating costs inside `treasury_close`:
 
@@ -260,6 +264,9 @@ def integrated_outcomes(
     L3, B3 = A_L[..., None, None], A_B[..., None, None]
     X3, in_btc3 = price[:, None], in_btc[:, None]
     co_l, co_b = p.lend_co_invest, p.btc_co_invest
+    # Each vault's share of the two: how much an incident in it weighs on the firm's name.
+    both = torch.clamp(L3 + B3, min=_TINY)
+    share_l, share_b = L3 / both, B3 / both
 
     # -- the dollar vault -----------------------------------------------------
     R_l = jumped(gain) - sev_l
@@ -270,6 +277,7 @@ def integrated_outcomes(
         + p.inflow_speed * (p.lend_capacity - L3)
         + p.flow_yield * (received_l - p.outside_rate) * L3
         - hit_l * p.outflow_incident * L3
+        - hit_b * p.outflow_contagion * share_b * L3
     )
 
     # -- the BTC vault --------------------------------------------------------
@@ -293,6 +301,7 @@ def integrated_outcomes(
         + p.inflow_speed * (p.btc_capacity - B3)
         + p.btc_flow_yield * (received_b - p.btc_outside_yield) * B3
         - hit_b * p.outflow_incident * B3
+        - hit_l * p.outflow_contagion * share_l * B3
     )
 
     # -- the firm -------------------------------------------------------------

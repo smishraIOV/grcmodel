@@ -247,7 +247,11 @@ after fees (and, for the BTC vault, by the BTC price), plus net flows:
   shrinks the vault;
 - **outflows after incidents**: a hack, a depeg, a large bad-debt event or a
   compliance failure triggers withdrawals beyond the direct loss — from the
-  vault hit, and possibly from both, since both carry the firm's name.
+  vault hit (a fifth of it, for now), and from the other one too, since both
+  carry the firm's name. The second outflow is a parameter (a tenth of the
+  other vault if the vault hit were the whole business), scaled by the hit
+  vault's share of the two, so an incident in a small vault weighs little
+  and one in an empty vault is no event.
 
 ### 2.6 Capital requirement and walk-away
 
@@ -577,7 +581,8 @@ rare and large.
   strategies. Each has the single-vault chance $p_J$, so with one vault empty
   the model is exactly the other vault alone. Two incidents in one period,
   which independent incidents would allow with chance $p_J^2$, are left out.
-  Withdrawals after an incident come from the vault hit only, for now.
+  Withdrawals after an incident come from the vault hit, and from the other
+  one too (§2.5).
 - **Integration.** The severity uses the same tail-placed quadrature as the
   $t$'s mixing variable (§5). The jump probability enters the quadrature
   **weights**, so it is exactly differentiable in GRC spend.
@@ -1185,6 +1190,11 @@ are today's.
     period's closing price (1). GRC mechanism L narrows it. It does not
     convert with the decision frequency, though the same fall in a quarter is
     faster than in a year.
+  - **withdrawals from the other vault after an incident** (§2.5), which
+    the design allowed for and the code did not have. One parameter, 10% for
+    now; the scaling by the hit vault's share of the two is an own
+    construction that keeps the model exactly one vault alone when the other
+    is empty.
 - **BTC's price moves in its logarithm** (2026-11-14, raised and agreed
   before the change; §3.4 gives the reason). The price could reach zero, and
   did so far too often; found when the BTC vault's yield with a lending

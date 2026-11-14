@@ -140,6 +140,7 @@ class RiskAssumptions:
     sale_discount: float             # how far below market liquidated collateral sells, with no GRC
     liquidation_slippage: float      # share of a smooth fall past the threshold lost before selling, with no GRC
     outflow_after_incident: float    # share of a vault that leaves
+    outflow_from_other_vault: float  # share of the other vault that would leave if the vault hit were the whole business
     grc_wear_off: float              # share of GRC's effect lost a year
     grc_on_losses: GrcEffect         # on average operating losses (A)
     grc_on_spread: GrcEffect         # on how much they vary (B)
@@ -278,7 +279,8 @@ def _changes(profile: FirmProfile) -> dict:
         lend_loss=k.lending_loss, lend_vol=k.lending_loss_volatility,
         strategy_loss=tuple(k.strategy_loss), strategy_incident=tuple(k.strategy_incident_exposure),
         sale_discount=k.sale_discount, liq_slippage=k.liquidation_slippage,
-        outflow_incident=k.outflow_after_incident, delta=k.grc_wear_off,
+        outflow_incident=k.outflow_after_incident, outflow_contagion=k.outflow_from_other_vault,
+        delta=k.grc_wear_off,
         a_A=a_A, rho_A=rho_A, a_B=a_B, rho_B=rho_B, a_J=a_J, rho_J=rho_J, a_L=a_L, rho_L=rho_L,
     )
 
@@ -354,7 +356,8 @@ def _risk_from(p: Params, scale: float, spends: tuple[float, float, float, float
         lending_loss=p.lend_loss, lending_loss_volatility=p.lend_vol,
         strategy_loss=tuple(p.strategy_loss), strategy_incident_exposure=tuple(p.strategy_incident),
         sale_discount=p.sale_discount, liquidation_slippage=p.liq_slippage,
-        outflow_after_incident=p.outflow_incident, grc_wear_off=p.delta,
+        outflow_after_incident=p.outflow_incident, outflow_from_other_vault=p.outflow_contagion,
+        grc_wear_off=p.delta,
         grc_on_losses=effect(spends[0], p.a_A, p.rho_A),
         grc_on_spread=effect(spends[1], p.a_B, p.rho_B),
         grc_on_incidents=effect(spends[2], p.a_J, p.rho_J),
