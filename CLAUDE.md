@@ -79,12 +79,14 @@ The core:
   accounting, with what it leaves the firm, the vaults and their investors
 - `quant/paths.py` — the firm over several years on random paths, under a rule
   the user sets
+- `quant/compare.py` — two policies for the same firm, side by side
 - `quant/numerics.py` — profiles: device, dtype, RNG
 - `quant/cli.py` — what every entry point shares: `--profile` and the run header
 
 - `scripts/whatif.py` — print that read-out, the stress scenarios and the
   multi-year paths for the example firm
-  (`uv run python -m scripts.whatif --ltv 0.7 --stress --years 5`)
+  (`uv run python -m scripts.whatif --ltv 0.7 --stress --years 5`), or two
+  policies side by side (`--ltv 0.5 --b-ltv 0.7 --years 5`)
 
 Research (`quant/research/`, tests in `tests/research/`, entry points in
 `scripts/research/`):

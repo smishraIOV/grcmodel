@@ -355,6 +355,15 @@ seeded generator, so a run can be repeated; figures carry sampling error. One
 simulated period agrees with the read-out within that error
 (`tests/test_paths.py`).
 
+**Two policies side by side** (`quant/compare.py`, **built**). The tool does
+not say which policy is best. It shows what changing from one policy to
+another buys and costs: one period ahead, under each stress, and over several
+years. Over several years both run on the same random paths, so the
+difference is measured path by path and is known far more precisely than
+either level (common random numbers, standard). The single figure it reports,
+what shareholders take, does not count risk; the stress table and the chances
+of raising and failing next to it are there for that.
+
 **Stress scenarios** (`quant/stress.py`, **built**). One thing that could
 happen in the next period, worked through the accounting under the user's
 policy: where BTC's price goes by a smooth move, whether a crash then takes a
@@ -883,6 +892,7 @@ assembled for this project, with no single reference.
 | Even grid under the normal density (trapezoid rule) | standard | `quant/quadrature.py` | scenario set for BTC's smooth move in the read-out, where the integrand has kinks and steps in BTC's price | Gauss–Hermite is better for a smooth integrand with few points; the solvers still use it |
 | Crash sizes in the logarithm, mean share set exactly | own construction, on the tail-placed rule | `quant/quadrature.py` | a crash takes the share $1 - e^{-J}$, $J$ Pareto; the scale is found by bisection so the rule's mean share is exact | — |
 | Monte Carlo simulation of a fixed rule | standard | `quant/paths.py` | the firm over several years: random paths from a seeded generator, the Student-$t$ by its scale mixture, crashes and incident sizes by inverse distribution | quasi-random points would cut the sampling error; the read-out's weighted scenarios remain the reference for one period |
+| Common random numbers | standard | `quant/compare.py` | two policies run on the same random paths, so their difference is measured path by path | — |
 | Cholesky factorization | standard | `quant/quadrature.py` | builds correlated shocks from independent ones | — |
 | Policy iteration with repeated policy evaluation (Howard improvement) | standard | `quant/research/grid.py` | how the infinite-horizon solve converges | plain value iteration is slower but simpler |
 | Adam, vectorized over the grid | standard | `quant/research/grid.py` | chooses every grid point's decisions at once by gradient ascent; two starts per step, and a slow final pass | the step-budget test guards against it stopping short |

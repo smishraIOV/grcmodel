@@ -78,6 +78,8 @@ Built so far:
 - **multi-year paths** (`quant/paths.py`): the firm carried forward on random
   paths under a simple rule — how often it must raise equity, how often it
   fails, what it pays out;
+- **two policies side by side** (`quant/compare.py`): what changing from one
+  to the other buys and costs, on the same scenarios;
 - the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
   a hedge with perps, a runway of operating costs; BTC at the market's
   expectation plus the firm's bias, with occasional crashes;
@@ -97,6 +99,7 @@ to build) continues as research (`docs/plan-integrated.md`).
 ```bash
 uv run pytest               # seconds; add `-m slow` for the solver tests (about five minutes)
 uv run python -m scripts.whatif --ltv 0.7 --stress --years 5   # an example firm: one quarter ahead, under stress, and over five years
+uv run python -m scripts.whatif --ltv 0.5 --b-ltv 0.7 --b-sleeve 0.2 --years 5   # two policies side by side
 uv run python -m scripts.research.integrated --periods 1
 ```
 
