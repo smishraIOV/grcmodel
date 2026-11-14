@@ -83,11 +83,11 @@ size of its losses.
 
 ## 2. The business: two vaults (designed)
 
-**Status: designed; not built.** An earlier version — one dollar vault with
-three strategies, one of them BTC-backed lending — is built (`quant/vault.py`,
-`quant/vault_solver.py`, `quant/vault_results.py`) and is the starting point:
-its fees, flows, compensation, co-investment and 3-D solver carry over. The
-lending vault is built first, on its own (§7).
+**Status:** each vault is built and solved on its own, on a 3-D grid
+(`quant/lending.py`, `quant/btc_vault.py` and their solvers), with the firm's
+books shared (`quant/firm.py`). The two are being joined through one loan
+book (§2.2); that integrated model is the next stage, solved by the
+actor-critic learner (§7).
 
 ### 2.1 Three balance sheets
 
@@ -103,6 +103,17 @@ lending vault is built first, on its own (§7).
 
 Investors in both vaults share their vault's gains and losses. They have no
 fixed claim on the firm, and the firm offers no guarantee.
+
+**One loan book, two sources of funding.** Borrowers take $b$ in stablecoins
+and post $b/\text{LTV}$ in BTC as collateral. The stablecoins lent come from
+two places: the **dollar vault** (the stablecoin lending vault, whose outside
+investors want a dollar yield), and the **BTC vault**, which swaps part of its
+BTC into stablecoins and lends them as one of its yield strategies (§2.3).
+There is one borrower rate and one LTV. Interest, penalties and bad debt are
+shared **pro rata** to what each source puts in; stablecoins either source
+leaves unlent sit idle. The loan book is the smaller of demand and the
+stablecoins the two sources make available, which is what ties the two vaults'
+sizes together.
 
 ### 2.2 The stablecoin lending vault
 
@@ -173,6 +184,15 @@ rebalanced with the rest of it (§3.3).
 **The vault's size is carried in dollars** — its BTC times the price. This is
 the same quantity, and it avoids making the BTC price a fifth state variable.
 The vault's capacity is set in dollars, which is an approximation.
+
+**Stablecoin lending as a strategy, hedged.** The BTC vault may swap part of
+its BTC into stablecoins and lend them into the shared loan book (§2.1).
+Its investors measure returns in BTC, so an unhedged swap would be a bet
+against BTC inside a BTC product. The vault therefore **holds a long BTC
+position through perps** of the same dollar size: the sleeve still moves with
+BTC, and earns the loan interest (less its share of bad debt) minus the perp
+funding cost, near the riskless rate $r$ — close to a basis trade. Its
+stablecoins left unlent earn nothing and still pay the funding.
 
 ### 2.4 How the firm earns and spends
 
@@ -618,8 +638,9 @@ Insurance for the partly tradeable rows is a later option (§2.4).
 |---|---|---|---|
 | **machinery** | quadrature, fat tails, jumps, decision frequency, BTC, the firm's own BTC and perp hedges; the N-dimensional grid solver; the two-period oracle | grid | **built** |
 | **single vault** | one dollar vault, three strategies, fees, flows, compensation, co-investment, a guarantee | 3-D grid | **built**; superseded by §2, and the starting point for it |
-| **lending vault** | the stablecoin lending vault alone (§2.2): borrower rate and LTV, liquidation and bad debt, mechanism L; stablecoins earning nothing; BTC at the market's expectation plus the firm's bias; the bank code removed and the two-period oracle moved off it | 3-D grid | **next**; a build plan comes first |
-| **BTC vault** | the BTC yield vault alongside the lending vault | actor-critic, graded against the grid | designed |
+| **lending vault** | the stablecoin lending vault alone (§2.2): borrower rate and LTV, liquidation and bad debt, mechanism L; stablecoins earning nothing; BTC at the market's expectation plus the firm's bias; the bank code removed and the two-period oracle moved off it | 3-D grid | **built** |
+| **BTC vault** | the BTC yield vault alone (§2.3): strategies, fees in BTC, crash losses, the shared firm books | 3-D grid | **built** |
+| **integrated** | both vaults joined through one loan book funded by the dollar vault and a hedged lending sleeve of the BTC vault (§2.1); state (w, S, A^L, A^B) | actor-critic, graded against each vault's grid | **next**; a build plan comes first |
 | **high-water mark** | the BTC vault's performance fee above a high-water mark | actor-critic | designed |
 | later | insurance; GRC by family (credit, operational, compliance); mechanisms C and D | actor-critic | planned |
 
@@ -642,20 +663,25 @@ Each stage needs approval before it starts.
    dips below it during the period and recovers would, in reality, also have
    triggered liquidation (and its penalty). A standard formula gives that
    chance for a price path with no jumps; add it if it matters.
-4. **Linking the two vaults.** Could borrowers' BTC collateral be deposited in
-   the BTC yield vault to earn yield (rehypothecation)? It would tie the two
-   vaults' risks together; it is excluded unless decided otherwise.
-5. **RAROC.** Check the JFE text for its comparison section, and decide whether
+4. **Rehypothecation.** Could borrowers' BTC collateral be deposited in the
+   BTC yield vault to earn yield? It would tie the two vaults' risks together
+   further; it is excluded unless decided otherwise. (The vaults are already
+   linked through the loan book, §2.1.)
+5. **The firm's rate between two groups of investors.** The firm sets the
+   borrower rate and how much of the BTC vault goes into lending; both move
+   value between its dollar investors and its BTC investors. A governance
+   question — the "G" in GRC — that the integrated model can show.
+6. **RAROC.** Check the JFE text for its comparison section, and decide whether
    it becomes an output: standalone-risk pricing against the covariance-with-
    book pricing of (10).
-6. **Cost of "partly tradeable" hedging.** Linear or convex in the amount
+7. **Cost of "partly tradeable" hedging.** Linear or convex in the amount
    hedged? Quadratic is assumed (§4.2); linear would give all-or-nothing hedges.
-7. **How often to re-price.** The paper's open dynamic question — how often
+8. **How often to re-price.** The paper's open dynamic question — how often
    headquarters should refresh $G$ — reads here as how often the risk function
    re-prices the vaults' allocations and the loan terms.
-8. **Does the effect survive $\kappa = 0$?** Whether the Froot–Stein effect
+9. **Does the effect survive $\kappa = 0$?** Whether the Froot–Stein effect
    needs a convex issuance cost in a model with no end date.
-9. **Calibration.** $r_E$ against a target market-to-book ratio; the vaults'
+10. **Calibration.** $r_E$ against a target market-to-book ratio; the vaults'
    parameters (§2.7); the rest against data, once the model is realistic
    enough for its numbers to be worth reporting.
 
@@ -982,6 +1008,17 @@ are today's.
 - **The learner is actor-critic,** graded against the grid; robustness is
   preferred over computing time. How it draws scenarios is open (§8).
 - **The lending vault is built first,** alone, on a 3-D grid (§7).
+- **The two vaults share one loan book** (decided while planning the BTC
+  vault's next step). Borrowers' stablecoins come from the dollar vault's
+  outside investors and from the BTC vault, which swaps part of its BTC into
+  stablecoins and lends them as a strategy. Interest, penalties and bad debt
+  are shared pro rata. The BTC vault hedges its lending sleeve with long BTC
+  perps, so it still tracks BTC. The integrated model goes straight to the
+  actor-critic learner, without an intermediate 3-D version.
+- **The BTC vault on its own loses money** at operating costs of 2% of
+  capacity (fees about 1.5%), and puts all of itself in the highest-yield
+  strategy: investors in the model are indifferent to risk. Recorded, not
+  acted on for now.
 - **The document was reordered:** the business and the firm's goal come before
   the technical details, and the paper's results moved to Appendix B. "Pecking
   order" was dropped as a term: the issuance cost only makes the firm's own
