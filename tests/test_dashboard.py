@@ -115,3 +115,13 @@ def test_the_page_marks_the_sensitivity_out_of_date_when_an_input_changes():
     schedule = page.split("function schedule() {", 1)[1].split("\n}", 1)[0]
     assert "edits += 1" in schedule and "staleSensitivity(true)" in schedule
     assert "staleSensitivity(edits !== asked)" in page
+
+
+def test_the_page_says_how_its_figures_are_worked_out():
+    """So a user is not left to guess: recalculated on every change, no AI
+    model, which figures are simulated, and that the random draws repeat."""
+    page = PAGE.read_text()
+    how = page.split('<details id="how">', 1)[1].split("</details>", 1)[0]
+    for said in ("recalculated from your inputs each time", "no AI model", "No neural network", "nothing trained or learned",
+                 "as a calculator", "20,000 simulated paths", "same random draws", "only when you ask", "Nothing leaves this machine"):
+        assert said in how, said
