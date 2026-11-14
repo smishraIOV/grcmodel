@@ -357,6 +357,15 @@ seeded generator, so a run can be repeated; figures carry sampling error. One
 simulated period agrees with the read-out within that error
 (`tests/test_paths.py`).
 
+**An interface for other programs** (`quant/api.py`, `scripts/api.py`,
+**built**). Everything above can be asked for as plain data and comes back as
+plain data (JSON): a request names the firm's facts, any assumptions and
+decisions to change, and what is wanted — the read-out, the stresses, the
+paths, a comparison, the sensitivity. The answer carries the inputs as the
+tool understood them, every default filled in, and the results. A request
+that cannot be run is answered with the reasons in plain words, never with an
+error. It is what a dashboard would be built on; it is not one.
+
 **Assumptions shown as assumptions** (`quant/sensitivity.py`, **built**).
 Much of what a profile assumes cannot be observed: how well GRC works, how
 often incidents happen and how bad they are, how often BTC crashes, what a

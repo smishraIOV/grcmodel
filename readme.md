@@ -82,6 +82,8 @@ Built so far:
   to the other buys and costs, on the same scenarios;
 - **assumptions as dials** (`quant/sensitivity.py`): how much each figure
   leans on what cannot be observed, such as how well GRC works;
+- **an interface for other programs** (`quant/api.py`): a request in as JSON,
+  results out as JSON — what a dashboard would be built on;
 - the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
   a hedge with perps, a runway of operating costs; BTC at the market's
   expectation plus the firm's bias, with occasional crashes;
@@ -103,6 +105,7 @@ uv run pytest               # seconds; add `-m slow` for the solver tests (about
 uv run python -m scripts.whatif --ltv 0.7 --stress --years 5   # an example firm: one quarter ahead, under stress, and over five years
 uv run python -m scripts.whatif --ltv 0.5 --b-ltv 0.7 --b-sleeve 0.2 --years 5   # two policies side by side
 uv run python -m scripts.whatif --b-grc-spend 1.5e6 --years 5 --sensitivity     # what more GRC spend is worth, and what that leans on
+uv run python -m scripts.api --example > request.json && uv run python -m scripts.api request.json   # the same, as JSON
 uv run python -m scripts.research.integrated --periods 1
 ```
 

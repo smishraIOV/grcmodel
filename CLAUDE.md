@@ -82,6 +82,8 @@ The core:
 - `quant/compare.py` — two policies for the same firm, side by side
 - `quant/sensitivity.py` — how much each figure leans on each assumption that
   cannot be observed, one dial at a time
+- `quant/api.py` — the tool for other programs: a request as plain data in,
+  results as plain data out (JSON); what a dashboard would call
 - `quant/numerics.py` — profiles: device, dtype, RNG
 - `quant/cli.py` — what every entry point shares: `--profile` and the run header
 
@@ -90,6 +92,8 @@ The core:
   (`uv run python -m scripts.whatif --ltv 0.7 --stress --years 5`), or two
   policies side by side (`--ltv 0.5 --b-ltv 0.7 --years 5`), or what any of
   it leans on (`--sensitivity`)
+- `scripts/api.py` — answer a JSON request
+  (`uv run python -m scripts.api --example > r.json; uv run python -m scripts.api r.json`)
 
 Research (`quant/research/`, tests in `tests/research/`, entry points in
 `scripts/research/`):
