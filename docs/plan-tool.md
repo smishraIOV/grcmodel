@@ -63,7 +63,7 @@ Steps 0–4 use nothing new. Step 5 is the main new work.
 
 ## 3. To discuss before building
 
-- **For the user's review: choices made on 2026-11-14 while away.** Each is
+- **Choices made on 2026-11-14 while the user was away.** Each is
   in the design's decisions log with its reason.
   1. *Slippage*: a smooth fall sells at the threshold less 25% of the fall
      past it; GRC narrows it.
@@ -78,11 +78,19 @@ Steps 0–4 use nothing new. Step 5 is the main new work.
      raise, by default the capital needed today.
   6. *Random draws*, 20,000 paths, seeded; "what shareholders take" counts
      equity at the end at book.
-- **What the paths show that calibration will have to answer.** At the
-  illustrative settings BTC's median price roughly halves over five years
-  while its average rises: 60% volatility with a crash every two years is a
-  harsh assumption. And the example firm's costs exceed its income, so it
-  wears its buffer down and then raises regularly.
+- **The choices above were reviewed and accepted by the user** (2026-11-14).
+- **For calibration (step 8): BTC's expected return.** On the paths BTC's
+  median price roughly halves over five years while its average rises. The
+  arithmetic is right: at 60% volatility the typical path runs about 18
+  points a year below the average, and the average is set at 6%, the return
+  shareholders require of everything. What is not believable is 6% for an
+  asset that volatile. The fix to consider is a market return for BTC of its
+  own, higher than shareholders' — which reopens how the firm's own BTC is
+  valued (design §3.4), so it needs discussing first. The user chose to leave
+  it for calibration.
+- **Also for calibration:** the example firm's costs exceed its income, so it
+  wears its buffer down and then raises regularly; GRC looks very effective
+  at the illustrative settings; expected bad debt looks high for a lender.
 - **Gaps in the accounting that matter more for a tool than for research,**
   for the user to rank, not to be fixed unasked:
   - a BTC price that touches the liquidation threshold and recovers is not
