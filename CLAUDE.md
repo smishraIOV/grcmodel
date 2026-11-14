@@ -71,6 +71,8 @@ The core:
 - `quant/quadrature.py` — deterministic rules for the Student-t shocks and jumps
 - `quant/profile.py` — a firm entered in dollars and rates per year, mapped onto
   the parameters, the firm's state and the scale, and back
+- `quant/policy.py` — the firm's policy as an input: checked against the
+  model's constraints, and turned into the one-period decision
 - `quant/numerics.py` — profiles: device, dtype, RNG
 - `quant/cli.py` — what every entry point shares: `--profile` and the run header
 

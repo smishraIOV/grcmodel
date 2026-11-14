@@ -310,6 +310,16 @@ period the firm must raise costly equity or scale back.
 Paying and raising in the same period is never worth it, so only one of $d, e$
 is non-zero in practice. The solver is not told this.
 
+**A policy as an input** (`quant/policy.py`, **built**). In the what-if tool
+the decisions are not searched for: the user gives them, in dollars and
+yearly rates — equity kept after any payout or raise, GRC spend, the firm's
+own BTC and its hedge, the borrower rate, the loan-to-value and the BTC
+vault's allocation. A policy that breaks one of the model's constraints
+(own funds, the runway, a hedge above the BTC the firm owns, a loan-to-value
+outside its range, an allocation that does not sum to one) is refused, with
+every reason given in plain words. A sound one becomes the one-period
+accounting's decision, and maps back.
+
 ### 3.3 Capital
 
 The firm starts the period with equity $w_t$, pays a dividend or raises new
