@@ -104,7 +104,11 @@ def test_the_shortfall_and_the_cost_of_raising_it():
     r = run(MODEL, POLICY, Stress(name="crash", btc_crash=0.5))
     assert r.shortfall == pytest.approx(r.capital_needed - r.equity) and r.shortfall > 0
     p = MODEL.params
-    assert r.cost_of_raising == pytest.approx(p.lam * r.shortfall + 0.5 * p.kappa * r.shortfall**2 / MODEL.scale, rel=1e-12)
+    plain = p.lam * r.shortfall + 0.5 * p.kappa * r.shortfall**2 / MODEL.scale
+    assert r.cost_of_raising == pytest.approx(3 * plain, rel=1e-12)       # three times as dear after BTC halves
+    both = run(MODEL, POLICY, Stress(name="both", btc_crash=0.5, lending_incident=0.1))
+    plain = p.lam * both.shortfall + 0.5 * p.kappa * both.shortfall**2 / MODEL.scale
+    assert both.cost_of_raising == pytest.approx(5 * plain, rel=1e-12)    # and after an incident as well
     calm = run(MODEL, POLICY, Stress(name="calm"))
     assert calm.shortfall == 0.0 and calm.cost_of_raising == 0.0
     assert calm.equity_change == pytest.approx(calm.equity - 19e6)

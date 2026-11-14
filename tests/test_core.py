@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from quant.core import jump_probability, mitigation, next_grc, shareholder_flow
+from quant.core import issuance_cost, issuance_cost_after, jump_probability, mitigation, next_grc, shareholder_flow
 from quant.numerics import REFERENCE
 from quant.params import DEFAULTS
 from quant.quadrature import pareto_jump_rule
@@ -71,3 +71,17 @@ def test_every_entry_point_imports():
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         assert hasattr(module, "main"), path.name
+
+
+def test_raising_equity_is_dearer_after_a_bad_period():
+    """Three times as dear after BTC halves, three times after an incident,
+    five times after both; no cheaper after a rise."""
+    p = DEFAULTS
+    e = t([0.05])
+    base = float(issuance_cost(p, e))
+    assert base == pytest.approx(0.10 * 0.05 + 0.5 * 4.0 * 0.05**2)          # 20% of the amount, all in
+    assert float(issuance_cost_after(p, e, t([0.0]), t([0.0]))) == base
+    assert float(issuance_cost_after(p, e, t([0.5]), t([0.0]))) == pytest.approx(3 * base)
+    assert float(issuance_cost_after(p, e, t([0.0]), t([1.0]))) == pytest.approx(3 * base)
+    assert float(issuance_cost_after(p, e, t([0.5]), t([1.0]))) == pytest.approx(5 * base)
+    assert float(issuance_cost_after(p, e, t([-0.4]), t([0.0]))) == base

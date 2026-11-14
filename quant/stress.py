@@ -23,7 +23,7 @@ from dataclasses import dataclass, replace
 
 import torch
 
-from quant.core import issuance_cost, next_grc
+from quant.core import issuance_cost_after, next_grc
 from quant.firm import btc_prices
 from quant.integrated import integrated_capital_floor, integrated_outcomes
 from quant.numerics import REFERENCE, NumericsProfile
@@ -76,7 +76,8 @@ class StressResult:
     equity: float                    # at the end
     capital_needed: float            # this period's, which the firm must get back to
     shortfall: float                 # equity below it, to raise or to make up
-    cost_of_raising: float           # the issuance cost of raising that shortfall at once
+    cost_of_raising: float           # the cost of raising that shortfall at once, after this stress:
+                                     # dearer the further BTC fell, and after an incident
     interest_income: float           # the period's
     btc_vault_fees: float            # the period's, at the closing BTC price
     repaid_to_investors: float       # compensation for incident losses and bad debt
@@ -160,7 +161,10 @@ def run(
         return StressResult(
             stress=stress, btc_price=price,
             equity_kept=policy.equity_kept, equity=equity * scale, capital_needed=needed * scale,
-            shortfall=short * scale, cost_of_raising=float(issuance_cost(p, one(short))) * scale,
+            shortfall=short * scale,
+            cost_of_raising=float(issuance_cost_after(
+                p, one(short), one(1.0 - price), one(1.0 if severity > 0.0 else 0.0)
+            )) * scale,
             interest_income=at(out.interest) * scale, btc_vault_fees=at(out.fees_b) * scale,
             repaid_to_investors=at(out.cover) * scale,
             bad_debt=at(out.bad_debt) * scale,

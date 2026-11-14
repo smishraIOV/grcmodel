@@ -32,8 +32,13 @@ class Params:
                              # paper, design.md section 9: to be set against a target market-to-book
 
     # -- frictions: what makes the firm care about risk ------------------
-    lam: float = 0.05        # proportional cost of issuing equity (per unit raised)
-    kappa: float = 1.0       # convex cost of issuing equity. A switch, not a calibration
+    # Raising equity is very expensive, and more so after a bad period (design.md section 4.2).
+    lam: float = 0.10        # proportional cost of issuing equity (per unit raised)
+    kappa: float = 4.0       # convex cost of issuing equity: raising 5% of the dollar vault's capacity
+                             # costs 20% of it all in, raising 20% costs 50%
+    issue_btc_fall: float = 4.0   # extra cost of an issue after BTC fell, per unit of the fall:
+                                  # three times as dear after BTC halves
+    issue_incident: float = 2.0   # extra cost after an incident: three times as dear
     tau: float = 0.0         # extra deadweight cost of carrying equity, per year; the main cost is r_E - r
 
     # -- BTC ----------------------------------------------------------------
@@ -125,6 +130,8 @@ class Params:
             raise ValueError("periods_per_year must be a positive integer")
         if not self.nu > 2.0:
             raise ValueError("nu must exceed 2 for covariances to exist")
+        if self.issue_btc_fall < 0.0 or self.issue_incident < 0.0:
+            raise ValueError("a bad period cannot make raising equity cheaper: issue_btc_fall, issue_incident >= 0")
         if not self.r_E >= self.r:
             raise ValueError("shareholders cannot require less than cash earns: r_E >= r")
         if self.btc_crash_rate > 0 and not self.btc_crash_tail > 2.0:

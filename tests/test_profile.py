@@ -8,7 +8,7 @@ from dataclasses import asdict, fields, replace
 
 import pytest
 
-from quant.core import issuance_cost, mitigation, next_grc
+from quant.core import issuance_cost, issuance_cost_after, mitigation, next_grc
 from quant.lending import loan_demand
 from quant.numerics import REFERENCE
 from quant.params import DEFAULTS, INTEGRATED_DEFAULTS, Params
@@ -149,6 +149,17 @@ def test_the_cost_of_raising_equity_passes_through_both_statements():
     for stated in (FACTS.small_raise, FACTS.large_raise):
         e = model.units(stated.amount)
         assert float(issuance_cost(model.params, t(e))) / e == pytest.approx(stated.cost, rel=1e-13)
+
+
+def test_the_bad_period_multiples_pass_through():
+    market = replace(PROFILE.market, raise_cost_after_btc_halves=2.5, raise_cost_after_incident=4.0)
+    model = to_model(replace(PROFILE, market=market))
+    e = t(0.03)
+    plain = float(issuance_cost(model.params, e))
+    assert float(issuance_cost_after(model.params, e, t(0.5), t(0.0))) == pytest.approx(2.5 * plain, rel=1e-13)
+    assert float(issuance_cost_after(model.params, e, t(0.0), t(1.0))) == pytest.approx(4.0 * plain, rel=1e-13)
+    with pytest.raises(ValueError, match="cannot make raising equity cheaper"):
+        to_model(replace(PROFILE, market=replace(PROFILE.market, raise_cost_after_incident=0.5)))
 
 
 @pytest.mark.parametrize("n", [1, 4])

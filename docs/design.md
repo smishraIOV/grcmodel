@@ -509,6 +509,21 @@ when it must. (This is not the pecking-order theory of corporate finance,
 which explains the same order by managers knowing more than investors; the
 model has neither that nor debt.)
 
+**Raising equity is very expensive, and more so after a bad period.** At the
+defaults ($\lambda = 0.10$, $\kappa = 4$) raising 5% of the dollar vault's
+capacity costs 20% of the amount all in, and raising 20% costs half of it.
+Straight after a period in which BTC fell by a share $f$, or in which there
+was an incident, the cost is multiplied:
+
+$$C_{\text{after}}(e) = C(e)\,\big(1 + a\,f^+ + b\,[\text{incident}]\big),$$
+
+three times as dear after BTC halves ($a = 4$) and three times after an
+incident ($b = 2$): investors are hardest to find when the firm most needs
+them. The what-if tool uses this wherever it costs a raise after the event —
+the stress scenarios, the expected cost of refilling capital, and the
+multi-year paths. **The solvers do not see it**: they raise at $C(e)$, since
+BTC's last move and the last incident are not in their state.
+
 $\kappa$ is the convex part, which in the papers generates the firm's
 effective risk aversion $G$. **$\kappa$ is a switch, not a calibration:** with
 no end date, $V$ may be concave through the walk-away and issuance boundaries
@@ -1195,6 +1210,13 @@ are today's.
     now; the scaling by the hit vault's share of the two is an own
     construction that keeps the model exactly one vault alone when the other
     is empty.
+  - **raising equity made very expensive** (§4.2), at the user's
+    instruction: $\lambda$ from 0.05 to 0.10 and $\kappa$ from 1 to 4, and a
+    multiple on the cost straight after BTC fell or an incident happened (own
+    construction; three times as dear after BTC halves, three times after an
+    incident). The earlier cost was low enough that the solved firm held
+    exactly its capital floor and simply raised after a loss. The solvers use
+    the new $\lambda$ and $\kappa$ but not the multiple.
 - **BTC's price moves in its logarithm** (2026-11-14, raised and agreed
   before the change; §3.4 gives the reason). The price could reach zero, and
   did so far too often; found when the BTC vault's yield with a lending

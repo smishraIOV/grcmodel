@@ -19,7 +19,8 @@ from dataclasses import dataclass
 
 import torch
 
-from quant.core import next_grc
+from quant.core import issuance_cost, issuance_cost_after, next_grc
+from quant.firm import btc_prices
 from quant.integrated import integrated_capital_floor, integrated_outcomes, integrated_rule
 from quant.numerics import REFERENCE, NumericsProfile
 from quant.params import Params
@@ -73,6 +74,7 @@ class ReadOut:
     capital_needed: float       # the least it may keep, given its other decisions
     payout: float               # now
     raised: float               # now
+    cost_of_raising: float      # what raising that costs shareholders, on top of it
     stakes: float               # its own money in the two vaults
     own_btc: float
     hedged: float
@@ -106,6 +108,8 @@ class ReadOut:
     chance_of_loss: float       # ending with less equity than was kept
     chance_below_needed: float  # ending below this period's capital needed
     expected_shortfall: float   # the expected gap below it
+    expected_cost_of_refilling: float   # the expected cost of raising that gap at once: dearer the
+                                        # further BTC fell in the period, and after an incident
 
     @property
     def revenue(self) -> float:
@@ -156,12 +160,19 @@ def read_out(
 
         no_incident = float(out.weights.reshape(scenarios.rule.size, -1)[:, 0].sum())
         short = torch.relu(needed.unsqueeze(-1) - out.wealth)
+        # Each outcome's BTC fall and whether it had an incident: outcomes run over the market
+        # scenarios, and within each over no incident, then the incident sizes.
+        price, _ = btc_prices(p, out.shocks[:, 3], out.shocks[:, 4], p.btc_bias)
+        branches = out.shocks.shape[0] // scenarios.rule.size
+        incident = (torch.arange(out.shocks.shape[0], dtype=torch.long, device=price.device) % branches > 0).to(price.dtype)
+        refill = issuance_cost_after(p, short, 1.0 - price, incident)
         return ReadOut(
             decisions_per_year=n,
             equity=model.state.w * scale, dollar_vault=model.state.A_L * scale,
             btc_vault=model.state.A_B * scale,
             equity_kept=policy.equity_kept, capital_needed=float(needed) * scale,
-            payout=pos.payout, raised=pos.raised, stakes=pos.stakes,
+            payout=pos.payout, raised=pos.raised,
+            cost_of_raising=float(issuance_cost(p, one(pos.raised / scale))) * scale, stakes=pos.stakes,
             own_btc=policy.own_btc, hedged=policy.hedged, stablecoins=pos.stablecoins,
             grc_spend=policy.grc_spend, incident_chance=1.0 - no_incident ** n,
             borrower_rate=policy.borrower_rate, ltv=policy.ltv,
@@ -179,6 +190,7 @@ def read_out(
             chance_of_loss=chance(out.wealth < c.K.unsqueeze(-1)),
             chance_below_needed=chance(short > 0),
             expected_shortfall=mean(short) * scale,
+            expected_cost_of_refilling=mean(refill) * scale,
         )
 
 
@@ -201,7 +213,7 @@ def report(r: ReadOut) -> str:
         "Capital",
         f"  equity kept                      {usd(r.equity_kept)}   (needs at least {usd(r.capital_needed).strip()})",
         f"  paid out now                     {usd(r.payout)}",
-        f"  raised now                       {usd(r.raised)}",
+        f"  raised now                       {usd(r.raised)}   (costing shareholders {usd(r.cost_of_raising).strip()} more)",
         f"  stakes in the two vaults         {usd(r.stakes)}",
         f"  own BTC                          {usd(r.own_btc)}   (hedged {usd(r.hedged).strip()})",
         f"  stablecoins                      {usd(r.stablecoins)}",
@@ -239,5 +251,6 @@ def report(r: ReadOut) -> str:
         f"  chance of ending with less       {pct(r.chance_of_loss)}",
         f"  chance of ending below needs     {pct(r.chance_below_needed)}   "
         f"(expected gap {usd(r.expected_shortfall).strip()})",
+        f"  expected cost of refilling       {usd(r.expected_cost_of_refilling)}   (raising the gap at once, at what it costs then)",
     ]
     return "\n".join(lines)

@@ -23,7 +23,7 @@ MONEY = (
     "equity", "dollar_vault", "btc_vault", "equity_kept", "capital_needed", "payout", "raised", "stakes",
     "own_btc", "hedged", "stablecoins", "grc_spend", "loans", "expected_bad_debt", "interest_income",
     "btc_vault_fees", "operating_costs", "payroll", "compensation", "dollar_vault_next", "btc_vault_next",
-    "expected_equity", "expected_shortfall",
+    "expected_equity", "expected_shortfall", "cost_of_raising", "expected_cost_of_refilling",
 )
 
 
@@ -68,7 +68,8 @@ def test_with_nothing_random_it_is_the_accounting_by_hand():
     # Costs exceed income here, so the firm ends with less than it kept, for sure,
     # but still above what it needs.
     assert expected < 19e6 and r.chance_of_loss == pytest.approx(1.0, abs=1e-12)
-    assert r.chance_below_needed == 0.0 and r.expected_shortfall == 0.0
+    assert r.chance_below_needed == 0.0 and r.expected_shortfall == 0.0 and r.expected_cost_of_refilling == 0.0
+    assert r.cost_of_raising == 0.0
 
 
 def test_it_adds_up(base):
@@ -81,6 +82,18 @@ def test_it_adds_up(base):
     assert 0.0 <= base.chance_below_needed <= base.chance_of_loss <= 1.0
     assert base.expected_shortfall > 0.0 and 0.0 < base.share_lent <= 1.0
     assert base.loans == pytest.approx(base.share_lent * (80e6 + 0.3 * 150e6))
+
+
+def test_raising_now_and_refilling_later_are_costed(base):
+    """Raising $3m now costs the plain issuance cost. The expected cost of
+    refilling is at least the plain cost of the expected gap (the cost is
+    convex), and more, since gaps come after falls and incidents."""
+    p = MODEL.params
+    raising = read_out(MODEL, replace(POLICY, equity_kept=23e6))
+    assert raising.raised == 3e6
+    assert raising.cost_of_raising == pytest.approx(p.lam * 3e6 + 0.5 * p.kappa * 3e6**2 / MODEL.scale, rel=1e-12)
+    gap = base.expected_shortfall
+    assert base.expected_cost_of_refilling > p.lam * gap + 0.5 * p.kappa * gap**2 / MODEL.scale > 0.0
 
 
 def test_the_same_firm_in_cents_gives_the_same_read_out(base):

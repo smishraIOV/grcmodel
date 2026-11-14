@@ -13,6 +13,17 @@ def issuance_cost(p, e: torch.Tensor) -> torch.Tensor:
     return p.lam * e + 0.5 * p.kappa * e * e
 
 
+def issuance_cost_after(p, e: torch.Tensor, btc_fall: torch.Tensor, incident: torch.Tensor) -> torch.Tensor:
+    """The cost of raising e straight after a period in which BTC fell by the
+    share `btc_fall` (zero or less if it rose) and there was an incident or
+    not (`incident`, 1 or 0): C(e) (1 + a fall^+ + b incident).
+
+    Investors are hardest to find when the firm most needs them
+    (design.md section 4.2). The solvers do not see this: they raise at C(e).
+    """
+    return issuance_cost(p, e) * (1.0 + p.issue_btc_fall * torch.relu(btc_fall) + p.issue_incident * incident)
+
+
 def shareholder_flow(p, w: torch.Tensor, K: torch.Tensor) -> torch.Tensor:
     """What shareholders receive this period for moving equity from w to K.
 

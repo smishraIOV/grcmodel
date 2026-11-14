@@ -107,6 +107,8 @@ class MarketAssumptions:
 
     riskless_rate: float
     perp_premium: float              # perp funding above the riskless rate
+    raise_cost_after_btc_halves: float   # how many times dearer raising equity is after BTC halves
+    raise_cost_after_incident: float     # and after an incident
     btc_volatility: float            # of its smooth move
     btc_crashes_per_year: float
     btc_crash_size: float            # mean share of the price a crash takes
@@ -226,6 +228,8 @@ def validate(profile: FirmProfile) -> None:
            "the two equity raises must be of different, positive sizes, the small one first")
     _check(f.large_raise.cost >= f.small_raise.cost,
            "the large equity raise cannot cost less per dollar than the small one")
+    _check(m.raise_cost_after_btc_halves >= 1 and m.raise_cost_after_incident >= 1,
+           "a bad period cannot make raising equity cheaper: the two multiples must be at least 1")
     _check(m.loan_demand.loans >= 0, "loan demand cannot be negative")
     _check(0 <= m.loan_demand.rate < m.rate_no_demand,
            "loan demand must be stated at a rate below the one at which nobody borrows")
@@ -266,6 +270,8 @@ def _changes(profile: FirmProfile) -> dict:
         r_E=f.required_return, lam=lam, kappa=2.0 * slope,
         # the market
         r=m.riskless_rate, perp_premium=m.perp_premium, s_BTC=m.btc_volatility,
+        issue_btc_fall=(m.raise_cost_after_btc_halves - 1.0) / 0.5,
+        issue_incident=m.raise_cost_after_incident - 1.0,
         btc_crash_rate=m.btc_crashes_per_year, btc_crash_mean=m.btc_crash_size, btc_bias=m.btc_view,
         loan_demand=at_zero, rate_max=m.rate_no_demand, ltv_ref=m.reference_ltv,
         ltv_demand=m.demand_per_10_ltv_points / 0.10,
@@ -330,6 +336,8 @@ def _market_from(p: Params, scale: float, loan_rate: float) -> MarketAssumptions
     n = p.periods_per_year
     return MarketAssumptions(
         riskless_rate=p.r, perp_premium=p.perp_premium, btc_volatility=p.s_BTC,
+        raise_cost_after_btc_halves=1.0 + 0.5 * p.issue_btc_fall,
+        raise_cost_after_incident=1.0 + p.issue_incident,
         btc_crashes_per_year=p.btc_crash_rate, btc_crash_size=p.btc_crash_mean, btc_view=p.btc_bias,
         loan_demand=LoanPoint(
             loans=p.loan_demand * _demand_share(loan_rate, p.rate_max, n) * scale, rate=loan_rate
@@ -402,7 +410,7 @@ def illustrative(facts: FirmFacts, base: Params = DEFAULTS) -> FirmProfile:
 def example_facts() -> FirmFacts:
     """A made-up firm, for examples and tests: a $100m dollar vault and a
     $200m BTC vault, with the model's default terms and costs of raising
-    equity."""
+    equity (very expensive: 20% all in to raise $5m, 50% to raise $20m)."""
     return FirmFacts(
         dollar_vault=80e6, dollar_vault_capacity=100e6, btc_vault=150e6, btc_vault_capacity=200e6,
         equity=20e6, grc_budget=0.5e6, operating_costs=4e6, payroll_share=0.60, runway_months=12.0,
@@ -410,7 +418,7 @@ def example_facts() -> FirmFacts:
         dollar_vault_stake=0.05, btc_vault_stake=0.05, compensation=0.5, own_funds=0.02,
         liquidation_threshold=0.80, liquidation_penalty=0.05, ltv_min=0.30, ltv_max=0.75,
         btc_security_cost=0.015, required_return=0.06,
-        small_raise=RaiseCost(amount=5e6, cost=0.075), large_raise=RaiseCost(amount=20e6, cost=0.15),
+        small_raise=RaiseCost(amount=5e6, cost=0.20), large_raise=RaiseCost(amount=20e6, cost=0.50),
         decisions_per_year=4,
     )
 
