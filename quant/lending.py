@@ -12,24 +12,51 @@ costs and GRC, repays a share of bad debt and incident losses, keeps a stake of
 its own money in the vault, and holds its equity as stablecoins (earning
 nothing) and BTC, part of the BTC hedged with short perps.
 
-Shock vector order: (xi, eps_BTC) -- the vault's operating-loss shock and
-BTC's return shock. Both unit variance; uncorrelated in the normal part, they
-share the Student-t's tail. Everything is element-wise, so it vectorizes over
+Scenario order: (xi, eps_BTC, crash) -- the vault's operating-loss shock,
+BTC's smooth return shock (both unit variance; uncorrelated in the normal
+part, they share the Student-t's tail), and the share of BTC's price a crash
+takes (zero without one). `lending_rule` builds them. Everything is element-wise, so it vectorizes over
 grid points, quadrature nodes and jump outcomes at once.
 """
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 
 from quant.core import jump_probability, mitigation
+from quant.numerics import NumericsProfile
 from quant.params import Params
-from quant.quadrature import JumpRule, ShockRule
+from quant.quadrature import JumpRule, ShockRule, pareto_jump_rule, student_t_rule
 
 
 def lending_shock_correlation(p: Params) -> np.ndarray:
     return np.eye(2)
+
+
+def lending_rule(
+    p: Params, profile: NumericsProfile, n_ops: int = 3, n_btc: int = 7,
+    n_mixing: int = 6, n_crash: int = 5,
+) -> ShockRule:
+    """The Student-t rule over (xi, eps_BTC), crossed with no crash and each
+    crash size; the crash probability is folded into the weights."""
+    base = student_t_rule(
+        lending_shock_correlation(p), p.nu, profile, n_hermite=(n_ops, n_btc), n_mixing=n_mixing
+    )
+    if p.btc_crash_rate > 0.0:
+        crashes = pareto_jump_rule(p.btc_crash_mean, p.btc_crash_tail, profile, n=n_crash)
+        size = torch.cat([crashes.severity.new_zeros(1), crashes.severity])
+        prob = crash_probability(p)
+        chance = torch.cat([size.new_ones(1) * (1.0 - prob), prob * crashes.weights])
+    else:
+        size, chance = base.weights.new_zeros(1), base.weights.new_ones(1)
+    k = size.shape[0]
+    nodes = torch.cat(
+        [base.nodes.repeat_interleave(k, dim=0), size.repeat(base.size).unsqueeze(-1)], dim=-1
+    )
+    weights = (base.weights[:, None] * chance[None, :]).reshape(-1)
+    return ShockRule(nodes=nodes, weights=weights)
 
 
 @dataclass(frozen=True)
@@ -74,37 +101,64 @@ def lending_capital_floor(
     return torch.maximum(torch.maximum(p.k_A * A + p.k_BTC * q, cash), torch.zeros_like(A))
 
 
-def btc_return(p: Params, eps: torch.Tensor, bias: float) -> torch.Tensor:
-    """BTC's dollar return over the period: the market's expectation r_E, plus
-    `bias`, plus the shock. Floored at -1: a price cannot fall below zero."""
-    return torch.clamp(p.r_E + bias + p.s_BTC * eps, min=-1.0)
+def crash_probability(p: Params) -> float:
+    """Chance of a BTC crash in one period: 1 - exp(-rate). Not affected by
+    GRC: a crash is a market event."""
+    return 1.0 - math.exp(-p.btc_crash_rate)
+
+
+def btc_prices(
+    p: Params, eps: torch.Tensor, crash: torch.Tensor, bias: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """BTC's price at the end of the period, starting from 1, and the price the
+    smooth part of the move alone would reach.
+
+    The move is a smooth part, 1 + mu + s eps, then possibly a crash that
+    takes a share `crash` of the price at once. mu is set so the expected end
+    price is 1 + r_E + bias whatever the crash risk: the market's expectation,
+    plus the firm's bias (design.md section 3.4). Prices cannot fall below
+    zero.
+    """
+    expected_loss = crash_probability(p) * p.btc_crash_mean
+    mu = (1.0 + p.r_E + bias) / (1.0 - expected_loss) - 1.0
+    smooth = torch.clamp(1.0 + mu + p.s_BTC * eps, min=0.0)
+    return smooth * (1.0 - crash), smooth
 
 
 def loan_payoff(
-    p: Params, rate: torch.Tensor, ltv: torch.Tensor, R_btc: torch.Tensor, discount: torch.Tensor
+    p: Params, rate: torch.Tensor, ltv: torch.Tensor,
+    price: torch.Tensor, smooth: torch.Tensor, discount: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """What the vault gets back per dollar lent, and the bad debt per dollar.
 
-    The borrower owes O = 1 + rate against collateral now worth
-    V = (1 + R_btc) / ltv. Above the threshold price (O < theta V) the loan is
-    repaid. Below it the collateral is liquidated: the firm sells only what it
-    needs to recover O (1 + penalty), at a discount d below market, and the
-    rest goes back to the borrower. Bad debt is what even the whole
-    collateral, sold at that discount, cannot cover: (O - V (1 - d))^+.
+    The borrower owes O = 1 + rate against collateral of 1 / ltv BTC. The
+    **threshold price** is T = O ltv / theta. Prices are watched
+    continuously, so a loan whose price ends below T was liquidated **at T**
+    -- unless a crash jumped the price past T before anything could be sold,
+    in which case the sale is at the price after the crash. Either way the
+    collateral sells at a discount d below that price, the firm takes only
+    O (1 + penalty), and the rest goes back to the borrower. Bad debt is what
+    even the whole collateral cannot cover:
 
-    **The trigger is smoothed.** The penalty makes the payoff jump at the
-    threshold, which gives the solver a wrong slope in the LTV and the rate.
-    The share liquidated rises along a logistic curve over a narrow band of
-    the BTC price (`liq_band`, 1% of the starting price) around the threshold
-    price O ltv / theta (design.md section 2.2). Bad debt starts well past the
-    threshold, where the share is one.
+        sale     = T if the smooth part alone crossed T, else min(T, price)
+        proceeds = sale (1 - d) / ltv
+        payoff   = min(O (1 + penalty), proceeds),    bad debt = (O - proceeds)^+
+
+    Selling at T covers the loan with room to spare whenever d < 1 - theta,
+    so bad debt comes only from crashes (design.md section 2.2).
+
+    **Both switches are smoothed** over `liq_band` of the price -- whether the
+    loan is liquidated at all, and whether the smooth part crossed T before a
+    crash -- so the penalty and the change of sale price do not make the
+    payoff jump, which would give the solver a wrong slope in the LTV and the
+    rate.
     """
     owed = 1.0 + rate
-    price = 1.0 + R_btc
-    collateral = price / ltv
-    proceeds = collateral * (1.0 - discount)
     trigger = owed * ltv / p.liq_threshold
     liquidated = torch.sigmoid((trigger - price) / p.liq_band)
+    crossed_first = torch.sigmoid((trigger - smooth) / p.liq_band)
+    sale = crossed_first * trigger + (1.0 - crossed_first) * torch.minimum(trigger, price)
+    proceeds = sale * (1.0 - discount) / ltv
     recovered = torch.minimum(owed * (1.0 + p.liq_penalty), proceeds)
     payoff = liquidated * recovered + (1.0 - liquidated) * owed
     bad_debt = torch.relu(owed - proceeds) * liquidated
@@ -165,8 +219,7 @@ def lending_outcomes(
     """
     if bias is None:
         bias = p.btc_bias
-    xi = rule.nodes[:, 0]
-    eps = rule.nodes[:, 1]
+    xi, eps, crash = rule.nodes[:, 0], rule.nodes[:, 1], rule.nodes[:, 2]
 
     def col(x):
         return x.unsqueeze(-1)
@@ -177,8 +230,9 @@ def lending_outcomes(
     discount = p.sale_discount * mitigation(S_col, p.a_L, p.rho_L)
 
     loans = loan_book(p, A, c)
-    R_btc = btc_return(p, eps, bias)                                       # (N,)
-    payoff, bad = loan_payoff(p, col(c.rate), col(c.ltv), R_btc, discount)  # (..., N)
+    price, smooth = btc_prices(p, eps, crash, bias)                         # (N,)
+    R_btc = price - 1.0
+    payoff, bad = loan_payoff(p, col(c.rate), col(c.ltv), price, smooth, discount)  # (..., N)
     L, A1 = col(loans), col(A)
     vault = (A1 - L) + L * payoff - A1 * (phi_A * p.lend_loss + phi_B * p.lend_vol * xi)
     fee = p.interest_share * L * torch.minimum(torch.relu(payoff - 1.0), col(c.rate))

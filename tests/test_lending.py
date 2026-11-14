@@ -12,9 +12,11 @@ import torch
 
 from quant.lending import (
     LendingControls,
-    btc_return,
+    btc_prices,
+    crash_probability,
     lending_capital_floor,
     lending_outcomes,
+    lending_rule,
     lending_shock_correlation,
     loan_book,
     loan_payoff,
@@ -32,8 +34,13 @@ def t(x):
 
 
 def one(shock):
-    """One scenario with probability one."""
-    return ShockRule(nodes=P.tensor([list(shock)]), weights=P.ones(1))
+    """One scenario with probability one: (xi, eps_BTC[, crash])."""
+    shock = list(shock) + [0.0] * (3 - len(shock))
+    return ShockRule(nodes=P.tensor([shock]), weights=P.ones(1))
+
+
+def sig(x):
+    return 1 / (1 + math.exp(-x))
 
 
 def controls(K=0.2, g=0.0, q=0.0, H=0.0, rate=0.08, ltv=0.5):
@@ -47,17 +54,23 @@ def phi(a, rho, S):
 def by_hand(p, A, c, shock, jump=0.0, S=0.0, bias=None):
     """Closing equity, next size, return and bad debt, from the design's rules."""
     bias = p.btc_bias if bias is None else bias
-    xi, eps = shock
+    xi, eps, crash = (list(shock) + [0.0])[:3]
     K, g, q, H, rate, ltv = (float(x) for x in (c.K, c.g, c.q, c.H, c.rate, c.ltv))
     demand = p.loan_demand * max(1 - rate / p.rate_max, 0) * max(1 + p.ltv_demand * (ltv - p.ltv_ref), 0)
     L = min(demand, A)
-    R_btc = max(p.r_E + bias + p.s_BTC * eps, -1.0)
+    prob = 1 - math.exp(-p.btc_crash_rate)
+    mu = (1 + p.r_E + bias) / (1 - prob * p.btc_crash_mean) - 1
+    smooth = max(1 + mu + p.s_BTC * eps, 0.0)
+    price = smooth * (1 - crash)
+    R_btc = price - 1
     owed = 1 + rate
-    collateral = (1 + R_btc) / ltv
+    T = owed * ltv / p.liq_threshold
     d = p.sale_discount * phi(p.a_L, p.rho_L, S)
-    share = 1 / (1 + math.exp(-((owed * ltv / p.liq_threshold) - (1 + R_btc)) / p.liq_band))
-    payoff = share * min(owed * (1 + p.liq_penalty), collateral * (1 - d)) + (1 - share) * owed
-    bad = share * max(owed - collateral * (1 - d), 0.0)
+    liq = sig((T - price) / p.liq_band)
+    first = sig((T - smooth) / p.liq_band)
+    proceeds = (first * T + (1 - first) * min(T, price)) * (1 - d) / ltv
+    payoff = liq * min(owed * (1 + p.liq_penalty), proceeds) + (1 - liq) * owed
+    bad = liq * max(owed - proceeds, 0.0)
     ops = A * (phi(p.a_A, p.rho_A, S) * p.lend_loss + phi(p.a_B, p.rho_B, S) * p.lend_vol * xi)
     vault = (A - L) + L * payoff - ops - jump * A
     fee = p.interest_share * L * min(max(payoff - 1, 0.0), rate)
@@ -76,9 +89,9 @@ def by_hand(p, A, c, shock, jump=0.0, S=0.0, bias=None):
     return wealth, aum, R, L * bad
 
 
-# Shocks: calm; a mild BTC fall; a fall past the threshold that the collateral
-# still covers; a crash deep enough for bad debt.
-SHOCKS = [(0.0, 0.0), (1.0, -0.3), (-0.5, -0.5), (0.5, -0.9)]
+# Scenarios (xi, eps, crash): calm; a mild fall; a smooth fall past the
+# threshold; a crash that jumps past it; a smooth fall past it, then a crash.
+SHOCKS = [(0.0, 0.0, 0.0), (1.0, -0.3, 0.0), (-0.5, -0.9, 0.0), (0.5, 0.0, 0.6), (0.0, -1.0, 0.5)]
 
 
 @pytest.mark.parametrize("shock", SHOCKS)
@@ -97,37 +110,76 @@ def test_accounting_matches_the_formulas(shock, S):
 SHARP = replace(BASE, liq_band=1e-9)   # the unsmoothed rule, for checks of its cases
 
 
+def prices(p, eps, crash=0.0):
+    return btc_prices(p, t(eps), t(crash), 0.0)
+
+
 def test_the_test_shocks_cover_every_case():
-    """Repaid, liquidated and covered, liquidated with bad debt."""
+    """Repaid; liquidated at the threshold; a crash past it, with bad debt."""
     p = SHARP
     rate, ltv = t(0.09), t(0.6)
     cases = []
-    for _, eps in SHOCKS:
-        payoff, bad = loan_payoff(p, rate, ltv, btc_return(p, t(eps), 0.0), t(p.sale_discount))
+    for _, eps, crash in SHOCKS:
+        payoff, bad = loan_payoff(p, rate, ltv, *prices(p, eps, crash), t(p.sale_discount))
         cases.append((float(payoff) == pytest.approx(1.09), float(bad) > 0))
     assert (True, False) in cases                  # repaid
     assert (False, False) in cases                 # liquidated, collateral covers
-    assert (False, True) in cases                  # liquidated, bad debt
+    assert (False, True) in cases                  # crash past the threshold: bad debt
 
 
-def test_liquidation_takes_only_what_is_owed():
-    """Past the threshold with plenty of collateral, the vault recovers what is
-    owed plus the penalty, and no more; the rest goes back to the borrower."""
+def test_without_a_crash_liquidation_never_leaves_bad_debt():
+    """Prices are watched continuously, so a smooth fall is caught at the
+    threshold, however far it goes; the vault gets what is owed plus the
+    penalty, and the rest goes back to the borrower."""
     p = SHARP
     rate, ltv = t(0.05), t(0.7)
-    R = t(-0.10)                                   # 1.05 / (0.9 / 0.7) = 0.82 > 0.8: liquidated
-    payoff, bad = loan_payoff(p, rate, ltv, R, t(0.1))
-    assert float(payoff) == pytest.approx(1.05 * (1 + p.liq_penalty))
-    assert float(bad) == 0.0
+    for eps in (-0.5, -1.0, -1.5, -5.0):
+        payoff, bad = loan_payoff(p, rate, ltv, *prices(p, eps), t(0.1))
+        assert float(payoff) == pytest.approx(1.05 * (1 + p.liq_penalty))
+        assert float(bad) == 0.0
 
 
-def test_bad_debt_only_when_even_all_collateral_falls_short():
+def test_a_crash_sells_at_the_price_after_it():
+    """A crash that jumps past the threshold leaves the collateral to be sold
+    at the lower price: bad debt is what even all of it cannot cover."""
     p = SHARP
     rate, ltv, d = t(0.05), t(0.5), t(0.1)
-    for R in torch.linspace(-0.95, 0.2, 50, dtype=P.dtype):
-        _, bad = loan_payoff(p, rate, ltv, R, d)
-        short = 1.05 - (1 + float(R)) / 0.5 * 0.9
+    for crash in torch.linspace(0.0, 0.9, 46, dtype=P.dtype):
+        price, smooth = prices(p, 0.0, float(crash))
+        _, bad = loan_payoff(p, rate, ltv, price, smooth, d)
+        T = 1.05 * 0.5 / p.liq_threshold
+        short = 1.05 - min(T, float(price)) * 0.9 / 0.5 if float(price) < T else 0.0
         assert float(bad) == pytest.approx(max(short, 0.0), abs=1e-14)
+
+
+def test_a_fall_caught_before_a_crash_sells_at_the_threshold():
+    p = SHARP
+    price, smooth = prices(p, -1.0, 0.5)
+    T = 1.05 * 0.5 / p.liq_threshold
+    assert float(smooth) < T
+    payoff, bad = loan_payoff(p, t(0.05), t(0.5), price, smooth, t(0.1))
+    assert float(bad) == 0.0 and float(payoff) == pytest.approx(1.05 * (1 + p.liq_penalty))
+
+
+def test_btc_is_expected_to_earn_the_market_return_plus_the_bias():
+    """Crash risk is priced into the smooth part, so the expected end price is
+    1 + r_E + bias (up to the crash rule's small error in its mean). Quarterly:
+    at a year's volatility the floor at a zero price starts to lift the mean."""
+    for bias in (0.0, 0.03):
+        p = replace(DEFAULTS, nu=math.inf, btc_bias=bias).per_period()
+        bias = p.btc_bias
+        rule = lending_rule(p, P, n_ops=1, n_btc=9, n_mixing=1, n_crash=8)
+        price, _ = btc_prices(p, rule.nodes[:, 1], rule.nodes[:, 2], bias)
+        assert float(rule.expect(price)) == pytest.approx(1 + p.r_E + bias, rel=1e-3)
+
+
+def test_the_scenario_rule_folds_in_the_crash_chance():
+    p = BASE
+    rule = lending_rule(p, P, n_ops=3, n_btc=7, n_mixing=4, n_crash=5)
+    assert rule.size == 3 * 7 * 4 * 6
+    assert float(rule.weights.sum()) == pytest.approx(1.0, abs=1e-13)
+    crashed = float(rule.weights[rule.nodes[:, 2] > 0].sum())
+    assert crashed == pytest.approx(crash_probability(p), rel=1e-12)
 
 
 def test_the_smoothed_trigger_is_continuous_and_has_a_slope_in_ltv():
@@ -135,11 +187,11 @@ def test_the_smoothed_trigger_is_continuous_and_has_a_slope_in_ltv():
     p = BASE
     rate = t(0.05)
     trigger = 1.05 * 0.6 / p.liq_threshold
-    prices = torch.linspace(trigger - 0.05, trigger + 0.05, 201, dtype=P.dtype)
-    payoff, _ = loan_payoff(p, rate, t(0.6), prices - 1.0, t(0.1))
+    grid = torch.linspace(trigger - 0.05, trigger + 0.05, 201, dtype=P.dtype)
+    payoff, _ = loan_payoff(p, rate, t(0.6), grid, grid, t(0.1))
     assert float(payoff.diff().abs().max()) < 0.05 * 1.05 * p.liq_penalty   # the sharp jump, 20x over
     ltv = t(0.6).requires_grad_(True)
-    near, _ = loan_payoff(p, rate, ltv, t(trigger - 1.0), t(0.1))
+    near, _ = loan_payoff(p, rate, ltv, t(trigger), t(trigger), t(0.1))
     (slope,) = torch.autograd.grad(near, ltv)
     assert float(slope) > 0.0     # a higher LTV moves the threshold up: more liquidated, more penalty
 
@@ -148,7 +200,7 @@ def test_grc_narrows_the_sale_discount():
     """More GRC stock, smaller discount, less bad debt in the same crash."""
     p = BASE
     c = controls(rate=0.08, ltv=0.7)
-    crash = one((0.0, -1.4))
+    crash = one((0.0, 0.0, 0.6))
     none = lending_outcomes(p, t([1.0]), c, t([0.0]), crash, None)
     some = lending_outcomes(p, t([1.0]), c, t([0.05]), crash, None)
     assert float(none.bad_debt) > float(some.bad_debt) > 0.0
@@ -184,7 +236,7 @@ def test_fully_hedged_btc_earns_the_riskless_rate():
 
 def test_the_bias_moves_only_the_unhedged_btc():
     """Deciding with the bias and valuing at the market differ by (q - H) b."""
-    p = replace(BASE, btc_bias=0.04, loan_demand=0.0)
+    p = replace(BASE, btc_bias=0.04, loan_demand=0.0, btc_crash_rate=0.0)
     c = controls(K=0.3, q=0.2, H=0.05)
     rule = one((0.0, 0.0))
     firm = lending_outcomes(p, t([1.0]), c, t([0.0]), rule, None)
@@ -193,7 +245,8 @@ def test_the_bias_moves_only_the_unhedged_btc():
 
 
 def test_btc_cannot_fall_below_zero():
-    assert float(btc_return(BASE, t(-10.0), 0.0)) == -1.0
+    price, smooth = prices(BASE, -10.0, 0.5)
+    assert float(price) == 0.0 and float(smooth) == 0.0
 
 
 def test_an_incident_costs_the_vault_and_the_firm_repays_a_share():
@@ -220,7 +273,7 @@ def test_providers_follow_their_yield():
 
 def test_weights_sum_to_one_and_respond_to_grc():
     p = replace(BASE, jump_rate=0.1)
-    rule = student_t_rule(lending_shock_correlation(p), p.nu, P, n_hermite=(3, 15), n_mixing=4)
+    rule = lending_rule(p, P, n_ops=3, n_btc=7, n_mixing=4, n_crash=3)
     jumps = pareto_jump_rule(p.jump_mean, p.jump_tail, P, n=4)
     c = LendingControls(K=t([0.2, 0.2]), g=t([0.0, 0.0]), q=t([0.0, 0.0]), H=t([0.0, 0.0]),
                         rate=t([0.08, 0.08]), ltv=t([0.5, 0.5]))

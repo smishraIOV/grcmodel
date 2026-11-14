@@ -6,6 +6,13 @@ banks, insurance companies, hedge funds. Ordinary banking and insurance do not
 fit crypto rails well; funds and collateralized lending do. The model follows
 the second pair.
 
+**End goal.** One of the project's main aims is a model that works as a
+**decision-support tool for the CFO of a real business**: how much capital to
+hold and in what form, how much to hedge, how to price and size the business,
+and how much to spend on GRC. Choices in the design favor that use — realistic
+mechanics, parameters a CFO can recognize and set, and outputs that answer
+the CFO's questions — over academic completeness.
+
 **Status:** being redesigned around two vaults (§2). The shared machinery (§4,
 §5) is built; the two vaults are designed, and the stablecoin lending vault is
 the next stage. An earlier single-vault version is built. What is built and
@@ -113,29 +120,37 @@ BTC collateral.
 - **the loan-to-value at origination** (LTV): the loan as a share of the
   collateral's value, for example 50%.
 
-**Liquidation.** Loans last one period. If BTC falls far enough that the loan
-reaches the **liquidation threshold** — for example 80% of the collateral's
-value — the firm sells **only as much collateral as is needed** to repay the
-loan, its interest and a **liquidation penalty** (for example 5%, which goes
-to the vault), and returns the rest to the borrower.
+**Liquidation.** Loans last one period. Prices are watched continuously. When
+BTC falls to the **threshold price** — where the loan and its interest reach,
+for example, 80% of the collateral's value — the collateral is liquidated
+there: the firm sells **only as much as is needed** to repay the loan, its
+interest and a **liquidation penalty** (for example 5%, which goes to the
+vault), and returns the rest to the borrower. In the model, a loan whose BTC
+price ends the period below the threshold was liquidated at the threshold
+price.
 
-**A smoothed trigger.** The penalty makes what the vault recovers jump at the
-threshold, which would give the solver a wrong slope in the LTV and the rate.
-The share of a loan liquidated therefore rises along a smooth S-shaped
-(logistic) curve over a narrow band of the BTC price around the threshold, 1%
-of the starting price; well past the threshold it is all liquidated.
+**The sale discount.** Collateral sells somewhat below the market price:
+markets are thin and price feeds lag. The discount is a parameter; GRC
+mechanism L (better price feeds, a more reliable liquidation process) narrows
+it. Selling at the threshold covers the loan with room to spare as long as the
+discount is smaller than the gap between the threshold and full collateral
+(20% at an 80% threshold).
 
-**The sale discount.** In a crash, collateral sells somewhat below the market
-price: markets are thin and price feeds lag. The discount is a parameter;
-GRC mechanism L (better price feeds, a more reliable liquidation process)
-narrows it.
+**BTC crashes and bad debt.** A smooth fall is always caught at the
+threshold. Bad debt comes only from a **crash**: a sudden fall that jumps the
+price past the threshold before anything can be sold, so the collateral sells
+at the price after the crash. Bad debt is what even the whole collateral, sold
+there, cannot cover. Crashes are rare and their size is heavy-tailed (§4.3). A
+fall caught at the threshold before a crash is sold at the threshold. Bad debt
+arrives exactly when BTC crashes, which is also when the firm's own BTC and its
+BTC-vault fees fall: risks that pile up together. It is borne by the
+providers, less the share the firm repays (§2.4).
 
-**Bad debt** arises only when the whole collateral, sold at that discount, is
-worth less than the loan and its interest. With a 50% LTV it takes a fall of
-roughly half the BTC price in one period, so it is rare, and it grows as the
-firm raises the LTV. It arrives exactly when BTC crashes, which is also when
-the firm's own BTC and its BTC-vault fees fall: risks that pile up together.
-Bad debt is borne by the providers, less the share the firm repays (§2.4).
+**A smoothed trigger.** The penalty, and the switch between selling at the
+threshold and selling after a crash, would make what the vault recovers jump at
+the threshold, giving the solver a wrong slope in the LTV and the rate. Both
+switches therefore change along a smooth S-shaped (logistic) curve over a
+narrow band of the BTC price, 1% of the starting price.
 
 **The providers' yield** is the interest earned, plus penalties, less bad debt
 and the firm's share of the interest.
@@ -301,7 +316,10 @@ effective risk aversion limits how much BTC it holds on that view.
 
 **Holding BTC.** The firm's own BTC is bought spot, so it spends stablecoins
 and counts against the capital requirement with a charge. BTC's price moves are
-fat-tailed (§4.2).
+fat-tailed (§4.2), with occasional crashes (§4.3). The smooth part of BTC's
+expected move is set so that, crashes included, BTC's expected return is still
+the market's expectation plus the firm's bias. A price cannot fall below
+zero.
 
 **Hedging.** Short perps reduce the firm's BTC exposure but cannot create long
 exposure; otherwise exposure through perps would always beat holding BTC, and
@@ -429,6 +447,14 @@ rare and large.
 Defaults (illustrative): $\lambda_J = 0.1$ a year, $\mu_J = 5\%$ of the exposed
 assets, $\zeta = 2.5$, $a_J = 100$, $\rho_J = 0.3$.
 
+**BTC crashes** use the same construction: at most one a period, with a
+heavy-tailed (Pareto) size as a share of BTC's price, capped at the whole
+price. A crash is a market event, so GRC does not change its frequency; GRC
+acts on what it costs, through the sale discount (L). Defaults (illustrative):
+0.5 crashes a year, a mean size of 25%, tail index 2.5. The crash sizes are
+crossed with the continuous shocks in the quadrature, the crash probability in
+the weights.
+
 ### 4.4 Decision frequency
 
 **Built.** The firm decides **quarterly** in the main model, and the frequency
@@ -440,7 +466,7 @@ is a parameter, `periods_per_year`. Every rate is stated **per year**, and
 | interest rates, the required return $r_E$, the borrower rate | $(1+r)^{1/n} - 1$ | money compounds |
 | mean loss rates, excess returns and the BTC bias, fees charged per year, operating costs, carrying cost $\tau$ | $\div n$ | flows that accrue with time |
 | volatilities | $\div \sqrt{n}$ | independent periods' variances add up to the year's. Under fat tails this is a convention, not an identity |
-| jump rate | $\div n$ | Poisson events per unit of time |
+| jump rate, BTC crash rate | $\div n$ | Poisson events per unit of time |
 | GRC depreciation, inflow speed | $1 - (1-\delta)^{1/n}$ | the same share over a year |
 | issuance costs, capital requirements, jump severity, GRC effectiveness and floors, performance-fee share, flow sensitivities, compensation share, co-investment share, capacities, loan-to-value terms, liquidation sale discount, position bounds, correlations, $\nu$ | unchanged | sizes, shares and per-event amounts, not rates |
 
@@ -583,9 +609,11 @@ Each stage needs approval before it starts.
    raising equity was cheap enough that its capital never became scarce. The
    lending vault's bad debt in a crash and co-investment are what should make
    the firm's own capital matter now.
-3. **Crashes within a period.** Liquidation is driven by the period's fall, but
-   BTC can fall further during a quarter than it ends down. A crash term for
-   BTC, or a sale discount that reflects it, may be needed.
+3. **Prices that touch the threshold and recover.** A loan is treated as
+   liquidated only if BTC ends the period below the threshold. A price that
+   dips below it during the period and recovers would, in reality, also have
+   triggered liquidation (and its penalty). A standard formula gives that
+   chance for a price path with no jumps; add it if it matters.
 4. **Linking the two vaults.** Could borrowers' BTC collateral be deposited in
    the BTC yield vault to earn yield (rehypothecation)? It would tie the two
    vaults' risks together; it is excluded unless decided otherwise.
@@ -879,6 +907,19 @@ are today's.
 - **The liquidation trigger is smoothed** over a 1% band of the BTC price, so
   the penalty does not make the payoff jump (standard numerical smoothing,
   raised and agreed). A BTC price cannot fall below zero.
+- **Liquidation is at the threshold price, and bad debt comes only from BTC
+  crashes.** The first solves liquidated at the period's closing price, which
+  made expected bad debt 7% of loans a year at quarterly decisions and a 50%
+  LTV, far above what crypto lenders see. Prices are watched continuously, so a
+  smooth fall is caught at the threshold; only a sudden crash that jumps past
+  it leaves bad debt. BTC crashes are added: rare, heavy-tailed, a market event
+  GRC does not prevent (standard jumps in a price, raised and agreed).
+- **The firm's share of the interest is 40% for now,** up from 15%: at 15% the
+  firm's take barely covered operating costs, and the first solve ran the firm
+  for one period and walked away. Businesses added later may let it come back
+  down.
+- **End goal recorded:** a model that works as a decision-support tool for the
+  CFO of a real business.
 - **Operating costs are paid from the firm's own stablecoins,** separate from
   the vault's.
 - **Insurance is a later option** (mechanism D).

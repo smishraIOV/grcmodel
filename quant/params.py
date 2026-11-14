@@ -89,6 +89,9 @@ class Params:
     # Shares with the single vault: inflow_speed, outflow_incident,
     # compensation (also applied to bad debt), k_A, opex, and the jump rule.
     btc_bias: float = 0.0           # the firm's expected BTC return above the market's (r_E), per year
+    btc_crash_rate: float = 0.5     # sudden BTC crashes per year (a market event; GRC does not change it)
+    btc_crash_mean: float = 0.25    # mean share of BTC's price a crash takes
+    btc_crash_tail: float = 2.5     # Pareto tail index of the crash size
     lend_capacity: float = 1.0      # the vault's full size; fixes the scale
     loan_demand: float = 1.5        # loans wanted at a zero rate and the reference LTV
     rate_max: float = 0.20          # borrower rate at which demand reaches zero, per year
@@ -102,7 +105,7 @@ class Params:
     sale_discount: float = 0.10     # how far below market liquidated collateral sells, at zero GRC
     a_L: float = 50.0               # GRC effectiveness against the sale discount (mechanism L)
     rho_L: float = 0.3              # share of the discount no program removes
-    interest_share: float = 0.15    # the firm's share of the interest collected
+    interest_share: float = 0.40    # the firm's share of the interest collected; high for now (design.md 11)
     outside_rate: float = 0.05      # what providers could earn elsewhere, per year
     flow_yield: float = 2.0         # net flows, share of the vault, per unit of yield gap
     lend_loss: float = 0.002        # mean operating loss, share of the vault per year, at zero GRC
@@ -116,6 +119,10 @@ class Params:
             raise ValueError("nu must exceed 2 for covariances to exist")
         if not self.r_E >= self.r:
             raise ValueError("shareholders cannot require less than cash earns: r_E >= r")
+        if self.btc_crash_rate > 0 and not self.btc_crash_tail > 2.0:
+            raise ValueError("btc_crash_tail must exceed 2 for the crash variance to exist")
+        if not self.sale_discount < 1.0 - self.liq_threshold:
+            raise ValueError("sale_discount must be below 1 - liq_threshold, or selling at the threshold leaves bad debt")
         if self.jump_rate > 0 and not self.jump_tail > 2.0:
             raise ValueError("jump_tail must exceed 2 for the jump variance to exist")
         if not (0.0 <= self.fee_perf < 1.0 and 0.0 <= self.compensation <= 1.0):
@@ -149,7 +156,7 @@ class Params:
         capital requirement and co-investment share are shares or sizes and do
         not convert. For the lending vault: the rate at which demand reaches
         zero and the outside rate compound; the BTC bias and the operating
-        loss are flows; the loss volatility follows sqrt(n); the demand line's
+        loss are flows; the BTC crash rate divides by n; the loss volatility follows sqrt(n); the demand line's
         height and LTV shift, LTV bounds, liquidation threshold, penalty, trigger
         band, sale discount, interest share, flow response (a share of the vault per unit
         of yield gap, both per period) and capacity do not convert.
@@ -179,6 +186,7 @@ class Params:
             opex=self.opex / n,
             inflow_speed=1.0 - (1.0 - self.inflow_speed) ** (1.0 / n),
             btc_bias=self.btc_bias / n,
+            btc_crash_rate=self.btc_crash_rate / n,
             rate_max=compound(self.rate_max),
             outside_rate=compound(self.outside_rate),
             lend_loss=self.lend_loss / n,

@@ -7,6 +7,7 @@ this can be made quantitative rather than asserted.
 
 Even experts do not know how much risk to budget for. A chief actuary may not know how much reinsurance to purchase.
 A computational tool can provide some guidance.
+One of the main end goals is a model that works as a **decision-support tool for the CFO of a real business**.
 
 ## Academic Roots
 
