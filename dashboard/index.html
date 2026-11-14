@@ -45,9 +45,9 @@
   .row label { color: var(--text-secondary); overflow-wrap: anywhere; }
   .row .unit { position: relative; }
   .row .unit span { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; font-size: 12px; }
-  input[type=number], select { width: 100%; padding: 5px 30px 5px 8px; border: 1px solid var(--axis); border-radius: 6px;
+  input[type=number], input[type=text], select { width: 100%; padding: 5px 30px 5px 8px; border: 1px solid var(--axis); border-radius: 6px;
          background: var(--surface-1); color: var(--text-primary); font: inherit; font-variant-numeric: tabular-nums; }
-  select { padding-right: 8px; }
+  select, input[type=text] { padding-right: 8px; }
   input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
   .group { margin: 8px 0 2px; color: var(--text-primary); font-weight: 600; font-size: 13px; }
   .hint { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
@@ -114,7 +114,15 @@
     </div>
     <div class="card">
       <h2>The firm and the assumptions</h2>
-      <p class="hint">Hover a name for what it means.</p>
+      <p class="hint">Starts as a made-up example. Change it into your own firm, then save it to a file to come back to.
+        Hover a name for what it means.</p>
+      <div class="row"><label for="firm-name">Name</label><input type="text" id="firm-name" placeholder="an example firm" autocomplete="off"></div>
+      <div class="check">
+        <button id="save" type="button">Save to a file</button>
+        <button id="load" type="button">Load from a file</button>
+        <input type="file" id="load-file" accept=".json,application/json" hidden>
+      </div>
+      <p class="hint" id="file-note" role="status"></p>
       <details><summary>The firm's facts</summary><div id="firm"></div></details>
       <details><summary>Market assumptions</summary><div id="market"></div></details>
       <details><summary>Risk assumptions</summary><div id="risk"></div></details>
@@ -191,7 +199,7 @@ const human = key => key.split("_").map(w => WORDS[w] ?? w).join(" ").replace(/^
 
 // ---- state -------------------------------------------------------------------------------
 let META = null;
-const state = {firm: null, market: null, risk: null, policy: null, second: null, years: 5, buffer: null, largest: null};
+const state = {name: "", firm: null, market: null, risk: null, policy: null, second: null, years: 5, buffer: null, largest: null};
 let timer = null, sequence = 0, last = null, sens = null;
 
 // ---- forms ---------------------------------------------------------------------------------
@@ -267,6 +275,8 @@ function optionalRow(label, key, help) {
 }
 
 function buildAll() {
+  $("#firm-name").value = state.name;
+  $("#second-on").checked = state.second !== null;
   buildForm($("#policy"), state.policy, META.help.policy, POLICY_LABELS);
   buildHorizon();
   buildForm($("#firm"), state.firm, META.help.firm);
@@ -311,6 +321,50 @@ async function run() {
   last = answer;
   $("#results").classList.remove("stale");
   render(answer);
+}
+
+// ---- saving a firm to a file, and loading one ----------------------------------------------------
+// The file is a request (quant/api.py): the same file can be given to `python -m scripts.api`.
+function exportData() {
+  const saved = request(["read_out", "stress", "paths"]);
+  delete saved.paths; delete saved.seed;
+  if (state.name) saved.name = state.name;
+  return saved;
+}
+async function importData(saved) {
+  if (saved === null || typeof saved !== "object" || Array.isArray(saved)) return ["This file does not hold a firm."];
+  const answer = await post({...saved, want: ["read_out"]});          // the model checks it, and fills in what the file leaves out
+  if (!answer.ok) return answer.problems;
+  const got = answer.inputs;
+  Object.assign(state, {name: answer.name ?? "", firm: got.firm, market: got.market, risk: got.risk, policy: got.policy,
+    second: got.second_policy ?? null, years: saved.years ?? state.years,
+    buffer: saved.equity_buffer ?? null, largest: saved.largest_raise ?? null});
+  sens = null;
+  $("#sens-chart").replaceChildren(); $("#sens-output").hidden = true; $("#sens-details").hidden = true;
+  buildAll();
+  return [];
+}
+function saveToFile() {
+  const text = JSON.stringify(exportData(), null, 2);
+  const link = el("a", {href: URL.createObjectURL(new Blob([text], {type: "application/json"})),
+    download: (state.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "firm") + ".json"});
+  document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  $("#file-note").textContent = `Saved as ${link.download}, in your downloads.`;
+}
+async function loadFromFile(file) {
+  const note = $("#file-note");
+  let saved;
+  try { saved = JSON.parse(await file.text()); }
+  catch (error) { note.textContent = `${file.name} could not be read: it is not a saved firm.`; return; }
+  const found = await importData(saved);
+  if (found.length) {
+    const more = found.length > 3 ? `; and ${found.length - 3} more` : "";
+    note.textContent = `${file.name} was not loaded: ${found.slice(0, 3).join("; ")}${more}.`;
+    return;
+  }
+  note.textContent = `Loaded ${file.name}.`;
+  run();
 }
 
 // ---- tooltip ---------------------------------------------------------------------------------
@@ -634,6 +688,13 @@ async function start() {
     state.policy = answer.inputs.policy;
     if (state.second !== null) state.second = structuredClone(state.policy);
     buildAll(); schedule();
+  });
+  $("#firm-name").addEventListener("input", event => { state.name = event.target.value; });
+  $("#save").addEventListener("click", saveToFile);
+  $("#load").addEventListener("click", () => $("#load-file").click());
+  $("#load-file").addEventListener("change", event => {
+    if (event.target.files.length) loadFromFile(event.target.files[0]);
+    event.target.value = "";                                       // so the same file can be chosen again
   });
   $("#sens-run").addEventListener("click", runSensitivity);
   $("#sens-output").addEventListener("change", drawSensitivity);

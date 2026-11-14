@@ -94,3 +94,13 @@ def test_the_page_draws_only_with_what_it_carries():
     assert not re.search(r'(src|href)\s*=\s*"https?://', page) and "@import" not in page
     assert 'fetch("/api"' in page and 'fetch("/inputs")' in page
     assert "innerHTML" not in page                                 # text goes in as text
+
+
+def test_the_page_saves_a_firm_to_a_file_and_loads_one_through_the_model():
+    """A saved firm is a request; loading posts it to the model, which checks
+    it and fills in what the file leaves out, before anything on the page changes."""
+    page = PAGE.read_text()
+    for needed in ('id="save"', 'id="load"', 'id="load-file"', 'id="firm-name"', "function exportData()", "async function importData(saved)"):
+        assert needed in page, needed
+    assert 'await post({...saved, want: ["read_out"]})' in page
+    assert "localStorage" not in page and "sessionStorage" not in page      # nothing is kept in the browser

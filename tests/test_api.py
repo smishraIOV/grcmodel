@@ -74,7 +74,7 @@ def test_the_inputs_come_back_with_every_default_filled_in(answer):
 
 def test_a_firm_alone_is_enough():
     quick = carried(respond({"firm": FIRM}))
-    assert quick["ok"] and set(quick) == {"ok", "version", "inputs", "illustrative", "read_out"}
+    assert quick["ok"] and set(quick) == {"ok", "version", "name", "inputs", "illustrative", "read_out"}
     assert quick["read_out"]["expected_equity"] == read_out(MODEL, START).expected_equity
 
 
@@ -153,3 +153,24 @@ def test_the_command(tmp_path, capsys, monkeypatch):
     assert main(["-"]) == 1
     assert "could not be read" in capsys.readouterr().out
     assert main(["--inputs"]) == 0 and '"allocation_order"' in capsys.readouterr().out
+
+
+def test_a_saved_firm_is_a_request_and_comes_back_as_it_was(tmp_path, capsys):
+    """What the dashboard writes to a file: the inputs in full, a name, the
+    horizon and the rule. Read back, the tool understands it as the same firm
+    and policies, and the same file works on the command line."""
+    first = respond({"firm": FIRM, "risk": {"incidents_per_year": 0.2}, "policy": {"ltv": 0.65},
+                     "second_policy": {"ltv": 0.7}})["inputs"]
+    saved = {"name": "Acme Vaults", "firm": first["firm"], "market": first["market"], "risk": first["risk"],
+             "policy": first["policy"], "second_policy": first["second_policy"],
+             "want": ["read_out", "stress", "paths"], "years": 3, "equity_buffer": 6e6}
+    again = carried(respond({**saved, "want": ["read_out"]}))
+    assert again["ok"] and again["name"] == "Acme Vaults"
+    for part in ("firm", "market", "risk", "policy", "second_policy"):
+        assert again["inputs"][part] == first[part], part
+    path = tmp_path / "acme-vaults.json"
+    path.write_text(json.dumps(saved))
+    assert main([str(path)]) == 0
+    answer = json.loads(capsys.readouterr().out)
+    assert answer["name"] == "Acme Vaults" and answer["paths"]["years"] == 3 and answer["paths"]["rule"]["equity_buffer"] == 6e6
+    assert respond({"firm": FIRM})["name"] == "" and respond({"firm": FIRM, "name": 7})["problems"] == ["'name' must be text"]

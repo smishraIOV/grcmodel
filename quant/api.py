@@ -12,6 +12,7 @@ they return as plain data.
 A request:
 
     {
+      "name":   "...",            optional: what to call this firm; it comes back unchanged
       "firm":   {...},            the firm's facts; all of them (see `example_request`)
       "market": {...},            optional: only the assumptions to change
       "risk":   {...},            optional: likewise
@@ -28,10 +29,13 @@ firm. Money is in dollars and rates are per year, as in a profile.
 
 A response has `"ok": true`, the inputs as the tool understood them (every
 default filled in, so a form can show them), and one entry per thing wanted.
+A request is also how a firm is **saved**: the dashboard writes one to a file
+and reads one back, and the same file can be given to `scripts/api.py`.
 If the request cannot be run it has `"ok": false` and `"problems"`: a list of
 plain sentences. A mistake in a request never raises.
 
-`VERSION` changes when a request or a response changes shape.
+`VERSION` changes when an entry of a request or a response is removed or
+changes meaning; new entries may be added without it.
 """
 
 import dataclasses
@@ -65,7 +69,7 @@ from quant.profile import (
 
 VERSION = 1
 WANTS = ("read_out", "stress", "paths", "compare", "sensitivity")
-_KEYS = {"firm", "market", "risk", "policy", "second_policy", "want", "years", "paths", "seed",
+_KEYS = {"name", "firm", "market", "risk", "policy", "second_policy", "want", "years", "paths", "seed",
          "equity_buffer", "largest_raise", "stresses"}
 _NESTED = {"small_raise": RaiseCost, "large_raise": RaiseCost, "loan_demand": LoanPoint,
            **{name: GrcEffect for name in sensitivity_.GRC_EFFECTS}}
@@ -248,7 +252,10 @@ def _answer(request: dict, numerics: NumericsProfile) -> dict:
         made = paths_.rule_from(x, model, largest_raise)
         return made if request.get("equity_buffer") is None else replace(made, equity_buffer=request["equity_buffer"])
 
+    if not isinstance(request.get("name", ""), str):
+        raise _Problems(["'name' must be text"])
     answer = {
+        "name": request.get("name", ""),
         "inputs": {"firm": plain(profile.facts), "market": plain(profile.market), "risk": plain(profile.risk),
                    "policy": plain(policy), "position": plain(policy_.position(policy, model)),
                    **({} if second is None else {"second_policy": plain(second)})},
