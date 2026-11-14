@@ -92,7 +92,7 @@ size of its losses.
 books shared (`quant/firm.py`). The two are joined through one loan book
 (§2.1) in `quant/integrated.py`, which reduces exactly to either vault alone
 when the other is empty. The integrated firm is solved on a coarse 4-D grid
-(`quant/integrated_solver.py`) and read out by `quant/integrated_results.py`;
+(`quant/research/integrated_solver.py`) and read out by `quant/research/integrated_results.py`;
 the actor-critic learner is next (§7).
 
 ### 2.1 Three balance sheets
@@ -548,7 +548,7 @@ runs need a finer equity grid than annual ones.
 
 ## 5. How it is solved
 
-**The grid solver** (`quant/grid.py`, **built**) solves the objective of §3.1
+**The grid solver** (`quant/research/grid.py`, **built**) solves the objective of §3.1
 exactly, up to grid error, for up to three state variables at useful
 resolution. The state is a product grid whose first axis is equity. Each model
 supplies only its decisions and objective.
@@ -593,7 +593,7 @@ critic's estimate of the next state's value — so it fits an infinite horizon
 without a value at the end of a path. It is **graded against the grid**
 wherever the grid can reach. Robustness is preferred over computing time.
 Expectations inside the learner will use random scenarios; how they are drawn
-is open (§8). A **coarse 4-D grid** (`quant/integrated_solver.py`, about
+is open (§8). A **coarse 4-D grid** (`quant/research/integrated_solver.py`, about
 17 × 3 × 5 × 5 points, **built**) solves the integrated firm with the same
 machinery as the single vaults: it is the learner's second reference and a
 first look at the integrated firm, too coarse for levels. The `svg-critic` branch was parked because it lost to full
@@ -749,21 +749,21 @@ assembled for this project, with no single reference.
 | Tail-placed mixing rule | own construction | `quant/quadrature.py` | scenario set for the $t$'s shared volatility factor: Gauss–Legendre nodes uniform in log-probability, placed through the inverse CDF | replaced generalized Gauss–Laguerre (standard), which understated kurtosis (7.3 against 9 at $\nu = 5$, 64 points); accuracy is checked by tests, not by a reference |
 | Tail-placed jump-severity rule | own construction | `quant/quadrature.py` | the same construction for the Pareto jump severity, capped at the whole book | the dropped far tail and the cap shave the mean slightly; tested to within 5% |
 | Cholesky factorization | standard | `quant/quadrature.py` | builds correlated shocks from independent ones | — |
-| Policy iteration with repeated policy evaluation (Howard improvement) | standard | `quant/grid.py` | how the infinite-horizon solve converges | plain value iteration is slower but simpler |
-| Adam, vectorized over the grid | standard | `quant/grid.py` | chooses every grid point's decisions at once by gradient ascent; two starts per step, and a slow final pass | the step-budget test guards against it stopping short |
-| Multilinear interpolation on an N-dimensional grid | standard | `quant/grid.py` | reads the value function between grid points | a shape-preserving smooth spline is the alternative; Catmull-Rom was tried and dropped |
+| Policy iteration with repeated policy evaluation (Howard improvement) | standard | `quant/research/grid.py` | how the infinite-horizon solve converges | plain value iteration is slower but simpler |
+| Adam, vectorized over the grid | standard | `quant/research/grid.py` | chooses every grid point's decisions at once by gradient ascent; two starts per step, and a slow final pass | the step-budget test guards against it stopping short |
+| Multilinear interpolation on an N-dimensional grid | standard | `quant/research/grid.py` | reads the value function between grid points | a shape-preserving smooth spline is the alternative; Catmull-Rom was tried and dropped |
 | Softmax for the vault's allocation | standard | `quant/vault_solver.py` | maps unconstrained parameters to shares that sum to one | a corner allocation is only approached, not reached |
 | A hedge bounded by the vault's BTC sensitivity | own construction | `quant/vault_solver.py` | lets the firm hedge the BTC exposure of fees it earns on the vault, not only its own BTC | superseded (2026-11-13): the hedge covers only the firm's own BTC; fees are rebalanced once they join its equity |
 | The allocation's first-order check | own construction | `quant/vault_results.py` | every held strategy has the highest marginal value; replaces eq. (12) as the vault's allocation check | — |
-| Off-grid rules | own construction | `quant/grid.py` | above the grid, pay out the excess; below it, issue equity back onto it | — |
-| Golden-section search | standard | `quant/twoperiod.py`, `quant/solver.py` | one-dimensional optimizer for the oracles | — |
+| Off-grid rules | own construction | `quant/research/grid.py` | above the grid, pay out the excess; below it, issue equity back onto it | — |
+| Golden-section search | standard | `quant/research/twoperiod.py`, `quant/solver.py` | one-dimensional optimizer for the oracles | — |
 | Squashed decisions (`sigmoid`, `tanh`, `softplus`) | standard | `quant/solver.py`, `quant/vault_solver.py` | keep every constraint satisfied by construction | saturated decisions lose their gradient; the two-start step and the room past a full hedge are the guards |
 
 ### Modeling and theory
 
 | concept | source | where | what it does | if revisited |
 |---|---|---|---|---|
-| Stein's lemma | standard probability | `quant/twoperiod.py`, `quant/results.py` | why the paper's formulas (9), (10), (15) are exact under normal shocks and approximate under fat tails; the basis of oracle 1 | — |
+| Stein's lemma | standard probability | `quant/research/twoperiod.py`, `quant/results.py` | why the paper's formulas (9), (10), (15) are exact under normal shocks and approximate under fat tails; the basis of oracle 1 | — |
 | Student-$t$ as a scale mixture of normals, one shared factor | standard | `quant/quadrature.py`, §4.2 | fat tails and tail dependence from one parameter $\nu$ | copulas would separate marginal tails from dependence |
 | Pareto jump severity | standard in operational-risk modeling | `quant/quadrature.py`, §4.3 | heavy-tailed one-sided losses | lognormal, or an empirical exploit-loss distribution |
 | Effective risk aversion from first derivatives | own construction | `quant/results.py` | measures the paper's $G$ as the price of risk, $-E[V_w (w' - Ew')] / (E[V_w] \mathrm{Var}(w'))$; equals the paper's $G$ under normality by Stein's lemma | the right generalization under fat tails is a choice, not a theorem |
@@ -911,7 +911,7 @@ are today's.
 **2026-11-11 — building vault stage A** (while the author was away; for review)
 
 - **The solver was generalized to any number of state dimensions**
-  (`quant/grid.py`), and the bank form rebuilt on it with every test unchanged.
+  (`quant/research/grid.py`), and the bank form rebuilt on it with every test unchanged.
   The Catmull-Rom option was dropped.
 - **The vault form's stage A was built** with the Phase 0 parameters as
   proposed.
@@ -1082,7 +1082,7 @@ are today's.
   the user's firm and the user's policy in, what can happen out, with no
   search for the best policy (`docs/plan-tool.md`). The search — grid solvers
   and learner — continues as research, in the same repository on the same
-  accounting, to be moved under `quant/research/`.
+  accounting, under `quant/research/`.
 - **The coarse 4-D grid was built before the learner,** not after it as first
   planned: the grid machinery already handles any number of dimensions, a
   coarse solve takes minutes, and it shows what the integrated firm does

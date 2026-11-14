@@ -7,9 +7,11 @@ from dataclasses import replace
 
 import pytest
 
-from quant.lending_solver import LendingSpec, market_value, solve_lending
+from quant.research.lending_solver import LendingSpec, market_value, solve_lending
 from quant.numerics import REFERENCE
 from quant.params import DEFAULTS
+
+pytestmark = pytest.mark.slow   # run with `uv run pytest -m slow`
 
 P = REFERENCE
 BASE = replace(DEFAULTS, periods_per_year=1)
@@ -96,7 +98,7 @@ def test_answer_does_not_depend_on_the_step_budget(base):
 def test_operating_costs_sit_within_the_industry_bounds(base):
     """At a full vault and the terms the firm chooses: payroll at least 30% of
     revenue, all operating costs 50-60% (design.md section 2.7)."""
-    from quant.lending_results import cost_ratios
+    from quant.research.lending_results import cost_ratios
 
     ratios = cost_ratios(base, at_w=0.1, at_A=1.0)
     assert ratios.revenue > 0

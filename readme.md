@@ -57,24 +57,24 @@ The design, and the reasoning behind each choice, is in
 Built so far:
 
 - **the stablecoin lending vault** (`quant/lending.py`, solved on a 3-D grid by
-  `quant/lending_solver.py`): loans over-collateralized by BTC at a rate and
+  `quant/research/lending_solver.py`): loans over-collateralized by BTC at a rate and
   loan-to-value the firm sets, liquidation at the threshold, bad debt from BTC
   crashes;
 - **the BTC yield vault** (`quant/btc_vault.py`, solved on a 3-D grid by
-  `quant/btc_vault_solver.py`): strategies, fees in BTC, flows;
+  `quant/research/btc_vault_solver.py`): strategies, fees in BTC, flows;
 - **the integrated firm** (`quant/integrated.py`): both vaults joined through
   one loan book, funded by the dollar vault and by a hedged lending sleeve of
-  the BTC vault; solved on a coarse 4-D grid (`quant/integrated_solver.py`)
-  and read out as a CFO would want it (`quant/integrated_results.py`,
-  `scripts/integrated.py`);
+  the BTC vault; solved on a coarse 4-D grid (`quant/research/integrated_solver.py`)
+  and read out as a CFO would want it (`quant/research/integrated_results.py`,
+  `scripts/research/integrated.py`);
 - the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
   a hedge with perps, a runway of operating costs; BTC at the market's
   expectation plus the firm's bias, with occasional crashes;
 - fat-tailed shocks with tail dependence and heavy-tailed jump losses,
   integrated by deterministic quadrature rather than Monte Carlo
   (`quant/quadrature.py`);
-- an infinite-horizon solver on an N-dimensional grid (`quant/grid.py`), checked
-  against the paper's own results in a two-period version (`quant/twoperiod.py`).
+- an infinite-horizon solver on an N-dimensional grid (`quant/research/grid.py`), checked
+  against the paper's own results in a two-period version (`quant/research/twoperiod.py`).
 
 An earlier single dollar vault and a bank form were built and removed.
 
@@ -84,8 +84,8 @@ search for the best policy (grid solvers, and an actor-critic learner still
 to build) continues as research (`docs/plan-integrated.md`).
 
 ```bash
-uv run pytest
-uv run python -m scripts.integrated --periods 1
+uv run pytest               # seconds; add `-m slow` for the solver tests (about five minutes)
+uv run python -m scripts.research.integrated --periods 1
 ```
 
 The previous model (finite horizon, hazard-based failure) is preserved on the

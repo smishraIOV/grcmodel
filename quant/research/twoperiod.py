@@ -22,7 +22,7 @@ conditions into the paper's results exactly:
 Prop. 2 is the mu_BTC = 0 case of the third line: with no view, it hedges
 everything.
 
-`tests/test_twoperiod.py` checks both against a numerical optimum that knows
+`tests/research/test_twoperiod.py` checks both against a numerical optimum that knows
 nothing about either formula. Under the Student-t, Stein's lemma fails, and the
 gap between eq. (9) and the true optimum is a result rather than an error.
 

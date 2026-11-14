@@ -8,11 +8,13 @@ from dataclasses import replace
 import pytest
 import torch
 
-from quant.integrated_results import readout, state_index
-from quant.integrated_solver import IntegratedSpec, market_value, solve_integrated
+from quant.research.integrated_results import readout, state_index
+from quant.research.integrated_solver import IntegratedSpec, market_value, solve_integrated
 from quant.numerics import REFERENCE
 from quant.params import INTEGRATED_DEFAULTS
-from scripts.integrated import report
+from scripts.research.integrated import report
+
+pytestmark = pytest.mark.slow   # run with `uv run pytest -m slow`
 
 P = REFERENCE
 BASE = replace(INTEGRATED_DEFAULTS, periods_per_year=1)

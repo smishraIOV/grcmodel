@@ -38,7 +38,9 @@ to be merged back.
 Everything goes through `uv`:
 
 ```bash
-uv run pytest
+uv run pytest                          # the core and the quick research checks: seconds
+uv run pytest -m slow                  # the solver tests: about five minutes
+uv run pytest -m "slow or not slow"    # everything
 ```
 
 Entry points take `--profile {reference,cpu-fast,fast}` (`quant/cli.py`) and
@@ -52,6 +54,13 @@ a finer equity grid near the issuance kink (`docs/design.md` §4.4).
 
 ## Layout
 
+Two paths share one core (`docs/plan-tool.md`). **The core** is the one-period
+accounting and the scenarios; the what-if tool is built on it. **Research** is
+everything that searches for the best policy. The core never imports from
+research (`tests/test_layout.py`).
+
+The core:
+
 - `quant/params.py` — every parameter, one economic driver each, rates per year
 - `quant/core.py` — primitives every form shares: issuance cost, GRC, jumps
 - `quant/firm.py` — the firm's own books (stablecoins, BTC, hedge, runway,
@@ -60,18 +69,21 @@ a finer equity grid near the issuance kink (`docs/design.md` §4.4).
 - `quant/btc_vault.py` — the BTC yield vault, one period
 - `quant/integrated.py` — both vaults joined through one loan book, one period
 - `quant/quadrature.py` — deterministic rules for the Student-t shocks and jumps
-- `quant/grid.py` — the shared N-dimensional grid, interpolation and policy iteration
-- `quant/lending_solver.py` — the lending vault's decisions and objective on the grid
-- `quant/lending_results.py` — what a solved lending firm says
-- `quant/btc_vault_solver.py` — the BTC vault's decisions and objective on the grid
-- `quant/integrated_solver.py` — the integrated firm on a coarse 4-D grid
-- `quant/integrated_results.py` — what a solved integrated firm says: the
-  read-out a CFO would look at, and the cost ratios
-- `quant/twoperiod.py` — the two-period truncation of the paper's own bank,
-  self-contained, used as the oracle (a known-answer check against the paper's formulas)
 - `quant/numerics.py` — profiles: device, dtype, RNG
-- `scripts/integrated.py` — solve the integrated firm and print its read-out
-  (`uv run python -m scripts.integrated --periods 1`)
+- `quant/cli.py` — what every entry point shares: `--profile` and the run header
+
+Research (`quant/research/`, tests in `tests/research/`, entry points in
+`scripts/research/`):
+
+- `grid.py` — the shared N-dimensional grid, interpolation and policy iteration
+- `lending_solver.py`, `btc_vault_solver.py` — each vault alone on a 3-D grid
+- `integrated_solver.py` — the integrated firm on a coarse 4-D grid
+- `lending_results.py`, `integrated_results.py` — what a solved firm says: the
+  read-out and the cost ratios
+- `twoperiod.py` — the two-period truncation of the paper's own bank,
+  self-contained, used as the oracle (a known-answer check against the paper's formulas)
+- `scripts/research/integrated.py` — solve the integrated firm and print its
+  read-out (`uv run python -m scripts.research.integrated --periods 1`)
 
 ## Numerics
 
@@ -97,7 +109,7 @@ a finer equity grid near the issuance kink (`docs/design.md` §4.4).
 ## Oracles
 
 - **The two-period oracle runs on pinned parameters** (`oracle_params` in
-  `quant/twoperiod.py`). They exist to keep every quadrature node inside the
+  `quant/research/twoperiod.py`). They exist to keep every quadrature node inside the
   region where the final-period value is exactly quadratic, which is what makes
   the checks against eqs. (9) and Prop. 2 exact. They are not plausible and must
   not be recalibrated with the model.

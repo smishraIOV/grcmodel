@@ -5,7 +5,7 @@ step 4).
     V(w, S, A_L, A_B) = max{ 0, max_c [ flow(w, K) + beta E V(w', S', A_L', A_B') ] }
 
 over the firm's equity, its GRC stock, and the two vaults' sizes in dollars.
-The grid, interpolation and policy iteration are `quant.grid`'s; this module
+The grid, interpolation and policy iteration are `quant.research.grid`'s; this module
 supplies the decisions and the objective. A grid in four dimensions is coarse
 at any affordable size: it is the deterministic reference the learner is
 graded against, and a first look at the integrated firm, not the final solver.
@@ -30,7 +30,7 @@ import torch
 import torch.nn.functional as F
 
 from quant.core import issuance_cost, next_grc, shareholder_flow
-from quant.grid import StateGrid, policy_iteration
+from quant.research.grid import StateGrid, policy_iteration
 from quant.integrated import (
     IntegratedControls,
     IntegratedOutcomes,

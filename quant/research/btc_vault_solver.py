@@ -4,7 +4,7 @@
     V(w, S, A) = max{ 0, max_c [ flow(w, K) + beta E V(w', S', A') ] }
 
 over the firm's equity, its GRC stock, and the BTC vault's size in dollars.
-The grid, interpolation and policy iteration are `quant.grid`'s; this module
+The grid, interpolation and policy iteration are `quant.research.grid`'s; this module
 supplies the decisions and the objective. The vault's size beyond the grid is
 clamped.
 
@@ -33,7 +33,7 @@ from quant.btc_vault import (
     btc_vault_rule,
 )
 from quant.core import issuance_cost, next_grc, shareholder_flow
-from quant.grid import StateGrid, policy_iteration
+from quant.research.grid import StateGrid, policy_iteration
 from quant.numerics import NumericsProfile
 from quant.params import Params
 from quant.quadrature import JumpRule, ShockRule, pareto_jump_rule

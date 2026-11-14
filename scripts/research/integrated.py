@@ -1,8 +1,8 @@
 """Solve the integrated firm on the coarse 4-D grid and print what it says
 at one state (design.md sections 2-3; docs/plan-integrated.md steps 4-5).
 
-    uv run python -m scripts.integrated --periods 1
-    uv run python -m scripts.integrated --periods 1 --equity 0.3 --dollar-vault 1 --btc-vault 2
+    uv run python -m scripts.research.integrated --periods 1
+    uv run python -m scripts.research.integrated --periods 1 --equity 0.3 --dollar-vault 1 --btc-vault 2
 
 Annual (`--periods 1`) is for exploring; quarterly needs a finer equity grid
 than the coarse one here (design.md section 4.4). The grid is coarse in every
@@ -13,8 +13,8 @@ import time
 from dataclasses import replace
 
 from quant.cli import print_header, profile_parser
-from quant.integrated_results import OPERATING_RANGE, PAYROLL_FLOOR, STRATEGIES, ReadOut, readout
-from quant.integrated_solver import IntegratedSpec, solve_integrated
+from quant.research.integrated_results import OPERATING_RANGE, PAYROLL_FLOOR, STRATEGIES, ReadOut, readout
+from quant.research.integrated_solver import IntegratedSpec, solve_integrated
 from quant.numerics import get_profile
 from quant.params import INTEGRATED_DEFAULTS
 

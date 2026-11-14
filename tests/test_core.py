@@ -64,7 +64,8 @@ def test_jump_probability_is_differentiable_in_spend():
 
 
 def test_every_entry_point_imports():
-    """A script nothing imports can be broken for days."""
+    """A script nothing imports can be broken for days. The research scripts
+    have the same check in tests/research/test_layout.py."""
     for path in sorted((ROOT / "scripts").glob("*.py")):
         spec = importlib.util.spec_from_file_location(path.stem, path)
         module = importlib.util.module_from_spec(spec)

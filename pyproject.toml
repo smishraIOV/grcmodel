@@ -20,3 +20,10 @@ package = false
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: solves a model on a grid; minutes, not seconds"]
+# The default run is the accounting core and the quick research checks.
+# `uv run pytest -m slow` runs the solver tests; `-m "slow or not slow"` runs everything.
+addopts = "-m 'not slow'"

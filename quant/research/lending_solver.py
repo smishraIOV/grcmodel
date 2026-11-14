@@ -4,7 +4,7 @@
     V(w, S, A) = max{ 0, max_c [ flow(w, K) + beta E V(w', S', A') ] }
 
 over the firm's equity, its GRC stock, and the lending vault's size. The grid,
-interpolation and policy iteration are `quant.grid`'s; this module supplies
+interpolation and policy iteration are `quant.research.grid`'s; this module supplies
 the decisions and the objective. The vault's size beyond the grid is clamped.
 
 Decisions, squashed so every constraint holds by construction:
@@ -30,7 +30,7 @@ import torch
 import torch.nn.functional as F
 
 from quant.core import issuance_cost, next_grc, shareholder_flow
-from quant.grid import StateGrid, policy_iteration
+from quant.research.grid import StateGrid, policy_iteration
 from quant.lending import (
     LendingControls,
     lending_capital_floor,

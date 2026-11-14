@@ -5,8 +5,8 @@ current plan. Read it first, then `CLAUDE.md` (working rules) and
 `docs/design.md` (the specification). Where this plan and the design
 disagree, the design wins; update this plan.
 
-**Status:** agreed, not started. Each step needs the user's approval as it
-comes.
+**Status:** step 0 is done; step 1 is next. Each step needs the user's
+approval as it comes.
 
 ---
 
@@ -38,7 +38,7 @@ convergence is not yet well spent.
 the firm" and no "best" anything. The tool reports ranges of outcomes and
 comparisons between policies the user chooses.
 
-**One directory, not a branch.** The research code moves under
+**One directory, not a branch.** The research code is under
 `quant/research/` (step 0). Separate branches would let the shared core drift
 apart.
 
@@ -48,7 +48,7 @@ Each step ends with tests passing and a commit.
 
 | step | what | done when |
 |---|---|---|
-| 0 | **Separate the two paths in the layout.** Move the solvers (`grid.py`, the three `*_solver.py`, `lending_results.py`, `integrated_results.py`, `twoperiod.py`) under `quant/research/`, with their tests and `scripts/integrated.py`. Mark the slow solver tests so the default `uv run pytest` runs the core in seconds. | The core's tests run without importing anything from `quant/research/`. |
+| 0 | **Separate the two paths in the layout.** The solvers (`grid.py`, the three `*_solver.py`, `lending_results.py`, `integrated_results.py`, `twoperiod.py`) are under `quant/research/`, their tests under `tests/research/`, the entry point at `scripts/research/integrated.py`. The solver tests are marked `slow` and left out of the default run. | **Done (2026-11-14).** `uv run pytest` runs in about two seconds; `tests/test_layout.py` fails if the core imports research code. |
 | 1 | **A firm profile in real units.** Vault sizes in dollars, fee schedule, payroll and other operating costs, treasury holdings, loan terms, the firm's assumptions about BTC. One function maps it onto `Params` and the model's scale (the dollar vault's capacity = 1), and back for reporting. | A profile round-trips; every output can be shown in dollars. |
 | 2 | **Policy as an input.** The user's own choices: equity kept, payout and raising, own BTC and hedge, borrower rate, LTV, the BTC vault's allocation, GRC spend. Fixed targets first; simple rules later (pay out above a level, raise below one). | A policy that breaks a constraint (capital floor, runway, hedge above BTC held) is refused with a plain message. |
 | 3 | **The one-period read-out, without a solver.** Today's read-out (`integrated_results.py`) reads a solved firm. Rebuild it to take a profile and a policy: what the firm expects to earn and spend, what each group of investors expects against what they could earn elsewhere, cost ratios, and how the period may end (chance and size of a shortfall below the capital floor). | Matches the existing read-out when given a solved firm's own decisions. |

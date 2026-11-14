@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from quant.grid import StateGrid
+from quant.research.grid import StateGrid
 from quant.numerics import REFERENCE
 
 P = REFERENCE

@@ -9,9 +9,11 @@ from dataclasses import replace
 import pytest
 import torch
 
-from quant.btc_vault_solver import BtcVaultSpec, market_value, riskless_btc_vault, solve_btc_vault
+from quant.research.btc_vault_solver import BtcVaultSpec, market_value, riskless_btc_vault, solve_btc_vault
 from quant.numerics import REFERENCE
 from quant.params import DEFAULTS
+
+pytestmark = pytest.mark.slow   # run with `uv run pytest -m slow`
 
 P = REFERENCE
 BASE = replace(DEFAULTS, periods_per_year=1)

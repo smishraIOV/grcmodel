@@ -5,7 +5,7 @@ import torch
 
 from quant.numerics import REFERENCE
 from quant.quadrature import student_t_rule
-from quant.twoperiod import (
+from quant.research.twoperiod import (
     ORACLE_FIRST_PERIOD,
     final_marginals,
     first_period_wealth,

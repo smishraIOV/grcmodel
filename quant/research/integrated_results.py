@@ -21,7 +21,7 @@ import torch
 
 from quant.core import issuance_cost, next_grc
 from quant.integrated import integrated_capital_floor, integrated_outcomes
-from quant.integrated_solver import IntegratedSolution
+from quant.research.integrated_solver import IntegratedSolution
 
 PAYROLL_FLOOR = 0.30              # payroll as a share of revenue, at least
 OPERATING_RANGE = (0.50, 0.60)    # all operating costs as a share of revenue
