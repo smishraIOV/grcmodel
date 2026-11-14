@@ -104,3 +104,14 @@ def test_the_page_saves_a_firm_to_a_file_and_loads_one_through_the_model():
         assert needed in page, needed
     assert 'await post({...saved, want: ["read_out"]})' in page
     assert "localStorage" not in page and "sessionStorage" not in page      # nothing is kept in the browser
+
+
+def test_the_page_marks_the_sensitivity_out_of_date_when_an_input_changes():
+    """It is worked out only on request, so every change to an input, which
+    passes through `schedule`, must mark what is shown as out of date --
+    including a change made while it was being worked out."""
+    page = PAGE.read_text()
+    assert 'id="sens-note"' in page and "function staleSensitivity(stale)" in page
+    schedule = page.split("function schedule() {", 1)[1].split("\n}", 1)[0]
+    assert "edits += 1" in schedule and "staleSensitivity(true)" in schedule
+    assert "staleSensitivity(edits !== asked)" in page

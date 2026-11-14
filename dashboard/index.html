@@ -66,6 +66,7 @@
   .tile .value { font-size: 24px; font-weight: 650; margin: 2px 0; }
   .tile .more { color: var(--text-secondary); font-size: 12.5px; }
   .stale { opacity: 0.45; transition: opacity 120ms; }
+  .outdated { opacity: 0.4; }
   svg { display: block; width: 100%; height: auto; overflow: visible; }
   svg text { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
   svg text.name { fill: var(--text-secondary); }
@@ -161,6 +162,7 @@
           The ranges are not estimates. With a second policy, the figures are the change from the first to the second.</p>
         <div class="check"><button id="sens-run" type="button">Work it out (about 15 seconds)</button>
           <select id="sens-output" hidden aria-label="The figure to look at"></select></div>
+        <p class="flag" id="sens-note" role="status" hidden>⚠ The inputs have changed since this was worked out. It shows the earlier inputs: work it out again.</p>
         <div id="sens-chart"></div>
         <details id="sens-details" hidden><summary>The figures</summary><div class="scroll" id="sens-table"></div></details>
       </div>
@@ -200,7 +202,7 @@ const human = key => key.split("_").map(w => WORDS[w] ?? w).join(" ").replace(/^
 // ---- state -------------------------------------------------------------------------------
 let META = null;
 const state = {name: "", firm: null, market: null, risk: null, policy: null, second: null, years: 5, buffer: null, largest: null};
-let timer = null, sequence = 0, last = null, sens = null;
+let timer = null, sequence = 0, last = null, sens = null, edits = 0;
 
 // ---- forms ---------------------------------------------------------------------------------
 const SHOW = {money: v => v / 1e6, share: v => v * 100, number: v => v};
@@ -302,7 +304,17 @@ function request(want, withPolicy = true) {
   if (state.largest !== null) r.largest_raise = state.largest;
   return r;
 }
-function schedule() { clearTimeout(timer); $("#results").classList.add("stale"); timer = setTimeout(run, 350); }
+function schedule() {
+  edits += 1;                                   // every change to an input passes through here
+  staleSensitivity(true);
+  clearTimeout(timer); $("#results").classList.add("stale"); timer = setTimeout(run, 350);
+}
+// The sensitivity is worked out only on request, so once an input changes what is shown is out of date.
+function staleSensitivity(stale) {
+  const out = stale && sens !== null;
+  $("#sens-note").hidden = !out;
+  for (const id of ["#sens-chart", "#sens-details"]) $(id).classList.toggle("outdated", out);
+}
 
 async function run() {
   const mine = ++sequence;
@@ -341,6 +353,7 @@ async function importData(saved) {
     buffer: saved.equity_buffer ?? null, largest: saved.largest_raise ?? null});
   sens = null;
   $("#sens-chart").replaceChildren(); $("#sens-output").hidden = true; $("#sens-details").hidden = true;
+  staleSensitivity(false);
   buildAll();
   return [];
 }
@@ -656,7 +669,7 @@ function render(answer) {
 
 // ---- the sensitivity, on request ----------------------------------------------------------------
 async function runSensitivity() {
-  const button = $("#sens-run");
+  const button = $("#sens-run"), asked = edits;
   button.disabled = true; button.textContent = "Working…";
   let answer;
   try { answer = await post(request(["sensitivity"])); } catch (error) { answer = {ok: false, problems: ["The model could not be reached."]}; }
@@ -668,6 +681,7 @@ async function runSensitivity() {
   select.hidden = false; $("#sens-details").hidden = false;
   if (sens.outputs.some(o => o.name.startsWith("what shareholders take"))) select.value = sens.outputs.find(o => o.name.startsWith("what shareholders take")).name;
   drawSensitivity();
+  staleSensitivity(edits !== asked);              // an input changed while it was being worked out
 }
 function drawSensitivity() { ranges($("#sens-chart"), sens, sens.outputs.find(o => o.name === $("#sens-output").value)); }
 
