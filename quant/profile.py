@@ -117,6 +117,7 @@ class MarketAssumptions:
     rate_no_demand: float            # borrower rate at which nobody borrows
     reference_ltv: float             # the loan-to-value `loan_demand` is stated at
     demand_per_10_ltv_points: float  # extra demand, as a share, per 10 points of loan-to-value
+    demand_follows_btc: float        # over several periods, demand moves as BTC's price to this power (0: not at all)
     dollar_outside_rate: float       # what investors could earn elsewhere
     btc_outside_yield: float
     dollar_flow_response: float      # net flows, share of the vault, per unit of yield gap
@@ -274,7 +275,7 @@ def _changes(profile: FirmProfile) -> dict:
         issue_incident=m.raise_cost_after_incident - 1.0,
         btc_crash_rate=m.btc_crashes_per_year, btc_crash_mean=m.btc_crash_size, btc_bias=m.btc_view,
         loan_demand=at_zero, rate_max=m.rate_no_demand, ltv_ref=m.reference_ltv,
-        ltv_demand=m.demand_per_10_ltv_points / 0.10,
+        ltv_demand=m.demand_per_10_ltv_points / 0.10, demand_btc=m.demand_follows_btc,
         outside_rate=m.dollar_outside_rate, btc_outside_yield=m.btc_outside_yield,
         flow_yield=m.dollar_flow_response, btc_flow_yield=m.btc_flow_response,
         inflow_speed=m.inflow_speed, strategy_yield=tuple(m.strategy_yield),
@@ -343,7 +344,7 @@ def _market_from(p: Params, scale: float, loan_rate: float) -> MarketAssumptions
             loans=p.loan_demand * _demand_share(loan_rate, p.rate_max, n) * scale, rate=loan_rate
         ),
         rate_no_demand=p.rate_max, reference_ltv=p.ltv_ref,
-        demand_per_10_ltv_points=p.ltv_demand * 0.10,
+        demand_per_10_ltv_points=p.ltv_demand * 0.10, demand_follows_btc=p.demand_btc,
         dollar_outside_rate=p.outside_rate, btc_outside_yield=p.btc_outside_yield,
         dollar_flow_response=p.flow_yield, btc_flow_response=p.btc_flow_yield,
         inflow_speed=p.inflow_speed, strategy_yield=tuple(p.strategy_yield),

@@ -75,6 +75,9 @@ Built so far:
   under the user's own decisions, with no search for the best ones;
 - **stress scenarios** (`quant/stress.py`): what a BTC fall, a crash or an
   incident would leave the firm, its vaults and their investors;
+- **multi-year paths** (`quant/paths.py`): the firm carried forward on random
+  paths under a simple rule — how often it must raise equity, how often it
+  fails, what it pays out;
 - the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
   a hedge with perps, a runway of operating costs; BTC at the market's
   expectation plus the firm's bias, with occasional crashes;
@@ -93,7 +96,7 @@ to build) continues as research (`docs/plan-integrated.md`).
 
 ```bash
 uv run pytest               # seconds; add `-m slow` for the solver tests (about five minutes)
-uv run python -m scripts.whatif --ltv 0.7 --stress          # an example firm: one quarter ahead, and under stress
+uv run python -m scripts.whatif --ltv 0.7 --stress --years 5   # an example firm: one quarter ahead, under stress, and over five years
 uv run python -m scripts.research.integrated --periods 1
 ```
 

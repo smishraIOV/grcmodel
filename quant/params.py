@@ -108,6 +108,8 @@ class Params:
     rate_max: float = 0.20          # borrower rate at which demand reaches zero, per year
     ltv_ref: float = 0.50           # reference loan-to-value for loan_demand
     ltv_demand: float = 1.0         # demand shift per unit of LTV: +10% per 10 points
+    demand_btc: float = 0.5         # how loan demand moves with BTC's price over several periods: demand is
+                                    # multiplied by (price / price at the start)^demand_btc; 0 is not at all
     ltv_min: float = 0.30           # bounds on the LTV the firm may offer
     ltv_max: float = 0.75
     liq_threshold: float = 0.80     # loan (with interest) to collateral value at which liquidation starts

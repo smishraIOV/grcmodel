@@ -77,11 +77,14 @@ The core:
   dollars, with no solver
 - `quant/stress.py` — named stress scenarios: one outcome worked through the
   accounting, with what it leaves the firm, the vaults and their investors
+- `quant/paths.py` — the firm over several years on random paths, under a rule
+  the user sets
 - `quant/numerics.py` — profiles: device, dtype, RNG
 - `quant/cli.py` — what every entry point shares: `--profile` and the run header
 
-- `scripts/whatif.py` — print that read-out, and the stress scenarios, for the
-  example firm (`uv run python -m scripts.whatif --rate 0.08 --sleeve 0.2 --stress`)
+- `scripts/whatif.py` — print that read-out, the stress scenarios and the
+  multi-year paths for the example firm
+  (`uv run python -m scripts.whatif --ltv 0.7 --stress --years 5`)
 
 Research (`quant/research/`, tests in `tests/research/`, entry points in
 `scripts/research/`):
@@ -106,7 +109,10 @@ Research (`quant/research/`, tests in `tests/research/`, entry points in
   may be quoted in `docs/`.**
 - **Expectations use quadrature, not Monte Carlo,** wherever the state is small
   enough for a grid. A grid solution is then deterministic: no seed noise, and
-  no scenario set that changes with the batch size.
+  no scenario set that changes with the batch size. The tool's one-period
+  read-out is quadrature too. Its multi-year paths (`quant/paths.py`) are
+  Monte Carlo, from a seeded generator, and are checked against the read-out
+  over one period.
 - **Randomness, when the learner needs it, is drawn on CPU in float64 and cast
   last.** MPS generators differ from CPU's for the same seed.
 - **Benchmark warm.** MPS pays a one-off compilation cost on first launch.

@@ -1,9 +1,11 @@
-"""Print what one period holds for a firm under a policy, and what a set of
-stress scenarios would leave (docs/plan-tool.md steps 3 and 4).
+"""Print what one period holds for a firm under a policy, what a set of
+stress scenarios would leave, and where several years may take it
+(docs/plan-tool.md steps 3 to 5).
 
     uv run python -m scripts.whatif
     uv run python -m scripts.whatif --periods 1 --rate 0.08 --ltv 0.6 --sleeve 0.2
     uv run python -m scripts.whatif --ltv 0.7 --stress
+    uv run python -m scripts.whatif --years 5 --buffer 8e6
 
 For now the firm is the made-up example of `quant.profile.example_facts`,
 with illustrative assumptions, and the policy is `quant.policy.starting_policy`
@@ -15,6 +17,8 @@ from dataclasses import replace
 
 from quant.cli import print_header, profile_parser
 from quant.numerics import get_profile
+from quant.paths import report as path_report
+from quant.paths import rule_from, simulate
 from quant.policy import problems, starting_policy
 from quant.profile import example_facts, illustrative, to_model
 from quant.readout import read_out, report
@@ -34,6 +38,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--sleeve", type=float, help="share of the BTC vault lent as stablecoins; "
                                                      "the rest is split evenly over its three strategies")
     parser.add_argument("--stress", action="store_true", help="also work a set of stress scenarios through")
+    parser.add_argument("--years", type=float, help="also carry the firm forward this many years on random paths")
+    parser.add_argument("--paths", type=int, default=20000, help="how many paths (default: %(default)s)")
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--buffer", type=float, help="equity held above the capital needed, dollars "
+                                                     "(default: what the policy keeps today)")
+    parser.add_argument("--largest-raise", type=float, help="the most shareholders will put in at once, dollars "
+                                                            "(default: the capital needed today)")
     args = parser.parse_args(argv)
     profile = get_profile(args.profile)
     print_header(profile)
@@ -58,6 +69,11 @@ def main(argv: list[str] | None = None) -> None:
     print(report(read_out(model, policy, profile=profile)))
     if args.stress:
         print("\n" + stress_report(run_all(model, policy, profile=profile)))
+    if args.years is not None:
+        rule = rule_from(policy, model, largest_raise=args.largest_raise)
+        if args.buffer is not None:
+            rule = replace(rule, equity_buffer=args.buffer)
+        print("\n" + path_report(simulate(model, rule, years=args.years, paths=args.paths, seed=args.seed, profile=profile)))
 
 
 if __name__ == "__main__":

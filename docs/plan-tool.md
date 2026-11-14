@@ -5,7 +5,7 @@ current plan. Read it first, then `CLAUDE.md` (working rules) and
 `docs/design.md` (the specification). Where this plan and the design
 disagree, the design wins; update this plan.
 
-**Status:** steps 0 to 4 are done. Step 5 needs a discussion first (section 3). Each step needs the user's
+**Status:** steps 0 to 5 are done; step 6 (two policies side by side) is next. Several choices in the accounting and in step 5 were made by Claude while the user was away and are listed in section 3 for review. Each step needs the user's
 approval as it comes.
 
 ---
@@ -53,7 +53,7 @@ Each step ends with tests passing and a commit.
 | 2 | **Policy as an input** (`quant/policy.py`). The user's own choices, in dollars and yearly rates: equity kept (so the payout or raise), GRC spend, own BTC and hedge, borrower rate, LTV, the BTC vault's allocation. Fixed targets for one period; rules that depend on the firm's state come with step 5, which needs them (section 3). | **Done (2026-11-14).** A policy that breaks a constraint is refused with every reason in plain words and dollar amounts; the constraints are checked to be the accounting's own; a sound policy round-trips. |
 | 3 | **The one-period read-out, without a solver** (`quant/readout.py`, `scripts/whatif.py`). Takes a profile and a policy: capital and what the constraints ask for, GRC and the chance of an incident, the loan book, what the firm expects to earn and spend, cost ratios, what each group of investors expects against what they could earn elsewhere and the vaults' expected sizes, and how the period may end (expected equity, the chance of ending with less, the chance and size of a shortfall below the capital needed). In dollars; deterministic. | **Done (2026-11-14).** Matches the research read-out at a solved firm's own decisions, annual and quarterly (`tests/research/test_readout_matches.py`); matches the accounting by hand where nothing is random; unchanged in cents; finer scenarios do not move it. The one figure that did not settle at first, the BTC vault's yield with a sleeve, led to the change of BTC's price model (design §3.4). |
 | 4 | **Named stress scenarios** (`quant/stress.py`; `scripts/whatif.py --stress`). Single outcomes worked through the accounting under the user's policy: BTC moving smoothly, a crash, an incident in the lending system or in the BTC vault, and combinations. For each: the firm's equity and its change, the shortfall below the capital needed and the cost of raising it, bad debt, what the firm repays, the vaults' sizes, and what outside investors receive. A standard set of ten, with round-number sizes; any other can be given. | **Done (2026-11-14).** Each standard stress matches the accounting written out by hand, annual and quarterly; a smooth fall and a crash to the same price differ as design §2.2 says; an incident can be imposed on a profile that expects none. Two incidents in one period are refused: the model allows one. |
-| 5 | **Multi-year paths.** The firm simulated forward under the chosen policy: the range of its equity, the chance and size of capital raises, runway, the vaults' sizes, investors' yields. **A new concept — to be discussed before it is built** (section 3). | To be set when the concept is agreed. |
+| 5 | **Multi-year paths** (`quant/paths.py`; `scripts/whatif.py --years 5`). The firm simulated forward on random paths under a rule: pay out above a buffer over the capital needed, raise back to it when below, fail if the raise needed exceeds what shareholders will put in; everything else fixed. Loan demand follows BTC's price along a path. Gives, by year: the range of equity, the chance of having raised or failed, what is paid out and put in, the vaults' sizes, and what shareholders take over the horizon. | **Done (2026-11-14).** One simulated period agrees with the read-out within sampling error; the draws match their distributions; with nothing random every path follows the rule by hand; the same seed repeats. **The choices were Claude's, made while the user was away: to review** (design §11, and open question 0 in §8). |
 | 6 | **Two policies side by side.** The same profile, scenarios and paths under two policies, with the differences. This is what takes the place of "the best policy". | — |
 | 7 | **Assumptions shown as assumptions.** What cannot be observed — above all how well GRC spend works — is a dial with a range, and every output that depends on it says by how much. | — |
 | 8 | **Calibration.** A source for each block of parameters: BTC's volatility and crash history; perp funding rates; liquidations and bad debt at lending protocols; incident losses; fee levels and flows. Recorded with the source and the date. | The user agrees the numbers are worth showing. |
@@ -63,20 +63,35 @@ Steps 0–4 use nothing new. Step 5 is the main new work.
 
 ## 3. To discuss before building
 
-- **Simulating a fixed policy forward (step 5).** Monte Carlo simulation,
-  standard. Questions: random draws or the quadrature scenarios chained from
-  period to period; how many paths; how to report rare events (deep crashes)
-  that few paths contain; what the firm does on a path when it falls below
-  its floor (raise at the issuance cost, as in the model, or stop).
-- **Policy rules (step 2).** Which simple rules are worth offering, and
-  whether a rule may depend on the firm's state.
+- **For the user's review: choices made on 2026-11-14 while away.** Each is
+  in the design's decisions log with its reason.
+  1. *Slippage*: a smooth fall sells at the threshold less 25% of the fall
+     past it; GRC narrows it.
+  2. *Withdrawals from the other vault* after an incident: 10% of it if the
+     vault hit were the whole business, scaled by the hit vault's share.
+  3. *Raising equity*: 20% all in to raise 5% of the dollar vault's capacity,
+     50% to raise 20%; three times dearer after BTC halves, three times after
+     an incident. The solvers use the first part only.
+  4. *Loan demand along a path*: moves as BTC's price to the power 0.5.
+  5. *The rule over several years*: a buffer above the capital needed; raise
+     back to exactly what is needed; fail if that takes more than a largest
+     raise, by default the capital needed today.
+  6. *Random draws*, 20,000 paths, seeded; "what shareholders take" counts
+     equity at the end at book.
+- **What the paths show that calibration will have to answer.** At the
+  illustrative settings BTC's median price roughly halves over five years
+  while its average rises: 60% volatility with a crash every two years is a
+  harsh assumption. And the example firm's costs exceed its income, so it
+  wears its buffer down and then raises regularly.
 - **Gaps in the accounting that matter more for a tool than for research,**
   for the user to rank, not to be fixed unasked:
   - a BTC price that touches the liquidation threshold and recovers is not
     counted as a liquidation (design §8, item 3);
   - investors respond to their average yield, not to risk;
-  - withdrawals after an incident come from the vault hit only;
-  - loan demand does not move with the BTC price;
+  - loans last one period and the book restarts each period (demand now
+    follows BTC along a path, the cheap part of this);
+  - perp funding is constant and stablecoins never lose their peg;
+  - at most one incident a period, and GRC changes how often, not how bad;
   - operating costs for the integrated firm are still the single-vault
     figure. A first exploratory pass put them at about twice that to sit
     inside the agreed 50–60% of combined revenue; with real profiles (step 1)

@@ -162,6 +162,41 @@ def pareto_jump_rule(
     return JumpRule(severity=profile.tensor(severity), weights=profile.tensor(p))
 
 
+def _tail_nodes(n: int, tail_prob: float) -> tuple[np.ndarray, np.ndarray]:
+    """Survival probabilities and weights, placed evenly in log-probability."""
+    x, w = np.polynomial.legendre.leggauss(n)
+    lo = math.log(tail_prob)
+    x = lo + (x + 1.0) * (-lo) / 2.0
+    w = w * (-lo) / 2.0
+    survival = np.exp(x)
+    p = w * survival
+    return survival, p / p.sum()
+
+
+def _crash_scale(mean: float, unit: np.ndarray, p: np.ndarray) -> float:
+    """The scale of J at which the mean share 1 - exp(-J) on these nodes is `mean`."""
+    def mean_share(scale: float) -> float:
+        return float(p @ (1.0 - np.exp(-scale * unit)))
+
+    low, high = 0.0, 1.0
+    while mean_share(high) < mean:
+        high *= 2.0
+    for _ in range(200):                   # bisection: the mean share rises with the scale
+        mid = 0.5 * (low + high)
+        low, high = (mid, high) if mean_share(mid) < mean else (low, mid)
+    return 0.5 * (low + high)
+
+
+def crash_scale(mean: float, tail: float, n: int = 512, tail_prob: float = 1e-12) -> float:
+    """The Pareto scale of a crash's size J in the logarithm of the price, for
+    drawing crashes at random: J = scale U^(-1/tail), U uniform, takes the
+    share 1 - exp(-J), with mean share `mean` (found on a fine rule)."""
+    if not 0.0 < mean < 1.0:
+        raise ValueError("a crash's mean share of the price must be between 0 and 1")
+    survival, p = _tail_nodes(n, tail_prob)
+    return _crash_scale(mean, survival ** (-1.0 / tail), p)
+
+
 def crash_rule(
     mean: float, tail: float, profile: NumericsProfile, n: int = 8, tail_prob: float = 1e-8
 ) -> JumpRule:
@@ -175,23 +210,7 @@ def crash_rule(
     """
     if not 0.0 < mean < 1.0:
         raise ValueError("a crash's mean share of the price must be between 0 and 1")
-    s, ws = np.polynomial.legendre.leggauss(n)
-    lo = math.log(tail_prob)
-    s = lo + (s + 1.0) * (-lo) / 2.0
-    ws = ws * (-lo) / 2.0
-    survival = np.exp(s)
-    p = ws * survival
-    p = p / p.sum()
+    survival, p = _tail_nodes(n, tail_prob)
     unit = survival ** (-1.0 / tail)       # J at a scale of one
-
-    def mean_share(scale: float) -> float:
-        return float(p @ (1.0 - np.exp(-scale * unit)))
-
-    low, high = 0.0, 1.0
-    while mean_share(high) < mean:
-        high *= 2.0
-    for _ in range(200):                   # bisection: the mean share rises with the scale
-        mid = 0.5 * (low + high)
-        low, high = (mid, high) if mean_share(mid) < mean else (low, mid)
-    share = 1.0 - np.exp(-0.5 * (low + high) * unit)
+    share = 1.0 - np.exp(-_crash_scale(mean, unit, p) * unit)
     return JumpRule(severity=profile.tensor(share), weights=profile.tensor(p))

@@ -250,6 +250,11 @@ Found on 2026-11-13 when the perp funding premium made the hedge nearly free.
   - the lending vault alone has operating costs at 60.4% of revenue, just
     outside the agreed 50–60%. Marked as a known failure, to be settled when
     costs are recalibrated.
+- **After the accounting changes of 2026-11-14** (slippage, withdrawals from
+  the other vault, dearer equity): the slow tests pass except the two known
+  failures above; the lending vault's step-budget check differed by 1.6e-4
+  and its tolerance was set to the 1e-3 the solver delivers. The solvers do
+  not use the dearer cost of raising after a bad period.
 - **If taken up:** first find the drifting decision; if it is not one
   decision, how decisions at limits are represented needs rethinking — a new
   numerical method, to be discussed first. The learner would inherit the

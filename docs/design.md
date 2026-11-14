@@ -324,6 +324,37 @@ period the firm must raise costly equity or scale back.
 Paying and raising in the same period is never worth it, so only one of $d, e$
 is non-zero in practice. The solver is not told this.
 
+**Several years ahead** (`quant/paths.py`, **built**). The firm is carried
+forward period by period through the same accounting, on many paths of
+randomly drawn scenarios (Monte Carlo). A fixed policy cannot be carried
+forward, because the firm's equity and vaults change, so the user sets a
+**rule**:
+
+- above the capital it needs plus a **buffer**, the firm pays the excess out;
+- between the two it does nothing;
+- below what it needs, it raises equity back to exactly that, at the cost of
+  §4.2, dearer straight after BTC fell or an incident happened;
+- if the raise needed is more than shareholders will put in at once (the
+  **largest raise**), the firm **fails** on that path: they walk away and
+  receive nothing more. This stands in for the walk-away decision of §3.1,
+  which the tool cannot work out without solving the model.
+
+Everything else is held fixed: GRC spend, the firm's own BTC and the share of
+its BTC it hedges, the borrower rate, the loan-to-value and the BTC vault's
+allocation. Over several periods **loan demand moves with BTC's price**
+(`demand_btc`: demand is multiplied by the price, relative to the start, to
+the power one half for now): borrowers post BTC, and what they can borrow
+against it moves with what it is worth. Loans still last one period.
+
+The paths give ranges, not one answer: the firm's equity, what it pays out
+and has to raise, the chance it has raised or failed by each year, the
+vaults' sizes, and what shareholders take over the horizon — payouts less
+raises and their cost, discounted at $r_E$, plus equity at the end at book.
+The draws come from the distributions the read-out averages over, from a
+seeded generator, so a run can be repeated; figures carry sampling error. One
+simulated period agrees with the read-out within that error
+(`tests/test_paths.py`).
+
 **Stress scenarios** (`quant/stress.py`, **built**). One thing that could
 happen in the next period, worked through the accounting under the user's
 policy: where BTC's price goes by a smooth move, whether a crash then takes a
@@ -769,6 +800,11 @@ Each stage needs approval before it starts.
 
 ## 8. Open questions
 
+0. **A rule for the firm over several years** (§3.2). The rule on equity is
+   the simplest that works: a buffer and a largest raise. Open: whether the
+   buffer should depend on the firm's state; whether to raise back to more
+   than the minimum; whether failure should be a choice (walking away when
+   continuing is not worth the raise) and not a fixed limit.
 1. **How the learner draws its scenarios.** Decided: random scenarios, drawn
    fresh each training step, with a fixed seeded set for grading; incidents
    kept as weighted branches so GRC spend keeps its gradient
@@ -846,6 +882,7 @@ assembled for this project, with no single reference.
 | Tail-placed jump-severity rule | own construction | `quant/quadrature.py` | the same construction for the Pareto jump severity, capped at the whole book | the dropped far tail and the cap shave the mean slightly; tested to within 5% |
 | Even grid under the normal density (trapezoid rule) | standard | `quant/quadrature.py` | scenario set for BTC's smooth move in the read-out, where the integrand has kinks and steps in BTC's price | Gauss–Hermite is better for a smooth integrand with few points; the solvers still use it |
 | Crash sizes in the logarithm, mean share set exactly | own construction, on the tail-placed rule | `quant/quadrature.py` | a crash takes the share $1 - e^{-J}$, $J$ Pareto; the scale is found by bisection so the rule's mean share is exact | — |
+| Monte Carlo simulation of a fixed rule | standard | `quant/paths.py` | the firm over several years: random paths from a seeded generator, the Student-$t$ by its scale mixture, crashes and incident sizes by inverse distribution | quasi-random points would cut the sampling error; the read-out's weighted scenarios remain the reference for one period |
 | Cholesky factorization | standard | `quant/quadrature.py` | builds correlated shocks from independent ones | — |
 | Policy iteration with repeated policy evaluation (Howard improvement) | standard | `quant/research/grid.py` | how the infinite-horizon solve converges | plain value iteration is slower but simpler |
 | Adam, vectorized over the grid | standard | `quant/research/grid.py` | chooses every grid point's decisions at once by gradient ascent; two starts per step, and a slow final pass | the step-budget test guards against it stopping short |
@@ -1217,6 +1254,19 @@ are today's.
     incident). The earlier cost was low enough that the solved firm held
     exactly its capital floor and simply raised after a loss. The solvers use
     the new $\lambda$ and $\kappa$ but not the multiple.
+  - **loan demand follows BTC's price along a path** (the cheap version of
+    the gap that the loan book restarts every period): `demand_btc`, 0.5 for
+    now, own construction. Used by the multi-year paths only; within one
+    period BTC starts at 1 and nothing changes.
+- **Multi-year paths built** (2026-11-14; §3.2), with these choices made by
+  Claude while the user was away, **for the user's review**: random draws
+  from a seeded generator, not weighted scenarios chained together (Monte
+  Carlo simulation of a fixed rule, standard); the rule on equity (pay out
+  above a buffer, raise back to exactly the capital needed); failure when the
+  raise needed exceeds a largest raise the user sets, by default the capital
+  needed today; everything else in the rule held fixed; "what shareholders
+  take" counting equity at the end at book, not at a solved value; 20,000
+  paths by default.
 - **BTC's price moves in its logarithm** (2026-11-14, raised and agreed
   before the change; §3.4 gives the reason). The price could reach zero, and
   did so far too often; found when the BTC vault's yield with a lending
