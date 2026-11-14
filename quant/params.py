@@ -41,7 +41,6 @@ class Params:
     # is expected to earn the market's r_E, plus the firm's bias (design.md
     # section 3.4).
     s_BTC: float = 0.60      # volatility of BTC's smooth move, per year
-    k_BTC: float = 0.10      # capital charge on the firm's own BTC
     q_max: float = 1.0       # bound on the firm's own BTC, so a risk-seeking region stays finite
     c_H: float = 0.0         # cost of hedging with short perps, c_H/2 * H^2; zero is fair
 

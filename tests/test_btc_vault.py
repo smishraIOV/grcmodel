@@ -172,7 +172,7 @@ def test_the_hedge_may_cover_the_firm_s_stake():
 
 
 def test_capital_floor_includes_the_stake_and_the_runway():
-    p = replace(BASE, k_A=0.02, k_BTC=0.1)
+    p = replace(BASE, k_A=0.02)
     floor = float(btc_vault_capital_floor(p, t(1.0), t(0.01), t(0.2)))
     assert floor == pytest.approx(0.01 + 0.2 + p.btc_co_invest + p.runway * p.opex)
 

@@ -81,13 +81,14 @@ def capital_floor(
 ) -> torch.Tensor:
     """The least equity the firm may hold.
 
-    Own funds against the vault's dollar size and the firm's BTC, hedged or
-    not: K >= k_A size + k_BTC q. A runway of operating costs in stablecoins
+    Own funds against the vault's dollar size: K >= k_A size. A runway of operating costs in stablecoins
     after GRC, BTC and the stake in the vault: K >= g + q + stake + runway
-    opex (design.md section 3.3). And no negative equity.
+    opex (design.md section 3.3). And no negative equity. The firm's BTC needs
+    no separate capital charge: it is bought with equity, so the second
+    constraint already holds it fully.
     """
     cash = g + q + stake + p.runway * p.opex
-    return torch.maximum(torch.maximum(p.k_A * size + p.k_BTC * q, cash), torch.zeros_like(size))
+    return torch.maximum(torch.maximum(p.k_A * size, cash), torch.zeros_like(size))
 
 
 def treasury_close(

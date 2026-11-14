@@ -211,8 +211,9 @@ after fees (and, for the BTC vault, by the BTC price), plus net flows:
 ### 2.6 Capital requirement and walk-away
 
 - **A capital requirement**: the firm's own funds must be at least a share of
-  the vaults' combined size, as some crypto regimes require, plus a charge on
-  the firm's own BTC.
+  the vaults' combined size, as some crypto regimes require. The firm's own
+  BTC carries no separate charge: it is bought with equity, so equity already
+  covers it in full.
 - **Walk-away** (§3.1): the vaults are wound down or transferred, and their
   investors bear what is left.
 
@@ -305,8 +306,7 @@ itself limit how much of the rest of its equity the firm keeps in BTC.
 dividend or new equity), how to split it between stablecoins and BTC, and how
 much of the BTC to hedge against a fall. Only part of the BTC is hedged; the
 hedge never exceeds it. BTC earned as fees joins the firm's equity at the
-period's end and is rebalanced with the rest. Hedged and unhedged BTC carry the
-same capital charge.
+period's end and is rebalanced with the rest.
 
 **GRC stock.** $S_{t+1} = (1-\delta)S_t + g_t$. Mitigation uses the
 post-spend stock $S_{t+1}$, so spending protects in the period it is made. The
@@ -337,7 +337,7 @@ eq. (15) case — a firm with a view on a priced risk — and the firm's
 effective risk aversion limits how much BTC it holds on that view.
 
 **Holding BTC.** The firm's own BTC is bought spot, so it spends stablecoins
-and counts against the capital requirement with a charge. BTC's price moves are
+and is held in full by equity. BTC's price moves are
 fat-tailed (§4.2), with occasional crashes (§4.3). The smooth part of BTC's
 expected move is set so that, crashes included, BTC's expected return is still
 the market's expectation plus the firm's bias. A price cannot fall below
@@ -451,8 +451,8 @@ $\beta = 1/(1+r_E)$, what equity earns while held, and the security cost of
 the firm's BTC (§3.3). $\tau K$ is available as an extra linear cost on all
 equity, zero by default.
 
-**BTC defaults (illustrative):** volatility 60% a year, a capital charge of 10%
-on the firm's own BTC. The firm's bias $b$ is to be set.
+**BTC defaults (illustrative):** volatility 60% a year; a security cost of
+1.5% a year on the firm's own BTC. The firm's bias $b$ is to be set.
 
 ### 4.3 Jump losses
 
@@ -971,6 +971,11 @@ are today's.
   against a fall.** Capital is decided by three controls: how much equity to
   keep, the split between stablecoins and BTC, and how much of the BTC to
   hedge (§3.3). Hedged and unhedged BTC carry the same capital charge.
+- **The capital charge on the firm's BTC is dropped** (same day). The firm
+  buys BTC with its own equity, so equity already covers it in full and a 10%
+  charge could never bind. It mattered in the bank form, where BTC could be
+  funded with depositors' money; it would return if the firm ever borrows to
+  hold BTC.
 - **The hedge covers only the firm's own BTC.** BTC earned as fees joins the
   firm's equity at the period's end and is rebalanced with it, so fee income
   is not hedged during the period.
