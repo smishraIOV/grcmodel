@@ -73,8 +73,13 @@ The core:
   the parameters, the firm's state and the scale, and back
 - `quant/policy.py` — the firm's policy as an input: checked against the
   model's constraints, and turned into the one-period decision
+- `quant/readout.py` — what one period holds for a firm under a policy, in
+  dollars, with no solver
 - `quant/numerics.py` — profiles: device, dtype, RNG
 - `quant/cli.py` — what every entry point shares: `--profile` and the run header
+
+- `scripts/whatif.py` — print that read-out for the example firm
+  (`uv run python -m scripts.whatif --rate 0.08 --sleeve 0.2`)
 
 Research (`quant/research/`, tests in `tests/research/`, entry points in
 `scripts/research/`):

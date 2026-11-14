@@ -70,6 +70,9 @@ Built so far:
 - **a firm profile in real units** (`quant/profile.py`): a firm entered in
   dollars and yearly rates, mapped onto the model and back — the first step of
   the what-if tool;
+- **the policy as an input** (`quant/policy.py`) and **the one-period
+  read-out** (`quant/readout.py`): what the next period holds for that firm
+  under the user's own decisions, with no search for the best ones;
 - the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
   a hedge with perps, a runway of operating costs; BTC at the market's
   expectation plus the firm's bias, with occasional crashes;
@@ -88,6 +91,7 @@ to build) continues as research (`docs/plan-integrated.md`).
 
 ```bash
 uv run pytest               # seconds; add `-m slow` for the solver tests (about five minutes)
+uv run python -m scripts.whatif --rate 0.08 --sleeve 0.2    # an example firm, one quarter ahead
 uv run python -m scripts.research.integrated --periods 1
 ```
 

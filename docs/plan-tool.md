@@ -5,7 +5,7 @@ current plan. Read it first, then `CLAUDE.md` (working rules) and
 `docs/design.md` (the specification). Where this plan and the design
 disagree, the design wins; update this plan.
 
-**Status:** steps 0 to 2 are done; step 3 is next. Each step needs the user's
+**Status:** steps 0 to 3 are done; step 4 is next. Each step needs the user's
 approval as it comes.
 
 ---
@@ -51,7 +51,7 @@ Each step ends with tests passing and a commit.
 | 0 | **Separate the two paths in the layout.** The solvers (`grid.py`, the three `*_solver.py`, `lending_results.py`, `integrated_results.py`, `twoperiod.py`) are under `quant/research/`, their tests under `tests/research/`, the entry point at `scripts/research/integrated.py`. The solver tests are marked `slow` and left out of the default run. | **Done (2026-11-14).** `uv run pytest` runs in about two seconds; `tests/test_layout.py` fails if the core imports research code. |
 | 1 | **A firm profile in real units** (`quant/profile.py`). The firm's facts, its market assumptions and its risk assumptions, in dollars and rates per year; one function maps a profile onto `Params`, the firm's state and the scale (the dollar vault's capacity = 1), another maps back. The cost of raising equity, GRC's effect and GRC today are entered as plain statements (design §4.1). Assumptions can be filled from the model's defaults, sized to the firm. | **Done (2026-11-14).** A profile round-trips; the model is unchanged when the same firm is entered in cents; a parameter added to the model must be placed in the profile or named as left out (`tests/test_profile.py`). |
 | 2 | **Policy as an input** (`quant/policy.py`). The user's own choices, in dollars and yearly rates: equity kept (so the payout or raise), GRC spend, own BTC and hedge, borrower rate, LTV, the BTC vault's allocation. Fixed targets for one period; rules that depend on the firm's state come with step 5, which needs them (section 3). | **Done (2026-11-14).** A policy that breaks a constraint is refused with every reason in plain words and dollar amounts; the constraints are checked to be the accounting's own; a sound policy round-trips. |
-| 3 | **The one-period read-out, without a solver.** Today's read-out (`integrated_results.py`) reads a solved firm. Rebuild it to take a profile and a policy: what the firm expects to earn and spend, what each group of investors expects against what they could earn elsewhere, cost ratios, and how the period may end (chance and size of a shortfall below the capital floor). | Matches the existing read-out when given a solved firm's own decisions. |
+| 3 | **The one-period read-out, without a solver** (`quant/readout.py`, `scripts/whatif.py`). Takes a profile and a policy: capital and what the constraints ask for, GRC and the chance of an incident, the loan book, what the firm expects to earn and spend, cost ratios, what each group of investors expects against what they could earn elsewhere and the vaults' expected sizes, and how the period may end (expected equity, the chance of ending with less, the chance and size of a shortfall below the capital needed). In dollars; deterministic. | **Done (2026-11-14).** Matches the research read-out at a solved firm's own decisions, annual and quarterly (`tests/research/test_readout_matches.py`); matches the accounting by hand where nothing is random; unchanged in cents; finer scenarios do not move it, with one exception recorded in section 3. |
 | 4 | **Named stress scenarios.** Single outcomes worked through the accounting: BTC falls by a given share (smoothly, or as a crash), an incident in the lending system, one in the BTC vault, combinations. Shows the firm's equity, each vault's size and investors' losses after each. | Each scenario matches the accounting by hand. |
 | 5 | **Multi-year paths.** The firm simulated forward under the chosen policy: the range of its equity, the chance and size of capital raises, runway, the vaults' sizes, investors' yields. **A new concept — to be discussed before it is built** (section 3). | To be set when the concept is agreed. |
 | 6 | **Two policies side by side.** The same profile, scenarios and paths under two policies, with the differences. This is what takes the place of "the best policy". | — |
@@ -72,6 +72,16 @@ Steps 0–4 use nothing new. Step 5 is the main new work.
   whether a rule may depend on the firm's state.
 - **Gaps in the accounting that matter more for a tool than for research,**
   for the user to rank, not to be fixed unasked:
+  - **BTC's price ends near zero too often** (found in step 3). The price
+    over a period is one plus a fat-tailed move, floored at zero. At 60%
+    volatility and quarterly decisions about 0.4% of the weight has BTC at 1%
+    of its starting price or less — more than one year in a hundred. Most
+    figures settle regardless; the BTC vault's yield **with a lending sleeve**
+    does not, to the third digit, because the sleeve's dollar losses are
+    large in BTC terms exactly there, and the result then leans on the price
+    floor that guards the division. A price model that cannot reach zero
+    (moves in the logarithm of the price, standard) would remove it: a new
+    concept, to discuss;
   - a BTC price that touches the liquidation threshold and recovers is not
     counted as a liquidation (design §8, item 3);
   - investors respond to their average yield, not to risk;

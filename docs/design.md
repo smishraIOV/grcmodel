@@ -738,7 +738,12 @@ Each stage needs approval before it starts.
    re-prices the vaults' allocations and the loan terms.
 9. **Does the effect survive $\kappa = 0$?** Whether the Froot–Stein effect
    needs a convex issuance cost in a model with no end date.
-10. **Calibration.** $r_E$ against a target market-to-book ratio; the vaults'
+10. **BTC's price near zero.** The price over a period is one plus a
+   fat-tailed move, floored at zero, so a small but not negligible weight has
+   BTC ending the period almost worthless (about 0.4% a quarter at the
+   defaults). The BTC vault's yield with a lending sleeve rests on those
+   scenarios. Moves in the logarithm of the price would keep it above zero.
+11. **Calibration.** $r_E$ against a target market-to-book ratio; the vaults'
    parameters (§2.7); the rest against data, once the model is realistic
    enough for its numbers to be worth reporting.
 

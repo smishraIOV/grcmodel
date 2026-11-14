@@ -243,6 +243,12 @@ Found on 2026-11-13 when the perp funding premium made the hedge nearly free.
   decision, how decisions at limits are represented needs rethinking — a new
   numerical method, to be discussed first. The learner would inherit the
   same problem, since it uses the same squashing.
+- **The solvers' scenario sets are too coarse for some figures.** The tool's
+  read-out (`quant/readout.py`) at one state can afford far more scenarios,
+  and shows where the figures settle. At the scenario counts the coarse
+  solves use, the dollar vault's expected yield is off by more than a point
+  (about 7% against 5.4% in one case). The yield drives investors' flows, so
+  the solved decisions inherit the error.
 - **Speed, measured roughly:** float32 on the CPU (`cpu-fast`) is nearly 5
   times faster than float64 on a finer grid (25 × 4 × 7 × 7) and agrees to
   about 3e-7 on one evaluation. The GPU (MPS) is not yet timed.
