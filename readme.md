@@ -55,24 +55,23 @@ The design, and the reasoning behind each choice, is in
 
 Built so far:
 
-- **two business forms**: a bank taking fixed-rate deposits (`quant/model.py`),
-  and a vault run for fees, whose depositors share its gains and losses
-  (`quant/vault.py`) — the main model;
+- **a single vault** run for fees, whose depositors share its gains and losses
+  (`quant/vault.py`), superseded by the two-vault design and kept as the start
+  of the BTC vault; the bank form was built and removed;
 - BTC as the firm's home asset, held by conviction and hedged with perps;
 - fat-tailed shocks with tail dependence and heavy-tailed jump losses,
   integrated by deterministic quadrature rather than Monte Carlo
   (`quant/quadrature.py`);
 - an infinite-horizon solver on an N-dimensional grid (`quant/grid.py`), checked
   against known answers: the paper's own results in a two-period version
-  (`quant/twoperiod.py`), and exact no-shock solutions for both forms.
+  (`quant/twoperiod.py`), and an exact no-shock solution for the vault.
 
 Next: the stablecoin lending vault on its own (`docs/design.md` §7), with BTC
 valued at the market's expectation plus the firm's bias.
 
 ```bash
 uv run pytest
-uv run python scripts/solve_vault.py           # the vault form, exploratory
-uv run python scripts/solve_v0.py              # the bank form
+uv run python scripts/solve_vault.py           # the single vault, exploratory
 ```
 
 The previous model (finite horizon, hazard-based failure) is preserved on the

@@ -1,4 +1,4 @@
-"""Deterministic integration rules for the bank's shocks (design.md sections 4.2, 5).
+"""Deterministic integration rules for the shocks and jumps (design.md sections 4.2, 5).
 
 The shocks are a multivariate Student-t, written as a scale mixture of normals:
 

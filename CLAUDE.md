@@ -1,7 +1,7 @@
 # Project conventions
 
 A GRC (Governance, Risk, Compliance) model built as a dynamic version of Froot &
-Stein (1998): a bank that decides risk management, capital budgeting and capital
+Stein (1998): a crypto-native firm that decides risk management, capital budgeting and capital
 structure together, every period, on an infinite horizon, with GRC as a fourth
 lever. `docs/design.md` is the specification and the record of why each choice
 was made; `readme.md` states the thesis and the current status;
@@ -27,7 +27,7 @@ to be merged back.
   of detail where the problem solves computationally as an optimization. Do not
   chase every detail of the paper.
 - **Only quantitatively meaningful measurements.** No outputs that compare the
-  bank with an unrealistic counterfactual (equity raised for free, forced
+  firm with an unrealistic counterfactual (equity raised for free, forced
   recapitalization, unlimited liability). Their qualitative point is already
   known, and their numbers mean nothing. Acknowledge such effects in words.
 - **Stages need approval.** `docs/design.md` §7 lists the stages; each starts only
@@ -45,24 +45,24 @@ Entry points take `--profile {reference,cpu-fast,fast}` (`quant/cli.py`) and
 print the profile, torch version and commit they ran under.
 
 **Decision frequency.** Parameters are stated per year; `periods_per_year`
-(default 4, quarterly) sets how often the bank decides, and the solver converts
+(default 4, quarterly) sets how often the firm decides, and the solver converts
 on entry (`Params.per_period()`). Use 1 for quick exploration and tests, 4 for
-realistic runs; `scripts/solve_v0.py --periods-per-year 4`. Quarterly runs need
+realistic runs; `scripts/solve_vault.py --periods-per-year 4`. Quarterly runs need
 a finer equity grid near the issuance kink (`docs/design.md` §4.4).
 
 ## Layout
 
 - `quant/params.py` — every parameter, one economic driver each, rates per year
-- `quant/model.py` — the bank form, one period: primitives and the transition
-- `quant/vault.py` — the vault form, one period: fees, flows, the firm's books
+- `quant/core.py` — primitives every form shares: issuance cost, GRC, jumps
+- `quant/vault.py` — the single-vault form (superseded), one period: fees, flows, the firm's books
 - `quant/quadrature.py` — deterministic rules for the Student-t shocks and jumps
 - `quant/grid.py` — the shared N-dimensional grid, interpolation and policy iteration
-- `quant/solver.py`, `quant/vault_solver.py` — each form's controls and objective
-- `quant/results.py`, `quant/vault_results.py` — what a solved firm says
-- `quant/twoperiod.py` — the two-period truncation, the paper's own structure,
-  used as the oracle (a known-answer check against the paper's formulas)
+- `quant/vault_solver.py` — its controls and objective
+- `quant/vault_results.py` — what a solved firm says
+- `quant/twoperiod.py` — the two-period truncation of the paper's own bank,
+  self-contained, used as the oracle (a known-answer check against the paper's formulas)
 - `quant/numerics.py` — profiles: device, dtype, RNG
-- `scripts/solve_v0.py`, `scripts/solve_vault.py` — entry points
+- `scripts/solve_vault.py` — entry point
 
 ## Numerics
 
@@ -83,9 +83,7 @@ a finer equity grid near the issuance kink (`docs/design.md` §4.4).
   is zero at the boundary. Floor every `logit` away from 0 and 1.
 - **Keep cost functions dimensionally consistent.** Money is in dollars at a
   scale the business fixes (`docs/design.md` §4.1), so every money parameter is
-  a multiple of that. The bank code, until it is removed, uses the first-best
-  book as its unit: the frictionless optimum — what the bank would lend if
-  capital were free — not the model's optimal policy (`quant/params.py`).
+  a multiple of that.
 
 ## Oracles
 

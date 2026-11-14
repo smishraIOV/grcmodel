@@ -2,7 +2,8 @@
 
 An oracle here is a known-answer check: a case where the paper's formulas give
 the exact result, so the numerical code can be tested against them
-(design.md section 5).
+(design.md section 5). It checks the shared machinery -- quadrature, the
+paper's G, Stein's lemma -- on the paper's own bank, which it carries itself.
 
 With one period left, the bank faces the Froot-Scharfstein-Stein problem of
 Froot & Stein (1998) eq. (2): a riskless opportunity F(I), funded from internal
@@ -32,28 +33,147 @@ inside the region where the bank issues equity, so P is exactly quadratic there
 and Gauss-Hermite integrates it without error.
 """
 
+import math
 from dataclasses import dataclass, replace
 
 import numpy as np
 import torch
 from scipy.optimize import minimize
 
-from quant.model import (
-    Controls,
-    capital_floor,
-    issuance_cost,
-    next_grc,
-    next_wealth,
-    production,
-)
+from quant.core import issuance_cost, mitigation, next_grc
 from quant.numerics import NumericsProfile
-from quant.params import Params
 from quant.quadrature import ShockRule
 
 GOLDEN = (np.sqrt(5.0) - 1.0) / 2.0
 
 
-def final_objective(p: Params, w: torch.Tensor, I: torch.Tensor) -> torch.Tensor:
+# -- the paper's bank -------------------------------------------------------
+#
+# Self-contained: the main model no longer has a bank form (design.md section
+# 11), but the paper's results are stated for one, so the oracle keeps its own.
+
+
+@dataclass(frozen=True)
+class PaperParams:
+    """The paper's bank, one period per date. Defaults are the oracle's.
+
+    These numbers exist to make the oracle exact, not to be plausible, and must
+    not be recalibrated with the model.
+    """
+
+    r: float = 0.02          # riskless rate; cash earns it
+    r_E: float = 0.02        # discounting at r: the paper's, beta (1 + r) = 1
+    A: float = 1.08          # gross return on the first unit lent, F'(0)
+    lam: float = 0.05        # proportional cost of issuing equity
+    kappa: float = 1.0       # convex cost of issuing equity
+    tau: float = 0.01        # deadweight cost of carrying equity
+    D: float = 0.95          # deposit base
+    r_D: float = 0.015       # rate paid on deposits
+    k: float = 0.08          # minimum capital ratio: K >= k I
+    m: float = 0.1           # mean loss rate on the book at zero GRC
+    s_P: float = 0.005       # standard deviation of the book's return per unit lent
+    pi: float = 0.0002       # expected excess payoff per unit of the new product
+    s_N: float = 0.03        # its standard deviation per unit
+    rho_NP: float = 0.5      # correlation of its payoff with the book's
+    alpha_max: float = 1.0   # bound on its size
+    b_BTC: float = 0.5       # the book's loading on BTC
+    s_BTC: float = 0.10      # BTC's volatility
+    mu_BTC: float = 0.0      # the bank's view: BTC's excess return; 0 makes Prop. 2 the check
+    k_BTC: float = 0.10      # capital charge on the BTC treasury
+    c_H: float = 0.0         # cost of hedging, c_H/2 H^2; zero is fair
+    nu: float = math.inf     # normal shocks: where the paper's formulas are exact
+    delta: float = 0.25      # GRC depreciation
+    a_A: float = 50.0        # GRC effectiveness against the mean loss
+    a_B: float = 50.0        # and against the spread
+    rho_A: float = 0.3       # irreducible floors
+    rho_B: float = 0.3
+
+    @property
+    def b(self) -> float:
+        """Curvature of the return on the book, fixed so the first-best book is 1."""
+        return self.A - (1.0 + self.r)
+
+    @property
+    def beta(self) -> float:
+        return 1.0 / (1.0 + self.r_E)
+
+
+def shock_correlation(p: PaperParams) -> np.ndarray:
+    """Shock order (xi_P, xi_N, eps_BTC). BTC, the tradeable factor, is
+    uncorrelated with the non-tradeable shocks: that is what "tradeable" means
+    in Froot-Stein."""
+    return np.array(
+        [
+            [1.0, p.rho_NP, 0.0],
+            [p.rho_NP, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+
+
+def production(p: PaperParams, I: torch.Tensor) -> torch.Tensor:
+    """Gross return on a book of I, principal included: F(I) = A I - b/2 I^2."""
+    return p.A * I - 0.5 * p.b * I * I
+
+
+def capital_floor(
+    p: PaperParams, I: torch.Tensor, g: torch.Tensor, q: torch.Tensor | None = None
+) -> torch.Tensor:
+    """The least equity the bank may hold: the capital ratio K >= k I + k_BTC q,
+    non-negative cash K - g + D - I - q >= 0, and K >= 0."""
+    if q is None:
+        q = torch.zeros_like(I)
+    zero = torch.zeros_like(I)
+    ratio = p.k * I + p.k_BTC * q
+    cash = I + g + q - p.D
+    return torch.maximum(torch.maximum(ratio, cash), zero)
+
+
+@dataclass(frozen=True)
+class Controls:
+    """K: equity. g: GRC spend. I: the book. alpha: the new product.
+    H: BTC hedged with short perps. q: the BTC treasury."""
+
+    K: torch.Tensor
+    g: torch.Tensor
+    I: torch.Tensor
+    alpha: torch.Tensor
+    H: torch.Tensor
+    q: torch.Tensor | None = None
+
+
+def next_wealth(
+    p: PaperParams, c: Controls, S_next: torch.Tensor, shocks: torch.Tensor
+) -> torch.Tensor:
+    """Equity at the close of the period: assets less what depositors are owed.
+
+        w' = F(I) - I phi_A m + I phi_B s_P xi_P       the book
+           + (1 + r)(K - g + D - I)                    cash, and the treasury's riskless part
+           + alpha (pi + s_N xi_N)                     the new product
+           + x (mu_BTC + s_BTC eps_BTC) - c_H/2 H^2    BTC: net exposure x = b_BTC I + q - H
+           - tau K - (1 + r_D) D
+    """
+    xi_P, xi_N, eps_BTC = shocks[:, 0], shocks[:, 1], shocks[:, 2]
+
+    def col(x: torch.Tensor) -> torch.Tensor:
+        return x.unsqueeze(-1)
+
+    q = c.q if c.q is not None else torch.zeros_like(c.I)
+    I, K, g, alpha, H = col(c.I), col(c.K), col(c.g), col(c.alpha), col(c.H)
+    x = col(p.b_BTC * c.I + q - c.H)
+    S_next = col(S_next)
+    phi_A = mitigation(S_next, p.a_A, p.rho_A)
+    phi_B = mitigation(S_next, p.a_B, p.rho_B)
+
+    book = production(p, I) - I * phi_A * p.m + I * phi_B * p.s_P * xi_P
+    cash = (1.0 + p.r) * (K - g + p.D - I)
+    product = alpha * (p.pi + p.s_N * xi_N)
+    btc = x * (p.mu_BTC + p.s_BTC * eps_BTC) - 0.5 * p.c_H * H * H
+    return book + cash + product + btc - p.tau * K - (1.0 + p.r_D) * p.D
+
+
+
+def final_objective(p: PaperParams, w: torch.Tensor, I: torch.Tensor) -> torch.Tensor:
     """Value of the last operating period at book I, with K at its floor.
 
     The bank moves equity from w to K, lends I, earns F(I) and the return on
@@ -81,7 +201,7 @@ def final_objective(p: Params, w: torch.Tensor, I: torch.Tensor) -> torch.Tensor
 
 
 def final_value(
-    p: Params, w: torch.Tensor, walk_away: bool = False, iterations: int = 120
+    p: PaperParams, w: torch.Tensor, walk_away: bool = False, iterations: int = 120
 ) -> torch.Tensor:
     """P(w): the last period's value, maximized over I in [0, 1] by golden section.
 
@@ -108,7 +228,7 @@ def final_value(
 
 
 def final_marginals(
-    p: Params, w: torch.Tensor, h1: float = 1e-4, h2: float = 1e-3
+    p: PaperParams, w: torch.Tensor, h1: float = 1e-4, h2: float = 1e-3
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """P'(w) and P''(w) by central differences.
 
@@ -124,7 +244,7 @@ def final_marginals(
     return d1(w), (d1(w + h2) - d1(w - h2)) / (2.0 * h2)
 
 
-def issuance_threshold(p: Params) -> float:
+def issuance_threshold(p: PaperParams) -> float:
     """The wealth below which the last period raises equity, when K = k I binds.
 
     From the first-order condition in I with e = k I - w > 0, I is linear in w:
@@ -157,7 +277,7 @@ class FirstPeriod:
 
 
 def first_period_wealth(
-    p: Params,
+    p: PaperParams,
     rule: ShockRule,
     profile: NumericsProfile,
     fixed: FirstPeriod,
@@ -177,7 +297,7 @@ def first_period_wealth(
 
 
 def optimal_positions(
-    p: Params, rule: ShockRule, profile: NumericsProfile, fixed: FirstPeriod
+    p: PaperParams, rule: ShockRule, profile: NumericsProfile, fixed: FirstPeriod
 ) -> tuple[float, float]:
     """(alpha*, H*) maximizing E[P(w')], found numerically.
 
@@ -210,7 +330,7 @@ class FrootStein:
 
 
 def froot_stein(
-    p: Params,
+    p: PaperParams,
     rule: ShockRule,
     profile: NumericsProfile,
     fixed: FirstPeriod,
@@ -223,8 +343,6 @@ def froot_stein(
     non-tradeable book: s_N times the book's payoff volatility, I phi_B s_P,
     times their correlation.
     """
-    from quant.model import mitigation
-
     w_next = first_period_wealth(p, rule, profile, fixed, alpha, H)
     d1, d2 = final_marginals(p, w_next)
     G = -float(rule.expect(d2)) / float(rule.expect(d1))
@@ -238,7 +356,7 @@ def froot_stein(
     )
 
 
-def oracle_params(**overrides) -> Params:
+def oracle_params(**overrides) -> PaperParams:
     """A configuration in which the two-period oracle is exact.
 
     D >= 1 - k makes the capital ratio, not the cash constraint, the binding
@@ -247,18 +365,8 @@ def oracle_params(**overrides) -> Params:
     thinly capitalized, so with small shocks every quadrature node lands below
     the issuance threshold. P is then one quadratic over every node and
     Gauss-Hermite integrates it exactly. `pi` is set so alpha* is interior.
-
-    These numbers exist to make the oracle exact, not to be plausible, and must
-    not be recalibrated with the model.
     """
-    base = Params(
-        D=0.95, nu=float("inf"), m=0.1, s_P=0.005, s_N=0.03, pi=0.0002,
-        r_E=0.02, tau=0.01,  # the paper's discounting, pinned when the model moved off it
-        jump_rate=0.0,       # the paper has no jumps, and the oracle's quadratic region needs none
-        mu_BTC=0.0, s_BTC=0.10, b_BTC=0.5,  # no view by default: Prop. 2 is the check
-        periods_per_year=1,  # the oracle's periods are the paper's dates; nothing to convert
-    )
-    return replace(base, **overrides)
+    return replace(PaperParams(), **overrides)
 
 
 ORACLE_FIRST_PERIOD = FirstPeriod(K=0.08, I=1.0)

@@ -1,6 +1,6 @@
 """What a solved vault firm says (design.md sections 1 and 2).
 
-Mirrors `quant.results` for the bank form. Everything reads a `VaultSolution`;
+Everything reads a `VaultSolution`;
 only `grc_value` re-solves.
 
 - **Effective risk aversion** of the firm's own equity, measured as the price
@@ -21,10 +21,10 @@ from dataclasses import dataclass, replace
 
 import torch
 
-from quant.model import issuance_cost, next_grc
+from quant.core import issuance_cost, next_grc
 from quant.params import Params
 from quant.vault import VaultControls, vault_outcomes
-from quant.vault_solver import VaultSpec, VaultSolution, solve_vault, vault_continuation
+from quant.vault_solver import VaultSolution, VaultSpec, solve_vault, vault_continuation
 
 
 @dataclass(frozen=True)

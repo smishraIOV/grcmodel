@@ -11,9 +11,8 @@ performance fee on a period's positive excess return; it pays dollar operating
 costs and GRC; it makes good a share of incident losses; and it holds its own
 equity in stablecoins and a spot BTC treasury, hedged with short perps.
 
-Two optional ways to put the firm's own capital behind the vault, both off by
-default: **co-investment**, a stake of its own money in the vault, and a
-**guarantee**, a minimum return promised to depositors.
+**Co-investment**, off by default here: a stake of the firm's own money in the
+vault.
 
 The earlier single-vault stage (design.md sections 2 and 7): no high-water mark, so a performance fee
 is paid on any positive period, including the recovery from an earlier loss.
@@ -29,7 +28,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from quant.model import jump_probability, mitigation
+from quant.core import jump_probability, mitigation
 from quant.params import Params
 from quant.quadrature import JumpRule, ShockRule
 
@@ -123,7 +122,7 @@ def vault_outcomes(
     with J the jump severity (zero without a jump). Then
 
         fees   = f_m A + f_p max(R, 0) A
-        cover  = max(psi J sum_i a_i j_i,  max(floor - r - R, 0))     share of A the firm pays
+        cover  = psi J sum_i a_i j_i                                  share of A the firm pays
         R_dep  = R + cover                                            what depositors get
         A'     = A (1 + r + R_dep) - fees + theta (capacity - A)
                  - kappa max(-R_dep, 0) A - [jump] omega A            floored at 0
@@ -131,18 +130,15 @@ def vault_outcomes(
                  + fees - opex - cover A + co A R
 
     where x = q - H is the firm's own net BTC position. Cash and the BTC
-    treasury's riskless part are (1 + r)(K - g), as in the bank form.
+    treasury's riskless part are (1 + r)(K - g).
 
-    **Compensation and the guarantee** are two ways the firm makes good
-    depositors' losses: a share psi of incident losses, and -- if a guarantee
-    is set -- whatever it takes to lift depositors' period return to the
-    floor. The firm pays the larger of the two, not both. Outflows respond to
-    what depositors actually receive.
+    **Compensation**: the firm makes good a share psi of incident losses.
+    Outflows respond to what depositors actually receive.
 
     **Co-investment:** the firm keeps co A of its own money in the vault,
     paid for out of its cash (`vault_capital_floor`). It earns the vault's
-    excess return R, losses and jumps included, and is not covered by the
-    guarantee; its riskless part is already in (1 + r)(K - g).
+    excess return R, losses and jumps included, and is not compensated; its
+    riskless part is already in (1 + r)(K - g).
     """
     n_shock = rule.nodes.shape[0]
     xi = rule.nodes[:, :2]                       # (N, 2) the risky strategies
@@ -181,8 +177,6 @@ def vault_outcomes(
     A3 = A[..., None, None]
     fees = p.fee_mgmt * A3 + p.fee_perf * torch.relu(R) * A3
     cover = p.compensation * hit
-    if p.guarantee is not None:
-        cover = torch.maximum(cover, torch.relu(p.guarantee - p.r - R))
     R_dep = R + cover
     aum = (
         A3 * (1.0 + p.r + R_dep)

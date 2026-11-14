@@ -3,7 +3,6 @@
 import pytest
 import torch
 
-from quant.model import shock_correlation
 from quant.numerics import REFERENCE
 from quant.quadrature import student_t_rule
 from quant.twoperiod import (
@@ -14,6 +13,7 @@ from quant.twoperiod import (
     issuance_threshold,
     optimal_positions,
     oracle_params,
+    shock_correlation,
 )
 
 P = REFERENCE
@@ -77,3 +77,19 @@ def test_hurdle_takes_the_sign_of_the_covariance(rho):
     alpha, H = optimal_positions(p, rule, P, ORACLE_FIRST_PERIOD)
     hurdle = froot_stein(p, rule, P, ORACLE_FIRST_PERIOD, alpha, H).hurdle
     assert hurdle == pytest.approx(0.0, abs=1e-12) if rho == 0 else (hurdle > 0) == (rho > 0)
+
+
+def test_a_view_on_btc_matches_eq_15():
+    """With a view the bank keeps x* = mu_BTC / (G s_BTC^2) of net BTC
+    exposure -- the paper's eq. (15) case -- found by an optimizer that does
+    not know the formula. Exact under normal shocks."""
+    p = oracle_params(mu_BTC=0.0001)  # small, so outcomes stay in the exact region
+    rule = student_t_rule(shock_correlation(p), p.nu, P)
+    fixed = ORACLE_FIRST_PERIOD
+    alpha, H = optimal_positions(p, rule, P, fixed)
+    w = first_period_wealth(p, rule, P, fixed, alpha, H)
+    assert float(w.max()) < issuance_threshold(p), "oracle must stay in its quadratic region"
+    exposure = p.b_BTC * fixed.I - H
+    expected = froot_stein(p, rule, P, fixed, alpha, H).btc
+    assert exposure > 0
+    assert exposure == pytest.approx(expected, rel=1e-4)

@@ -17,8 +17,9 @@ Controls, squashed so every constraint holds by construction:
     H     = 1.2 sigmoid(z_h) (q + A sum_i a_i b_i)  hedge the treasury and the franchise
 
 The hedge covers the firm's own BTC and the BTC sensitivity of the vault it
-earns fees on. As in the bank form it may run slightly past a full hedge, so
-that a full hedge is an interior point.
+earns fees on. It may run slightly past a full hedge, so that a full hedge is
+an interior point. (The lending form caps the hedge at the firm's own BTC,
+design.md section 3.4.)
 """
 
 from dataclasses import dataclass, field
@@ -26,8 +27,8 @@ from dataclasses import dataclass, field
 import torch
 import torch.nn.functional as F
 
+from quant.core import issuance_cost, next_grc, shareholder_flow
 from quant.grid import StateGrid, policy_iteration
-from quant.model import issuance_cost, next_grc, shareholder_flow
 from quant.numerics import NumericsProfile
 from quant.params import Params
 from quant.quadrature import JumpRule, ShockRule, pareto_jump_rule, student_t_rule
