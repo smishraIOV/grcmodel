@@ -47,22 +47,25 @@ print the profile, torch version and commit they ran under.
 **Decision frequency.** Parameters are stated per year; `periods_per_year`
 (default 4, quarterly) sets how often the firm decides, and the solver converts
 on entry (`Params.per_period()`). Use 1 for quick exploration and tests, 4 for
-realistic runs; `scripts/solve_vault.py --periods-per-year 4`. Quarterly runs need
+realistic runs. Quarterly runs need
 a finer equity grid near the issuance kink (`docs/design.md` §4.4).
 
 ## Layout
 
 - `quant/params.py` — every parameter, one economic driver each, rates per year
 - `quant/core.py` — primitives every form shares: issuance cost, GRC, jumps
-- `quant/vault.py` — the single-vault form (superseded), one period: fees, flows, the firm's books
+- `quant/firm.py` — the firm's own books (stablecoins, BTC, hedge, runway,
+  capital floor) and BTC's market (price, crashes, scenario rule)
+- `quant/lending.py` — the stablecoin lending vault, one period
+- `quant/btc_vault.py` — the BTC yield vault, one period
 - `quant/quadrature.py` — deterministic rules for the Student-t shocks and jumps
 - `quant/grid.py` — the shared N-dimensional grid, interpolation and policy iteration
-- `quant/vault_solver.py` — its controls and objective
-- `quant/vault_results.py` — what a solved firm says
+- `quant/lending_solver.py` — the lending vault's decisions and objective on the grid
+- `quant/lending_results.py` — what a solved lending firm says
 - `quant/twoperiod.py` — the two-period truncation of the paper's own bank,
   self-contained, used as the oracle (a known-answer check against the paper's formulas)
 - `quant/numerics.py` — profiles: device, dtype, RNG
-- `scripts/solve_vault.py` — entry point
+- `scripts/` — entry points (being rebuilt for the two vaults)
 
 ## Numerics
 

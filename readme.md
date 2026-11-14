@@ -56,23 +56,28 @@ The design, and the reasoning behind each choice, is in
 
 Built so far:
 
-- **a single vault** run for fees, whose depositors share its gains and losses
-  (`quant/vault.py`), superseded by the two-vault design and kept as the start
-  of the BTC vault; the bank form was built and removed;
-- BTC as the firm's home asset, held by conviction and hedged with perps;
+- **the stablecoin lending vault** (`quant/lending.py`, solved on a 3-D grid by
+  `quant/lending_solver.py`): loans over-collateralized by BTC at a rate and
+  loan-to-value the firm sets, liquidation at the threshold, bad debt from BTC
+  crashes;
+- **the BTC yield vault, one period** (`quant/btc_vault.py`): strategies, fees
+  in BTC, flows; its solver is next;
+- the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
+  a hedge with perps, a runway of operating costs; BTC at the market's
+  expectation plus the firm's bias, with occasional crashes;
 - fat-tailed shocks with tail dependence and heavy-tailed jump losses,
   integrated by deterministic quadrature rather than Monte Carlo
   (`quant/quadrature.py`);
 - an infinite-horizon solver on an N-dimensional grid (`quant/grid.py`), checked
-  against known answers: the paper's own results in a two-period version
-  (`quant/twoperiod.py`), and an exact no-shock solution for the vault.
+  against the paper's own results in a two-period version (`quant/twoperiod.py`).
 
-Next: the stablecoin lending vault on its own (`docs/design.md` §7), with BTC
-valued at the market's expectation plus the firm's bias.
+An earlier single dollar vault and a bank form were built and removed.
+
+Next: solve the BTC vault on its own; then both vaults together, with the
+actor-critic learner (`docs/design.md` §7).
 
 ```bash
 uv run pytest
-uv run python scripts/solve_vault.py           # the single vault, exploratory
 ```
 
 The previous model (finite horizon, hazard-based failure) is preserved on the

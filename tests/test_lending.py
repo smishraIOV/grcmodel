@@ -10,10 +10,9 @@ from dataclasses import replace
 import pytest
 import torch
 
+from quant.firm import btc_prices, crash_probability
 from quant.lending import (
     LendingControls,
-    btc_prices,
-    crash_probability,
     lending_capital_floor,
     lending_outcomes,
     lending_rule,

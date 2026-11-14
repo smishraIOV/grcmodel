@@ -13,7 +13,8 @@ from dataclasses import dataclass
 import torch
 
 from quant.core import mitigation, next_grc
-from quant.lending import LendingControls, btc_prices, loan_book, loan_payoff
+from quant.firm import btc_prices
+from quant.lending import LendingControls, loan_book, loan_payoff
 from quant.lending_solver import LendingSolution
 
 PAYROLL_FLOOR = 0.30              # payroll as a share of revenue, at least

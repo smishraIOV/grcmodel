@@ -37,12 +37,10 @@ class Params:
     tau: float = 0.0         # extra deadweight cost of carrying equity, per year; the main cost is r_E - r
 
     # -- BTC ----------------------------------------------------------------
-    # Money is in dollars (the numeraire); BTC is the firm's home asset.
-    # mu_BTC is the single-vault form's believed excess return over r
-    # (design.md section 3.4 replaces it with the market's expectation plus a
-    # bias, in the lending form).
-    s_BTC: float = 0.60      # BTC's dollar volatility, per year
-    mu_BTC: float = 0.10     # single-vault form: believed excess return on BTC, per year
+    # Money is in dollars (the numeraire); BTC is the firm's home asset. BTC
+    # is expected to earn the market's r_E, plus the firm's bias (design.md
+    # section 3.4).
+    s_BTC: float = 0.60      # volatility of BTC's smooth move, per year
     k_BTC: float = 0.10      # capital charge on the firm's own BTC
     q_max: float = 1.0       # bound on the firm's own BTC, so a risk-seeking region stays finite
     c_H: float = 0.0         # cost of hedging with short perps, c_H/2 * H^2; zero is fair
@@ -64,32 +62,33 @@ class Params:
     a_J: float = 100.0       # effectiveness against jump frequency (prevention)
     rho_J: float = 0.3       # share of jump frequency no program removes
 
-    # -- the single-vault form (superseded; the start of the BTC vault) -----
-    # Three strategies run by hired managers; the firm sets the allocation.
-    # Order: BTC-backed lending, market-neutral (basis, market-making),
-    # tokenized treasuries. Returns are excess over the riskless rate.
-    vault_mu: tuple[float, float, float] = (0.06, 0.04, 0.0)      # expected excess return, per year
-    vault_loss: tuple[float, float, float] = (0.01, 0.005, 0.0)   # mean loss rate GRC can reduce, per year
-    vault_vol: tuple[float, float, float] = (0.05, 0.03, 0.0)     # volatility, per year
-    vault_btc: tuple[float, float, float] = (0.1, 0.0, 0.0)       # sensitivity to BTC's return
-    vault_jump: tuple[float, float, float] = (1.0, 0.5, 0.0)      # exposure to jump losses
-    vault_rho: float = 0.3          # correlation of the two risky strategies
-    capacity: float = 1.0           # the vault's full size; fixes the scale
-    fee_mgmt: float = 0.02          # management fee, share of AUM per year
-    fee_perf: float = 0.20          # performance fee, share of a period's positive excess return
+    # -- the firm's costs and obligations (design.md sections 2.4, 3.3) ----
     opex: float = 0.02              # operating costs, dollars per year, fixed (payroll is sticky)
     payroll_share: float = 0.60     # share of operating costs that is payroll
-    runway: float = 1.0             # operating costs held in stablecoins, in years (lending form); per period after conversion
-    inflow_speed: float = 0.5       # share of the gap to capacity closed per year
-    outflow_perf: float = 1.0       # extra outflow per unit of negative excess return
-    outflow_incident: float = 0.2   # share of AUM that leaves after an incident
-    compensation: float = 0.5       # share of incident losses the firm makes good
-    k_A: float = 0.02               # own funds required per unit of AUM
-    co_invest: float = 0.0          # the firm's own stake in the vault, share of AUM ("skin in the game")
+    runway: float = 1.0             # operating costs held in stablecoins, in years; periods after conversion
+    k_A: float = 0.02               # own funds required per dollar of a vault
+    compensation: float = 0.5       # share of incident losses and bad debt the firm makes good
+    inflow_speed: float = 0.5       # share of a vault's gap to capacity closed per year
+    outflow_incident: float = 0.2   # share of a vault that leaves after an incident
+
+    # -- the BTC yield vault (design.md section 2.3) ------------------------
+    # Strategies run by hired managers; the firm sets the allocation. Order:
+    # lending BTC to institutions, basis trading / market-making, cold
+    # custody. Yields and losses are in BTC terms.
+    strategy_yield: tuple[float, float, float] = (0.03, 0.06, 0.0)   # expected BTC yield, per year
+    strategy_loss: tuple[float, float, float] = (0.005, 0.01, 0.0)   # mean loss GRC can reduce, per year
+    strategy_vol: tuple[float, float, float] = (0.01, 0.04, 0.0)     # volatility of the yield, per year
+    strategy_crash: tuple[float, float, float] = (0.2, 0.3, 0.0)     # loss per unit of a BTC crash's size
+    strategy_incident: tuple[float, float, float] = (1.0, 0.5, 0.2)  # exposure to incidents
+    strategy_rho: float = 0.3       # correlation of the two active strategies' yields
+    btc_capacity: float = 1.0       # the vault's full size, in dollars
+    fee_mgmt: float = 0.01          # management fee, share of the vault's BTC per year
+    fee_perf: float = 0.15          # performance fee, share of a period's positive BTC yield
+    btc_outside_yield: float = 0.02 # what lending BTC elsewhere pays, per year
+    btc_flow_yield: float = 2.0     # net flows, share of the vault, per unit of BTC-yield gap
+    btc_co_invest: float = 0.05     # the firm's own stake in the BTC vault, share of its size
 
     # -- the stablecoin lending vault (design.md section 2.2) ----------------
-    # Shares with the single vault: inflow_speed, outflow_incident,
-    # compensation (also applied to bad debt), k_A, opex, and the jump rule.
     btc_bias: float = 0.0           # the firm's expected BTC return above the market's (r_E), per year
     btc_holding_cost: float = 0.015 # securing the firm's own BTC (custody, keys, insurance), share per year
     btc_crash_rate: float = 0.5     # sudden BTC crashes per year (a market event; GRC does not change it)
@@ -152,12 +151,13 @@ class Params:
         - GRC depreciation keeps the same annual loss: 1 - (1 - delta)^(1/n).
 
         Sizes and per-event amounts do not convert: issuance costs, jump severity, GRC effectiveness and
-        floors, position bounds, correlations, nu. For the vault: the
-        management fee, operating costs and strategies' returns and losses are
-        flows (divide by n); strategy volatilities follow sqrt(n); the inflow
-        speed keeps its annual effect; the performance fee, flow sensitivities, compensation share, capacity,
-        capital requirement and co-investment share are shares or sizes and do
-        not convert. For the lending vault: the rate at which demand reaches
+        floors, position bounds, correlations, nu. For the BTC vault: the
+        management fee, operating costs and strategies' yields and losses are
+        flows (divide by n); strategy volatilities follow sqrt(n); the outside
+        BTC yield compounds; the inflow speed keeps its annual effect; the
+        performance fee, crash and incident exposures, flow sensitivities,
+        compensation share, capacity, capital requirement and co-investment
+        share are shares or sizes and do not convert. For the lending vault: the rate at which demand reaches
         zero and the outside rate compound; the BTC bias, the BTC holding cost and the
         operating loss are flows; the BTC crash rate divides by n; the runway, stated in
         years, becomes a number of periods, so runway x opex is unchanged; the loss volatility follows sqrt(n); the demand line's
@@ -180,13 +180,13 @@ class Params:
             r_E=compound(self.r_E),
             tau=self.tau / n,
             s_BTC=self.s_BTC / root,
-            mu_BTC=self.mu_BTC / n,
             jump_rate=self.jump_rate / n,
             delta=1.0 - (1.0 - self.delta) ** (1.0 / n),
-            vault_mu=tuple(x / n for x in self.vault_mu),
-            vault_loss=tuple(x / n for x in self.vault_loss),
-            vault_vol=tuple(x / root for x in self.vault_vol),
+            strategy_yield=tuple(x / n for x in self.strategy_yield),
+            strategy_loss=tuple(x / n for x in self.strategy_loss),
+            strategy_vol=tuple(x / root for x in self.strategy_vol),
             fee_mgmt=self.fee_mgmt / n,
+            btc_outside_yield=compound(self.btc_outside_yield),
             opex=self.opex / n,
             runway=self.runway * n,
             inflow_speed=1.0 - (1.0 - self.inflow_speed) ** (1.0 / n),

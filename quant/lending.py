@@ -19,16 +19,16 @@ takes (zero without one). `lending_rule` builds them. Everything is element-wise
 grid points, quadrature nodes and jump outcomes at once.
 """
 
-import math
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 
 from quant.core import jump_probability, mitigation
+from quant.firm import btc_prices, capital_floor, scenario_rule, treasury_close
 from quant.numerics import NumericsProfile
 from quant.params import Params
-from quant.quadrature import JumpRule, ShockRule, pareto_jump_rule, student_t_rule
+from quant.quadrature import JumpRule, ShockRule
 
 
 def lending_shock_correlation(p: Params) -> np.ndarray:
@@ -39,24 +39,10 @@ def lending_rule(
     p: Params, profile: NumericsProfile, n_ops: int = 3, n_btc: int = 7,
     n_mixing: int = 6, n_crash: int = 5,
 ) -> ShockRule:
-    """The Student-t rule over (xi, eps_BTC), crossed with no crash and each
-    crash size; the crash probability is folded into the weights."""
-    base = student_t_rule(
-        lending_shock_correlation(p), p.nu, profile, n_hermite=(n_ops, n_btc), n_mixing=n_mixing
+    """Scenarios over (xi, eps_BTC, crash) (`quant.firm.scenario_rule`)."""
+    return scenario_rule(
+        p, lending_shock_correlation(p), (n_ops, n_btc), profile, n_mixing=n_mixing, n_crash=n_crash
     )
-    if p.btc_crash_rate > 0.0:
-        crashes = pareto_jump_rule(p.btc_crash_mean, p.btc_crash_tail, profile, n=n_crash)
-        size = torch.cat([crashes.severity.new_zeros(1), crashes.severity])
-        prob = crash_probability(p)
-        chance = torch.cat([size.new_ones(1) * (1.0 - prob), prob * crashes.weights])
-    else:
-        size, chance = base.weights.new_zeros(1), base.weights.new_ones(1)
-    k = size.shape[0]
-    nodes = torch.cat(
-        [base.nodes.repeat_interleave(k, dim=0), size.repeat(base.size).unsqueeze(-1)], dim=-1
-    )
-    weights = (base.weights[:, None] * chance[None, :]).reshape(-1)
-    return ShockRule(nodes=nodes, weights=weights)
 
 
 @dataclass(frozen=True)
@@ -91,39 +77,9 @@ def loan_book(p: Params, A: torch.Tensor, c: LendingControls) -> torch.Tensor:
 def lending_capital_floor(
     p: Params, A: torch.Tensor, g: torch.Tensor, q: torch.Tensor
 ) -> torch.Tensor:
-    """The least equity the firm may hold.
-
-    Own funds against the vault and the firm's BTC, hedged or not:
-    K >= k_A A + k_BTC q. A runway of operating costs in stablecoins after
-    GRC, BTC and the stake in the vault: K >= g + q + co A + runway opex
-    (design.md section 3.3). And no negative equity.
-    """
-    cash = g + q + p.lend_co_invest * A + p.runway * p.opex
-    return torch.maximum(torch.maximum(p.k_A * A + p.k_BTC * q, cash), torch.zeros_like(A))
-
-
-def crash_probability(p: Params) -> float:
-    """Chance of a BTC crash in one period: 1 - exp(-rate). Not affected by
-    GRC: a crash is a market event."""
-    return 1.0 - math.exp(-p.btc_crash_rate)
-
-
-def btc_prices(
-    p: Params, eps: torch.Tensor, crash: torch.Tensor, bias: float
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """BTC's price at the end of the period, starting from 1, and the price the
-    smooth part of the move alone would reach.
-
-    The move is a smooth part, 1 + mu + s eps, then possibly a crash that
-    takes a share `crash` of the price at once. mu is set so the expected end
-    price is 1 + r_E + bias whatever the crash risk: the market's expectation,
-    plus the firm's bias (design.md section 3.4). Prices cannot fall below
-    zero.
-    """
-    expected_loss = crash_probability(p) * p.btc_crash_mean
-    mu = (1.0 + p.r_E + bias) / (1.0 - expected_loss) - 1.0
-    smooth = torch.clamp(1.0 + mu + p.s_BTC * eps, min=0.0)
-    return smooth * (1.0 - crash), smooth
+    """The firm's capital floor (`quant.firm.capital_floor`), with its stake in
+    the lending vault."""
+    return capital_floor(p, A, g, q, p.lend_co_invest * A)
 
 
 def loan_payoff(
@@ -237,9 +193,7 @@ def lending_outcomes(
     L, A1 = col(loans), col(A)
     vault = (A1 - L) + L * payoff - A1 * (phi_A * p.lend_loss + phi_B * p.lend_vol * xi)
     fee = p.interest_share * L * torch.minimum(torch.relu(payoff - 1.0), col(c.rate))
-    btc = (col(c.q) * (1.0 + R_btc - p.btc_holding_cost) - col(c.H) * (R_btc - p.r)
-           - 0.5 * p.c_H * col(c.H) * col(c.H))
-    own = col((c.K - c.g - c.q - p.lend_co_invest * A) - p.tau * c.K - p.opex)
+    books = treasury_close(p, c.K, c.g, c.q, c.H, p.lend_co_invest * A, R_btc)    # (..., N)
 
     if jumps is not None and p.jump_rate > 0.0:
         severity = torch.cat([jumps.severity.new_zeros(1), jumps.severity])    # (1 + J,)
@@ -267,7 +221,7 @@ def lending_outcomes(
         + p.flow_yield * (received - p.outside_rate) * A3
         - occurred * p.outflow_incident * A3
     )
-    wealth = jumped(own + btc + fee) + co * A3 * (1.0 + R) - cover
+    wealth = jumped(books + fee) + co * A3 * (1.0 + R) - cover
 
     weights = rule.weights[:, None] * branch.unsqueeze(-2)                       # (..., N, 1 + J)
     m = rule.nodes.shape[0] * branch.shape[-1]
