@@ -38,11 +38,12 @@ def test_quarters_add_back_up_to_the_year():
     assert (1 + q.outside_rate) ** n == pytest.approx(1 + p.outside_rate, rel=1e-14)
     assert n * replace(p, btc_bias=0.04).per_period().btc_bias == pytest.approx(0.04, rel=1e-14)
     assert n * q.lend_loss == pytest.approx(p.lend_loss, rel=1e-14)
+    assert n * q.perp_premium == pytest.approx(p.perp_premium, rel=1e-14)
     assert q.runway * q.opex == pytest.approx(p.runway * p.opex, rel=1e-14)
     assert n * q.lend_vol**2 == pytest.approx(p.lend_vol**2, rel=1e-14)
 
 
 def test_sizes_do_not_convert():
     p, q = DEFAULTS, DEFAULTS.per_period()
-    for name in ("lam", "kappa", "jump_mean", "jump_tail", "a_A", "a_J", "rho_A", "q_max", "nu", "fee_perf", "btc_capacity", "k_A", "compensation", "outflow_incident", "btc_co_invest", "btc_flow_yield", "strategy_crash", "strategy_incident", "strategy_rho", "loan_demand", "ltv_demand", "ltv_max", "liq_threshold", "liq_penalty", "sale_discount", "interest_share", "flow_yield", "lend_co_invest", "lend_capacity"):
+    for name in ("lam", "kappa", "jump_mean", "jump_tail", "a_A", "a_J", "rho_A", "q_max", "nu", "fee_perf", "btc_capacity", "price_floor", "k_A", "compensation", "outflow_incident", "btc_co_invest", "btc_flow_yield", "strategy_crash", "strategy_incident", "strategy_rho", "loan_demand", "ltv_demand", "ltv_max", "liq_threshold", "liq_penalty", "sale_discount", "interest_share", "flow_yield", "lend_co_invest", "lend_capacity"):
         assert getattr(q, name) == getattr(p, name), name

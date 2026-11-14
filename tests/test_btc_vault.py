@@ -69,7 +69,7 @@ def by_hand(p, A, c, shock, jump=0.0, S=0.0, bias=None):
         - (p.outflow_incident * A if jump > 0 else 0.0),
         0.0,
     )
-    books = ((K - g - q - co * A) + q * (1 + R_btc - p.btc_holding_cost) - H * (R_btc - p.r)
+    books = ((K - g - q - co * A) + q * (1 + R_btc - p.btc_holding_cost) - H * (R_btc - p.r - p.perp_premium)
              - 0.5 * p.c_H * H * H - p.tau * K - p.opex)
     wealth = books + (fee + co * (1 + R) - cover) * A * price
     return wealth, aum, y, R

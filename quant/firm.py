@@ -103,16 +103,17 @@ def treasury_close(
     """The firm's own holdings at the close, before anything from the vault:
 
         (K - g - q - stake)                                stablecoins, earning nothing
-        + q (1 + R_btc - h_q) - H (R_btc - r) - c_H/2 H^2   BTC, its security cost, short perps
+        + q (1 + R_btc - h_q) - H (R_btc - f) - c_H/2 H^2   BTC, its security cost, short perps
         - tau K - opex
 
-    A short perp gains when BTC falls and pays funding near r, so hedged BTC
-    earns about r less its security cost. Decisions are (...,), R_btc (N,);
+    f = r + perp_premium is the market's perp funding rate: longs pay it and
+    shorts receive it (design.md section 3.4). A short perp gains when BTC
+    falls and receives f, so hedged BTC earns f less its security cost. Decisions are (...,), R_btc (N,);
     the result is (..., N).
     """
     def col(x):
         return x.unsqueeze(-1)
 
-    btc = (col(q) * (1.0 + R_btc - p.btc_holding_cost) - col(H) * (R_btc - p.r)
+    btc = (col(q) * (1.0 + R_btc - p.btc_holding_cost) - col(H) * (R_btc - p.r - p.perp_premium)
            - 0.5 * p.c_H * col(H) * col(H))
     return col((K - g - q - stake) - p.tau * K - p.opex) + btc

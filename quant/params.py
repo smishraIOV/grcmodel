@@ -43,6 +43,7 @@ class Params:
     s_BTC: float = 0.60      # volatility of BTC's smooth move, per year
     q_max: float = 1.0       # bound on the firm's own BTC, so a risk-seeking region stays finite
     c_H: float = 0.0         # cost of hedging with short perps, c_H/2 * H^2; zero is fair
+    perp_premium: float = 0.03  # perp funding above r, per year: longs pay r + premium, shorts receive it
 
     # -- shocks ----------------------------------------------------------
     nu: float = 5.0          # Student-t degrees of freedom; math.inf is the normal case
@@ -86,6 +87,8 @@ class Params:
     btc_outside_yield: float = 0.02 # what lending BTC elsewhere pays, per year
     btc_flow_yield: float = 2.0     # net flows, share of the vault, per unit of BTC-yield gap
     btc_co_invest: float = 0.05     # the firm's own stake in the BTC vault, share of its size
+    price_floor: float = 0.01       # BTC price below which the lending sleeve's dollar results stop
+                                    # growing in BTC terms (start = 1); a numerical guard
 
     # -- the stablecoin lending vault (design.md section 2.2) ----------------
     btc_bias: float = 0.0           # the firm's expected BTC return above the market's (r_E), per year
@@ -141,7 +144,7 @@ class Params:
 
         - interest rates and the required return compound: (1 + r)^(1/n) - 1;
         - flows that accrue with time divide by n: BTC's excess return, the
-          carrying cost tau;
+          carrying cost tau, the perp funding premium;
         - volatilities divide by sqrt(n), the square-root-of-time rule.
           Independent periods' variances add up to the year's. Under fat
           tails this is a convention, not an identity: a fat-tailed year is
@@ -179,6 +182,7 @@ class Params:
             r_E=compound(self.r_E),
             tau=self.tau / n,
             s_BTC=self.s_BTC / root,
+            perp_premium=self.perp_premium / n,
             jump_rate=self.jump_rate / n,
             delta=1.0 - (1.0 - self.delta) ** (1.0 / n),
             strategy_yield=tuple(x / n for x in self.strategy_yield),
@@ -209,3 +213,8 @@ class Params:
 
 
 DEFAULTS = Params()
+
+# The integrated firm (docs/plan-integrated.md section 3): the BTC vault is
+# twice the dollar vault. Operating costs are still the single-vault figure
+# and are to be recalibrated against combined revenue (plan step 4a).
+INTEGRATED_DEFAULTS = replace(DEFAULTS, btc_capacity=2.0)
