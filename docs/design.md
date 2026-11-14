@@ -75,7 +75,7 @@ and withdrawals take fee income with them.
 | A | lowers average operating losses | built |
 | B | narrows the spread of those losses | built |
 | J | makes rare large incidents (exploits, custody failures) less frequent | built |
-| L | narrows the discount at which collateral sells in a liquidation, so less bad debt (§2.2) | designed |
+| L | narrows the discount at which collateral sells in a liquidation, and the slippage on the way to selling it, so less bad debt (§2.2) | built |
 | C | concentration limits | later |
 | D | makes cover for partly tradeable risks cheaper (§6) | later |
 
@@ -146,6 +146,16 @@ vault), and returns the rest to the borrower. In the model, a loan whose BTC
 price ends the period below the threshold was liquidated at the threshold
 price.
 
+**Slippage in a smooth fall.** A falling price is not caught exactly at the
+threshold: selling takes time, and the further BTC ends below the threshold
+the faster it fell through it. The collateral is sold at the threshold price
+less a share of the fall past it — a quarter, for now, a parameter. With none
+of the fall lost the sale is exactly at the threshold; with all of it lost
+the sale is at the price the fall ended at. A fall that ends just past the
+threshold still repays the loan and the penalty; a deeper one eats into the
+penalty; a deep, fast one leaves bad debt. GRC mechanism L narrows the
+slippage as it narrows the sale discount.
+
 **The sale discount.** Collateral sells somewhat below the market price:
 markets are thin and price feeds lag. The discount is a parameter; GRC
 mechanism L (better price feeds, a more reliable liquidation process) narrows
@@ -153,8 +163,8 @@ it. Selling at the threshold covers the loan with room to spare as long as the
 discount is smaller than the gap between the threshold and full collateral
 (20% at an 80% threshold).
 
-**BTC crashes and bad debt.** A smooth fall is always caught at the
-threshold. Bad debt comes only from a **crash**: a sudden fall that jumps the
+**BTC crashes and bad debt.** A smooth fall is caught near the threshold
+(above). Most bad debt comes from a **crash**: a sudden fall that jumps the
 price past the threshold before anything can be sold, so the collateral sells
 at the price after the crash. Bad debt is what even the whole collateral, sold
 there, cannot cover. Crashes are rare and their size is heavy-tailed (§4.3). A
@@ -1163,6 +1173,18 @@ are today's.
   per mechanism; the firm's facts required, the assumptions pre-filled from
   the model's defaults and marked illustrative. The three conversions are own
   constructions, each an exact restatement of a form already in §4.2.
+- **Three gaps in the accounting closed, and a fourth in part**
+  (2026-11-14). The user ranked a list of gaps and asked for these, leaving
+  their form to Claude while away; **each is for the user's review**:
+  - **slippage in a smooth fall** (§2.2). A smooth fall was caught exactly
+    at the threshold whatever its depth, so investors gained from a 50% fall
+    (the penalty on every loan) and there was nothing between "perfectly
+    caught" and "crash". The sale is now at the threshold less a share of the
+    fall past it, 25% for now. Own construction: one parameter running from
+    the present rule (0) to the rule first tried and dropped, selling at the
+    period's closing price (1). GRC mechanism L narrows it. It does not
+    convert with the decision frequency, though the same fall in a quarter is
+    faster than in a year.
 - **BTC's price moves in its logarithm** (2026-11-14, raised and agreed
   before the change; §3.4 gives the reason). The price could reach zero, and
   did so far too often; found when the BTC vault's yield with a lending

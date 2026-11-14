@@ -12,9 +12,9 @@ from dataclasses import dataclass
 
 import torch
 
-from quant.core import mitigation, next_grc
+from quant.core import next_grc
 from quant.firm import btc_prices
-from quant.lending import LendingControls, loan_book, loan_payoff
+from quant.lending import LendingControls, liquidation_terms, loan_book, loan_payoff
 from quant.research.lending_solver import LendingSolution
 
 PAYROLL_FLOOR = 0.30              # payroll as a share of revenue, at least
@@ -58,9 +58,9 @@ def cost_ratios(sol: LendingSolution, at_w: float, at_A: float) -> CostRatios:
     _, s, A = sol.states()
     with torch.no_grad():
         c = controls_at(sol, i)
-        discount = p.sale_discount * mitigation(next_grc(p, s[i:i + 1], c.g), p.a_L, p.rho_L)
+        discount, slippage = liquidation_terms(p, next_grc(p, s[i:i + 1], c.g))
         price, smooth = btc_prices(p, sol.rule.nodes[:, 1], sol.rule.nodes[:, 2], p.btc_bias)
-        payoff, _ = loan_payoff(p, c.rate, c.ltv, price, smooth, discount)
+        payoff, _ = loan_payoff(p, c.rate, c.ltv, price, smooth, discount, slippage)
         loans = loan_book(p, A[i:i + 1], c)
         fee = p.interest_share * loans * torch.minimum(torch.relu(payoff - 1.0), c.rate)
         revenue = float(sol.rule.expect(fee)) * n

@@ -72,7 +72,8 @@ def by_hand(p, A_L, A_B, c, shock, J_L=0.0, J_B=0.0, S=0.0):
     owed = 1 + rate
     T = owed * ltv / p.liq_threshold
     liquidated, first = sig((T - X) / p.liq_band), sig((T - smooth) / p.liq_band)
-    sale = first * T + (1 - first) * min(T, X)
+    caught = T - p.liq_slippage * phi(p.a_L, p.rho_L, S) * max(T - smooth, 0.0)
+    sale = first * caught + (1 - first) * min(T, X)
     proceeds = sale * (1 - p.sale_discount * phi(p.a_L, p.rho_L, S)) / ltv
     payoff = liquidated * min(owed * (1 + p.liq_penalty), proceeds) + (1 - liquidated) * owed
     B = max(owed - proceeds, 0) * liquidated

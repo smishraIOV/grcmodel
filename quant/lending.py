@@ -85,24 +85,32 @@ def lending_capital_floor(
 def loan_payoff(
     p: Params, rate: torch.Tensor, ltv: torch.Tensor,
     price: torch.Tensor, smooth: torch.Tensor, discount: torch.Tensor,
+    slippage: torch.Tensor | float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """What the vault gets back per dollar lent, and the bad debt per dollar.
 
     The borrower owes O = 1 + rate against collateral of 1 / ltv BTC. The
     **threshold price** is T = O ltv / theta. Prices are watched
-    continuously, so a loan whose price ends below T was liquidated **at T**
-    -- unless a crash jumped the price past T before anything could be sold,
-    in which case the sale is at the price after the crash. Either way the
-    collateral sells at a discount d below that price, the firm takes only
-    O (1 + penalty), and the rest goes back to the borrower. Bad debt is what
-    even the whole collateral cannot cover:
+    continuously, so a loan whose price ends below T was liquidated on the
+    way down -- unless a crash jumped the price past T before anything could
+    be sold, in which case the sale is at the price after the crash.
 
-        sale     = T if the smooth part alone crossed T, else min(T, price)
+    **A smooth fall is not caught exactly at T.** Selling takes time, and the
+    further the price ends below T the faster it fell through it. The sale is
+    at T less a share k of the fall past it (`slippage`; `p.liq_slippage` if
+    not given): k = 0 sells exactly at T, k = 1 at the price the smooth move
+    ended at. Either way the collateral sells at a discount d below that
+    price, the firm takes only O (1 + penalty), and the rest goes back to the
+    borrower. Bad debt is what even the whole collateral cannot cover:
+
+        sale     = T - k (T - smooth)^+   if the smooth part alone crossed T,
+                   min(T, price)          otherwise (a crash did)
         proceeds = sale (1 - d) / ltv
         payoff   = min(O (1 + penalty), proceeds),    bad debt = (O - proceeds)^+
 
-    Selling at T covers the loan with room to spare whenever d < 1 - theta,
-    so bad debt comes only from crashes (design.md section 2.2).
+    A fall that ends just past T still covers the loan with room to spare
+    whenever d < 1 - theta; bad debt comes from crashes and from deep, fast
+    falls (design.md section 2.2).
 
     **Both switches are smoothed** over `liq_band` of the price -- whether the
     loan is liquidated at all, and whether the smooth part crossed T before a
@@ -110,16 +118,26 @@ def loan_payoff(
     payoff jump, which would give the solver a wrong slope in the LTV and the
     rate.
     """
+    if slippage is None:
+        slippage = p.liq_slippage
     owed = 1.0 + rate
     trigger = owed * ltv / p.liq_threshold
     liquidated = torch.sigmoid((trigger - price) / p.liq_band)
     crossed_first = torch.sigmoid((trigger - smooth) / p.liq_band)
-    sale = crossed_first * trigger + (1.0 - crossed_first) * torch.minimum(trigger, price)
+    caught = trigger - slippage * torch.relu(trigger - smooth)
+    sale = crossed_first * caught + (1.0 - crossed_first) * torch.minimum(trigger, price)
     proceeds = sale * (1.0 - discount) / ltv
     recovered = torch.minimum(owed * (1.0 + p.liq_penalty), proceeds)
     payoff = liquidated * recovered + (1.0 - liquidated) * owed
     bad_debt = torch.relu(owed - proceeds) * liquidated
     return payoff, bad_debt
+
+
+def liquidation_terms(p: Params, S_next: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """The sale discount and the slippage after GRC: mechanism L narrows both
+    (design.md sections 1 and 2.2)."""
+    left = mitigation(S_next, p.a_L, p.rho_L)
+    return p.sale_discount * left, p.liq_slippage * left
 
 
 @dataclass(frozen=True)
@@ -184,12 +202,12 @@ def lending_outcomes(
     S_col = col(S_next)
     phi_A = mitigation(S_col, p.a_A, p.rho_A)
     phi_B = mitigation(S_col, p.a_B, p.rho_B)
-    discount = p.sale_discount * mitigation(S_col, p.a_L, p.rho_L)
+    discount, slippage = liquidation_terms(p, S_col)
 
     loans = loan_book(p, A, c)
     price, smooth = btc_prices(p, eps, crash, bias)                         # (N,)
     R_btc = price - 1.0
-    payoff, bad = loan_payoff(p, col(c.rate), col(c.ltv), price, smooth, discount)  # (..., N)
+    payoff, bad = loan_payoff(p, col(c.rate), col(c.ltv), price, smooth, discount, slippage)  # (..., N)
     L, A1 = col(loans), col(A)
     vault = (A1 - L) + L * payoff - A1 * (phi_A * p.lend_loss + phi_B * p.lend_vol * xi)
     fee = p.interest_share * L * torch.minimum(torch.relu(payoff - 1.0), col(c.rate))

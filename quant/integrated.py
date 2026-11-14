@@ -40,7 +40,7 @@ import torch
 
 from quant.core import jump_probability, mitigation
 from quant.firm import btc_prices, capital_floor, scenario_rule, treasury_close
-from quant.lending import loan_demand, loan_payoff
+from quant.lending import liquidation_terms, loan_demand, loan_payoff
 from quant.numerics import NumericsProfile
 from quant.params import Params
 from quant.quadrature import JumpRule, ShockRule
@@ -225,7 +225,7 @@ def integrated_outcomes(
     S_col = col(S_next)
     phi_A = mitigation(S_col, p.a_A, p.rho_A)
     phi_B = mitigation(S_col, p.a_B, p.rho_B)
-    discount = p.sale_discount * mitigation(S_col, p.a_L, p.rho_L)
+    discount, slippage = liquidation_terms(p, S_col)
 
     price, smooth = btc_prices(p, eps, crash, bias)                          # (N,)
     R_btc = price - 1.0
@@ -233,7 +233,7 @@ def integrated_outcomes(
 
     # -- the loan book, per stablecoin dollar from either source ------------
     loans, use = integrated_loan_book(p, A_L, A_B, c)
-    payoff, bad = loan_payoff(p, col(c.rate), col(c.ltv), price, smooth, discount)   # (..., N)
+    payoff, bad = loan_payoff(p, col(c.rate), col(c.ltv), price, smooth, discount, slippage)   # (..., N)
     earned = torch.minimum(torch.relu(payoff - 1.0), col(c.rate))
     u = col(use)
     ops = phi_A * p.lend_loss + phi_B * p.lend_vol * xi_l

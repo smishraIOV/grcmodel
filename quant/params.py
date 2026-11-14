@@ -107,6 +107,8 @@ class Params:
     liq_penalty: float = 0.05       # paid by a liquidated borrower to the vault, share of what is owed
     liq_band: float = 0.01          # width of the smoothed liquidation trigger, in BTC price (start = 1)
     sale_discount: float = 0.10     # how far below market liquidated collateral sells, at zero GRC
+    liq_slippage: float = 0.25      # share of a smooth fall past the threshold lost before the collateral
+                                    # is sold, at zero GRC: 0 is caught exactly at the threshold
     a_L: float = 50.0               # GRC effectiveness against the sale discount (mechanism L)
     rho_L: float = 0.3              # share of the discount no program removes
     interest_share: float = 0.40    # the firm's share of the interest collected; high for now (design.md 11)
@@ -137,6 +139,8 @@ class Params:
             raise ValueError("fee_perf must be in [0, 1) and compensation in [0, 1]")
         if not 0.0 < self.ltv_min <= self.ltv_max < self.liq_threshold <= 1.0:
             raise ValueError("need 0 < ltv_min <= ltv_max < liq_threshold <= 1")
+        if not 0.0 <= self.liq_slippage <= 1.0:
+            raise ValueError("liq_slippage must be in [0, 1]: a share of the fall past the threshold")
         if not (0.0 <= self.sale_discount < 1.0 and 0.0 <= self.lend_co_invest < 1.0):
             raise ValueError("sale_discount and lend_co_invest must be in [0, 1)")
 
@@ -169,7 +173,7 @@ class Params:
         operating loss are flows; the BTC crash rate divides by n; the runway, stated in
         years, becomes a number of periods, so runway x opex is unchanged; the loss volatility follows sqrt(n); the demand line's
         height and LTV shift, LTV bounds, liquidation threshold, penalty, trigger
-        band, sale discount, interest share, flow response (a share of the vault per unit
+        band, sale discount and slippage, interest share, flow response (a share of the vault per unit
         of yield gap, both per period) and capacity do not convert.
         """
         n = self.periods_per_year

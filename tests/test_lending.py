@@ -67,7 +67,9 @@ def by_hand(p, A, c, shock, jump=0.0, S=0.0, bias=None):
     d = p.sale_discount * phi(p.a_L, p.rho_L, S)
     liq = sig((T - price) / p.liq_band)
     first = sig((T - smooth) / p.liq_band)
-    proceeds = (first * T + (1 - first) * min(T, price)) * (1 - d) / ltv
+    k = p.liq_slippage * phi(p.a_L, p.rho_L, S)
+    caught = T - k * max(T - smooth, 0.0)
+    proceeds = (first * caught + (1 - first) * min(T, price)) * (1 - d) / ltv
     payoff = liq * min(owed * (1 + p.liq_penalty), proceeds) + (1 - liq) * owed
     bad = liq * max(owed - proceeds, 0.0)
     ops = A * (phi(p.a_A, p.rho_A, S) * p.lend_loss + phi(p.a_B, p.rho_B, S) * p.lend_vol * xi)
@@ -106,7 +108,7 @@ def test_accounting_matches_the_formulas(shock, S):
     assert float(out.bad_debt[0, 0]) == pytest.approx(bad, abs=1e-14)
 
 
-SHARP = replace(BASE, liq_band=1e-9)   # the unsmoothed rule, for checks of its cases
+SHARP = replace(BASE, liq_band=1e-9, liq_slippage=0.0)   # the unsmoothed rule with nothing lost on the way, for checks of its cases
 
 
 def prices(p, eps, crash=0.0):
@@ -126,16 +128,51 @@ def test_the_test_shocks_cover_every_case():
     assert (False, True) in cases                  # crash past the threshold: bad debt
 
 
-def test_without_a_crash_liquidation_never_leaves_bad_debt():
-    """Prices are watched continuously, so a smooth fall is caught at the
-    threshold, however far it goes; the vault gets what is owed plus the
-    penalty, and the rest goes back to the borrower."""
+def test_with_no_slippage_a_smooth_fall_never_leaves_bad_debt():
+    """Prices are watched continuously. With no slippage a smooth fall is
+    caught exactly at the threshold, however far it goes; the vault gets what
+    is owed plus the penalty, and the rest goes back to the borrower."""
     p = SHARP
     rate, ltv = t(0.05), t(0.7)
     for eps in (-0.5, -1.0, -1.5, -5.0):
         payoff, bad = loan_payoff(p, rate, ltv, *prices(p, eps), t(0.1))
         assert float(payoff) == pytest.approx(1.05 * (1 + p.liq_penalty))
         assert float(bad) == 0.0
+
+
+def test_slippage_sells_a_smooth_fall_below_the_threshold():
+    """The sale is at the threshold less a share of the fall past it. A fall
+    just past the threshold still pays the penalty; a deeper one eats into
+    it; a deep, fast one leaves bad debt. With all of the fall lost, the sale
+    is at the price the fall ended at."""
+    p = replace(SHARP, liq_slippage=0.25)
+    rate, ltv, d = t(0.05), t(0.7), 0.1
+    T = 1.05 * 0.7 / p.liq_threshold
+    seen = set()
+    for eps in (-0.3, -0.6, -1.0, -1.5, -2.5):
+        price, smooth = prices(p, eps)
+        end = float(smooth)
+        assert end < T
+        proceeds = (T - 0.25 * (T - end)) * (1 - d) / 0.7
+        payoff, bad = loan_payoff(p, rate, ltv, price, smooth, t(d))
+        assert float(payoff) == pytest.approx(min(1.05 * (1 + p.liq_penalty), proceeds), abs=1e-14)
+        assert float(bad) == pytest.approx(max(1.05 - proceeds, 0.0), abs=1e-14)
+        seen.add("penalty in full" if proceeds >= 1.05 * (1 + p.liq_penalty) else "bad debt" if proceeds < 1.05 else "penalty in part")
+    assert seen == {"penalty in full", "penalty in part", "bad debt"}
+    price, smooth = prices(p, -1.5)
+    _, all_lost = loan_payoff(p, rate, ltv, price, smooth, t(d), 1.0)
+    assert float(all_lost) == pytest.approx(1.05 - float(smooth) * 0.9 / 0.7, abs=1e-14)
+    # the default is the parameter, and what is passed overrides it
+    assert torch.equal(loan_payoff(p, rate, ltv, price, smooth, t(d))[0], loan_payoff(p, rate, ltv, price, smooth, t(d), 0.25)[0])
+
+
+def test_grc_narrows_the_slippage_with_the_sale_discount():
+    p = replace(BASE, liq_slippage=0.25)
+    c = controls(rate=0.05, ltv=0.7)
+    fall = one((0.0, -2.5))
+    none = lending_outcomes(p, t([1.0]), c, t([0.0]), fall, None)
+    some = lending_outcomes(p, t([1.0]), c, t([0.05]), fall, None)
+    assert float(some.bad_debt) < float(none.bad_debt) and float(none.bad_debt) > 0.0
 
 
 def test_a_crash_sells_at_the_price_after_it():
