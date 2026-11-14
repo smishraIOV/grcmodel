@@ -82,6 +82,8 @@ The core:
 - `quant/compare.py` — two policies for the same firm, side by side
 - `quant/sensitivity.py` — how much each figure leans on each assumption that
   cannot be observed, one dial at a time
+- `quant/guide.py` — what each input means and what to enter, for a person
+  filling in a form; every input must have an entry
 - `quant/api.py` — the tool for other programs: a request as plain data in,
   results as plain data out (JSON); what a dashboard would call
 - `quant/numerics.py` — profiles: device, dtype, RNG

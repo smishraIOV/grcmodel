@@ -49,6 +49,15 @@
   aside .card { padding: 14px; }
   .row { display: grid; grid-template-columns: minmax(0, 1fr) 118px; gap: 8px; align-items: center; margin: 5px 0; }
   .row label { color: var(--text-secondary); overflow-wrap: anywhere; }
+  .named { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .info { flex: none; width: 17px; height: 17px; padding: 0; border-radius: 50%; border: 1px solid var(--axis); background: transparent;
+          color: var(--muted); font: italic 600 11px/15px Georgia, serif; cursor: help; }
+  .info:hover, .info:focus-visible { color: var(--text-primary); border-color: var(--text-secondary); background: var(--wash); }
+  #tip.help { max-width: 360px; padding: 10px 12px; }
+  #tip.help .t { color: var(--text-primary); font-weight: 650; margin-bottom: 6px; }
+  #tip.help p { margin: 0 0 6px; color: var(--text-secondary); }
+  #tip.help p:last-child { margin-bottom: 0; }
+  #tip.help p b { color: var(--text-primary); font-weight: 600; }
   .row .unit { position: relative; }
   .row .unit span { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; font-size: 12px; }
   input[type=number], input[type=text], select { width: 100%; padding: 5px 30px 5px 8px; border: 1px solid var(--axis); border-radius: 6px;
@@ -56,6 +65,7 @@
   select, input[type=text] { padding-right: 8px; }
   input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
   .group { margin: 8px 0 2px; color: var(--text-primary); font-weight: 600; font-size: 13px; }
+  .named.group { display: flex; }
   .hint { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
   details { border-top: 1px solid var(--grid); padding: 8px 0 2px; }
   details:first-of-type { border-top: 0; }
@@ -141,7 +151,7 @@
   <aside>
     <div class="card" id="policy-card">
       <h2>The policy</h2>
-      <p class="hint">What the firm does. Dollars in millions; rates per year.</p>
+      <p class="hint">What the firm does. Dollars in millions; rates per year. The <span class="info" aria-hidden="true" style="display:inline-block;text-align:center;cursor:default">i</span> beside an input says what it means and what to enter.</p>
       <div id="policy"></div>
       <div class="group">Over several years</div>
       <div id="horizon"></div>
@@ -151,8 +161,7 @@
     </div>
     <div class="card">
       <h2>The firm and the assumptions</h2>
-      <p class="hint">Starts as a made-up example. Change it into your own firm, then save it to a file to come back to.
-        Hover a name for what it means.</p>
+      <p class="hint">Starts as a made-up example. Change it into your own firm, then save it to a file to come back to.</p>
       <div class="row"><label for="firm-name">Name</label><input type="text" id="firm-name" placeholder="an example firm" autocomplete="off"></div>
       <div class="check">
         <button id="save" type="button">Save to a file</button>
@@ -245,7 +254,7 @@ const SHOW = {money: v => v / 1e6, share: v => v * 100, number: v => v};
 const READ = {money: v => v * 1e6, share: v => v / 100, number: v => v};
 const UNIT = {money: "$m", share: "%", number: ""};
 
-function numberInput(get, set, kind, label) {
+function numberInput(get, set, kind, label, unit) {
   const input = el("input", {type: "number", step: "any", "aria-label": label});
   const shown = SHOW[kind](get());
   input.value = Number.isFinite(shown) ? +shown.toFixed(4) : "";
@@ -254,76 +263,82 @@ function numberInput(get, set, kind, label) {
     set(READ[kind](+input.value));
     schedule();
   });
-  return el("div", {class: "unit"}, input, el("span", {text: UNIT[kind]}));
+  return el("div", {class: "unit"}, input, el("span", {text: unit ?? UNIT[kind]}));
 }
 
-function fieldRow(target, key, label, help, kind) {
-  const name = el("label", {text: label});
-  if (help) name.title = help;
-  return el("div", {class: "row"}, name, numberInput(() => target[key], v => { target[key] = v; }, kind, label));
+// A name with a small "i" beside it: what the input means and what to enter, on hover, focus or click.
+function named(text, entry, tag = "label") {
+  const box = el("span", {class: "named"}, el(tag, {text}));
+  if (!entry) return box;
+  const info = el("button", {type: "button", class: "info", "aria-label": `About: ${entry.label}`, text: "i"});
+  const show = () => showHelp(info, entry);
+  info.addEventListener("pointerenter", show); info.addEventListener("focus", show); info.addEventListener("click", show);
+  info.addEventListener("pointerleave", hideTip); info.addEventListener("blur", hideTip);
+  info.addEventListener("keydown", event => { if (event.key === "Escape") hideTip(); });
+  box.append(info);
+  return box;
+}
+function fieldRow(target, key, entry, kind) {
+  const label = entry?.label ?? human(key);
+  return el("div", {class: "row"}, named(label, entry),
+            numberInput(() => target[key], v => { target[key] = v; }, kind, label, META.units[key]));
 }
 
-function buildForm(container, target, help, labels = {}) {
+// One part of the request as a form. `part` names its entries in the guide: firm, market, risk or policy.
+function buildForm(container, target, part) {
+  const guide = META.guide[part];
   container.replaceChildren();
   for (const [key, value] of Object.entries(target)) {
-    const kind = META.kinds[key] ?? "share";
+    const kind = META.kinds[key] ?? "share", entry = guide[key], label = entry?.label ?? human(key);
     if (Array.isArray(value)) {
       const names = value.length === 4 ? META.allocation_order : META.strategy_order;
-      const head = el("div", {class: "group", text: labels[key] ?? human(key)});
-      if (help[key]) head.title = help[key];
+      const head = named(label, entry, "span"); head.classList.add("group");
       container.append(head);
       value.forEach((_, i) => container.append(el("div", {class: "row"}, el("label", {text: names[i] ?? `${i + 1}`}),
-        numberInput(() => target[key][i], v => { target[key][i] = v; }, kind, `${human(key)}: ${names[i]}`))));
+        numberInput(() => target[key][i], v => { target[key][i] = v; }, kind, `${label}: ${names[i]}`))));
     } else if (value !== null && typeof value === "object") {
-      const head = el("div", {class: "group", text: labels[key] ?? human(key)});
-      if (help[key]) head.title = help[key];
+      const head = named(label, entry, "span"); head.classList.add("group");
       container.append(head);
-      for (const sub of Object.keys(value)) container.append(fieldRow(value, sub, human(sub), "", META.kinds[sub] ?? "share"));
+      for (const sub of Object.keys(value)) container.append(fieldRow(value, sub, guide[`${key}.${sub}`], META.kinds[sub] ?? "share"));
     } else if (key === "decisions_per_year") {
-      const select = el("select", {"aria-label": "Decisions a year"});
+      const select = el("select", {"aria-label": label});
       for (const [n, text] of [[1, "once a year"], [2, "twice a year"], [4, "every quarter"], [12, "every month"]])
         select.append(el("option", {value: n, text}));
       select.value = String(value);
       select.addEventListener("change", () => { target[key] = +select.value; schedule(); });
-      const name = el("label", {text: "The firm decides"});
-      container.append(el("div", {class: "row"}, name, select));
+      container.append(el("div", {class: "row"}, named(label, entry), select));
     } else {
-      container.append(fieldRow(target, key, labels[key] ?? human(key), help[key], kind));
+      container.append(fieldRow(target, key, entry, kind));
     }
   }
 }
 
-const POLICY_LABELS = {equity_kept: "Equity kept", grc_spend: "GRC spend a year", own_btc: "Own BTC", hedged: "Of its BTC, hedged",
-                       borrower_rate: "Borrower rate", ltv: "Loan-to-value", allocation: "The BTC vault's allocation"};
-
 function buildHorizon() {
-  const box = $("#horizon");
-  box.replaceChildren(
-    el("div", {class: "row"}, el("label", {text: "Years ahead"}),
-       numberInput(() => state.years, v => { state.years = v; }, "number", "Years ahead")),
-    optionalRow("Buffer above the capital needed", "buffer", "Equity the firm keeps above what it needs; more than that is paid out. Blank: what the policy keeps today."),
-    optionalRow("Largest raise shareholders will make", "largest", "Needing more than this at once, the firm fails. Blank: the capital needed today."));
+  const rule = META.guide.rule;
+  $("#horizon").replaceChildren(
+    el("div", {class: "row"}, named(rule.years.label, rule.years),
+       numberInput(() => state.years, v => { state.years = v; }, "number", rule.years.label, "yr")),
+    optionalRow("buffer", rule.equity_buffer), optionalRow("largest", rule.largest_raise));
 }
-function optionalRow(label, key, help) {
-  const input = el("input", {type: "number", step: "any", placeholder: "as today", "aria-label": label});
+function optionalRow(key, entry) {
+  const input = el("input", {type: "number", step: "any", placeholder: "as today", "aria-label": entry.label});
   if (state[key] !== null) input.value = state[key] / 1e6;
   input.addEventListener("input", () => { state[key] = input.value === "" ? null : +input.value * 1e6; schedule(); });
-  const name = el("label", {text: label}); name.title = help;
-  return el("div", {class: "row"}, name, el("div", {class: "unit"}, input, el("span", {text: "$m"})));
+  return el("div", {class: "row"}, named(entry.label, entry), el("div", {class: "unit"}, input, el("span", {text: "$m"})));
 }
 
 function buildAll() {
   $("#firm-name").value = state.name;
   $("#second-on").checked = state.second !== null;
-  buildForm($("#policy"), state.policy, META.help.policy, POLICY_LABELS);
+  buildForm($("#policy"), state.policy, "policy");
   buildHorizon();
-  buildForm($("#firm"), state.firm, META.help.firm);
-  buildForm($("#market"), state.market, META.help.market);
-  buildForm($("#risk"), state.risk, META.help.risk);
+  buildForm($("#firm"), state.firm, "firm");
+  buildForm($("#market"), state.market, "market");
+  buildForm($("#risk"), state.risk, "risk");
   $("#second").hidden = state.second === null;
   if (state.second !== null) {
     $("#second").replaceChildren(el("div", {class: "group", text: "The second policy"}), el("div", {id: "second-form"}));
-    buildForm($("#second-form"), state.second, META.help.policy, POLICY_LABELS);
+    buildForm($("#second-form"), state.second, "policy");
   }
 }
 
@@ -419,6 +434,7 @@ async function loadFromFile(file) {
 // ---- tooltip ---------------------------------------------------------------------------------
 const tip = $("#tip");
 function showTip(event, title, rows) {
+  tip.classList.remove("help");
   tip.replaceChildren(el("div", {class: "t", text: title}));
   for (const [name, value, color] of rows) {
     const label = el("span", {});
@@ -431,7 +447,17 @@ function showTip(event, title, rows) {
   tip.style.left = Math.min(event.clientX + 14, window.innerWidth - w - 8) + "px";
   tip.style.top = Math.max(8, Math.min(event.clientY + 14, window.innerHeight - h - 8)) + "px";
 }
-const hideTip = () => { tip.style.display = "none"; };
+const hideTip = () => { tip.style.display = "none"; tip.classList.remove("help"); };
+// What an input means and what to enter, beside its "i".
+function showHelp(anchor, entry) {
+  const enter = el("p", {}, el("b", {text: "What to enter: "}), entry.enter);
+  tip.replaceChildren(el("div", {class: "t", text: entry.label}), el("p", {text: entry.help}), enter);
+  tip.classList.add("help");
+  tip.style.display = "block";
+  const box = anchor.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.max(8, Math.min(box.right + 10, window.innerWidth - w - 8)) + "px";
+  tip.style.top = Math.max(8, Math.min(box.top - 6, window.innerHeight - h - 8)) + "px";
+}
 
 // ---- chart pieces ------------------------------------------------------------------------------
 function ticks(lo, hi, count = 5) {

@@ -363,7 +363,8 @@ form for the policy, the firm and the assumptions; headline figures; the
 stress scenarios as bars against the capital the firm needs; the paths as
 ranges over the years; the next period as a table; a second policy beside the
 first; and, on request, what a figure leans on. It recomputes as inputs
-change. It starts from a made-up example firm, which the user changes into
+change. Beside every input is what it means and what to enter
+(`quant/guide.py`). It starts from a made-up example firm, which the user changes into
 their own and **saves to a file**; loading the file brings it back. The file
 is an ordinary request to the interface below, so it also works there, and
 nothing is stored by the dashboard or in the browser. It draws everything itself: no outside scripts, and nothing about the

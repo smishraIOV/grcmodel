@@ -51,6 +51,7 @@ from quant import paths as paths_
 from quant import policy as policy_
 from quant import readout, sensitivity as sensitivity_
 from quant import stress as stress_
+from quant.guide import guide
 from quant.numerics import REFERENCE, NumericsProfile
 from quant.profile import (
     FirmFacts,
@@ -310,6 +311,11 @@ _NUMBER = frozenset({
 })
 
 
+# What to print beside a plain number, where it is not obvious.
+_UNITS = {"runway_months": "mo", "btc_crashes_per_year": "/yr", "incidents_per_year": "/yr",
+          "raise_cost_after_btc_halves": "×", "raise_cost_after_incident": "×"}
+
+
 def kind(name: str) -> str:
     """'money', 'number' or 'share', for the input called `name`."""
     return "money" if name in _MONEY else "number" if name in _NUMBER else "share"
@@ -324,8 +330,9 @@ def _help(cls) -> dict[str, str]:
 
 def inputs() -> dict:
     """The names of every input a request can carry, by part, with the
-    example firm's values, how to show each (`kinds`) and a one-line
-    description of each (`help`): enough to lay out a form."""
+    example firm's values, how to show each (`kinds`), the one-line note
+    beside each in the code (`help`), and for a person filling in a form a
+    label, what each means and what to enter (`guide`, from `quant.guide`)."""
     profile = illustrative(example_facts())
     model = to_model(profile)
     return {
@@ -340,4 +347,6 @@ def inputs() -> dict:
                                                RaiseCost, LoanPoint, GrcEffect) for name in (f.name for f in fields(cls))},
         "help": {"firm": _help(FirmFacts), "market": _help(MarketAssumptions), "risk": _help(RiskAssumptions),
                  "policy": _help(policy_.Policy)},
+        "units": dict(_UNITS),
+        "guide": guide(),     # for a person: a label, what the input means, and what to enter
     }
