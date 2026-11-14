@@ -13,10 +13,14 @@ and how much to spend on GRC. Choices in the design favor that use — realistic
 mechanics, parameters a CFO can recognize and set, and outputs that answer
 the CFO's questions — over academic completeness.
 
-**Status:** being redesigned around two vaults (§2). The shared machinery (§4,
-§5) is built; the two vaults are designed, and the stablecoin lending vault is
-the next stage. An earlier single-vault version is built. What is built and
-what is planned is summarized in §7.
+**Status:** two vaults (§2), each built and solved on its own, and now joined
+through one loan book: the integrated firm's one-period accounting is built,
+and it is solved on a coarse 4-D grid. The actor-critic learner, which is to
+solve it at useful resolution, is not built. What is built and what is planned
+is summarized in §7. **The current plan** (`docs/plan-tool.md`) builds a
+what-if tool on the accounting first; the search for the best policy — the
+grid solvers and the learner — continues as research
+(`docs/plan-integrated.md`).
 
 ---
 
@@ -85,9 +89,11 @@ size of its losses.
 
 **Status:** each vault is built and solved on its own, on a 3-D grid
 (`quant/lending.py`, `quant/btc_vault.py` and their solvers), with the firm's
-books shared (`quant/firm.py`). The two are being joined through one loan
-book (§2.2); that integrated model is the next stage, solved by the
-actor-critic learner (§7).
+books shared (`quant/firm.py`). The two are joined through one loan book
+(§2.1) in `quant/integrated.py`, which reduces exactly to either vault alone
+when the other is empty. The integrated firm is solved on a coarse 4-D grid
+(`quant/integrated_solver.py`) and read out by `quant/integrated_results.py`;
+the actor-critic learner is next (§7).
 
 ### 2.1 Three balance sheets
 
@@ -191,8 +197,13 @@ Its investors measure returns in BTC, so an unhedged swap would be a bet
 against BTC inside a BTC product. The vault therefore **holds a long BTC
 position through perps** of the same dollar size: the sleeve still moves with
 BTC, and earns the loan interest (less its share of bad debt) minus the perp
-funding cost, near the riskless rate $r$ — close to a basis trade. Its
-stablecoins left unlent earn nothing and still pay the funding.
+funding cost, the riskless rate $r$ plus a premium (§3.4) — close to a basis
+trade. Its stablecoins left unlent earn nothing and still pay the funding.
+In BTC terms the sleeve earns its lending result less funding, divided by the
+closing BTC price: the BTC move itself cancels. A sleeve dollar is treated
+like a dollar-vault dollar in everything the lending system does: the share
+lent, interest, penalties, bad debt, operating losses, the firm's interest
+share, and incidents in the lending system.
 
 ### 2.4 How the firm earns and spends
 
@@ -366,9 +377,11 @@ zero.
 **Hedging.** Short perps reduce the firm's BTC exposure but cannot create long
 exposure; otherwise exposure through perps would always beat holding BTC, and
 the firm would never hold any. Hedging gives up BTC's expected excess return
-on what is hedged, and costs extra in perp funding (§4.2): a short perp gains
-when BTC falls and loses when it rises, and pays funding near the riskless
-rate $r$, so hedged BTC earns about $r$. The hedge covers
+on what is hedged. **Perp funding is one market rate, $r$ plus a premium**
+(3% a year, a parameter): longs pay it and shorts receive it. A short perp
+gains when BTC falls, loses when it rises, and receives the funding, so the
+firm's hedged BTC earns $r$ plus the premium less its security cost; the BTC
+vault's lending sleeve, which is long perps, pays it (§2.3). The hedge covers
 only the firm's own BTC, $H_t \le q_t$; fee income's BTC exposure is not
 hedged during the period, and reaches the hedge once the fees join the firm's
 equity.
@@ -488,6 +501,13 @@ rare and large.
   bear the loss, and the firm repays a share of it (§2.4).
 - **GRC acts on frequency** (prevention), through $\phi_J$. Acting on severity
   (containment) is a later option.
+- **With both vaults: at most one incident a period, in either.** No
+  incident, one in the lending system (it takes a share of every stablecoin
+  there, the BTC vault's sleeve included), or one in the BTC vault's other
+  strategies. Each has the single-vault chance $p_J$, so with one vault empty
+  the model is exactly the other vault alone. Two incidents in one period,
+  which independent incidents would allow with chance $p_J^2$, are left out.
+  Withdrawals after an incident come from the vault hit only, for now.
 - **Integration.** The severity uses the same tail-placed quadrature as the
   $t$'s mixing variable (§5). The jump probability enters the quadrature
   **weights**, so it is exactly differentiable in GRC spend.
@@ -573,7 +593,10 @@ critic's estimate of the next state's value — so it fits an infinite horizon
 without a value at the end of a path. It is **graded against the grid**
 wherever the grid can reach. Robustness is preferred over computing time.
 Expectations inside the learner will use random scenarios; how they are drawn
-is open (§8). The `svg-critic` branch was parked because it lost to full
+is open (§8). A **coarse 4-D grid** (`quant/integrated_solver.py`, about
+17 × 3 × 5 × 5 points, **built**) solves the integrated firm with the same
+machinery as the single vaults: it is the learner's second reference and a
+first look at the integrated firm, too coarse for levels. The `svg-critic` branch was parked because it lost to full
 backpropagation through time at short finite horizons; that reason does not
 carry over to an infinite horizon.
 
@@ -640,7 +663,7 @@ Insurance for the partly tradeable rows is a later option (§2.4).
 | **single vault** | one dollar vault, three strategies, fees, flows, compensation, co-investment, a guarantee | 3-D grid | **built**; superseded by §2, and the starting point for it |
 | **lending vault** | the stablecoin lending vault alone (§2.2): borrower rate and LTV, liquidation and bad debt, mechanism L; stablecoins earning nothing; BTC at the market's expectation plus the firm's bias; the bank code removed and the two-period oracle moved off it | 3-D grid | **built** |
 | **BTC vault** | the BTC yield vault alone (§2.3): strategies, fees in BTC, crash losses, the shared firm books | 3-D grid | **built** |
-| **integrated** | both vaults joined through one loan book funded by the dollar vault and a hedged lending sleeve of the BTC vault (§2.1); state (w, S, A^L, A^B) | actor-critic, graded against each vault's grid | **next**; a build plan comes first |
+| **integrated** | both vaults joined through one loan book funded by the dollar vault and a hedged lending sleeve of the BTC vault (§2.1); state (w, S, A^L, A^B) | a coarse 4-D grid, then actor-critic graded against the grids | **in progress**: the one-period accounting, the coarse grid and the read-out are built; operating costs are still to recalibrate and the learner to build (`docs/plan-integrated.md`) |
 | **high-water mark** | the BTC vault's performance fee above a high-water mark | actor-critic | designed |
 | later | insurance; GRC by family (credit, operational, compliance); mechanisms C and D | actor-critic | planned |
 
@@ -1025,6 +1048,45 @@ are today's.
   receive);
   operating costs are recalibrated against the integrated firm's combined
   revenue, within the agreed bounds. Details in `docs/plan-integrated.md` §3.
+- **The integrated one-period model was built, with these choices made
+  while building and confirmed by the user afterwards:** (a) at most one incident a period, in either
+  vault, each with the single-vault chance (§4.3) — it keeps both reductions
+  exact and the number of branches small; (b) a sleeve dollar shares
+  everything the lending system does with a dollar-vault dollar, operating
+  losses and lending-system incidents included (§2.3); (c) withdrawals after
+  an incident come from the vault hit only; (d) the capital requirement is on
+  the two vaults' combined size, and the hedge may cover the firm's own BTC
+  and its stake in the BTC vault; (e) where the sleeve's dollar results are
+  put in BTC terms, the BTC price is floored at 1% of its starting value, a
+  numerical guard (own construction).
+- **The grid solver's stopping rule was corrected.** It stopped when the last
+  policy-evaluation step changed the value by less than the tolerance. That
+  change goes to zero for any fixed policy, however far from the best one, so
+  a solve could stop while a decision was still drifting slowly. The perp
+  funding premium exposed it: with hedging nearly free, the BTC vault's hedge
+  drifted for many iterations, and the answer moved with the step budget. The
+  solve now stops on the value's change over a whole iteration, improvement
+  included; three step budgets then agree. Solves take more iterations.
+- **The improvement step keeps a decision unless a candidate beats it.** It
+  used to take each re-optimized decision regardless, and Adam ends within
+  about a step of the best decision, not on it, so the value wobbled and the
+  corrected stopping rule was never met. The standard safeguard in policy
+  iteration.
+- **The grid solver still settles only to about 0.2% of the firm's value.**
+  Repeated slow polish passes keep raising the value slightly; probably
+  decisions creeping toward their limits. Left open
+  (`docs/plan-integrated.md` section 7): nothing is calibrated, so its
+  convergence is not where time should go now.
+- **The project splits into a tool and research** (user's decision). The
+  tool is a what-if engine on the one-period accounting and the scenarios:
+  the user's firm and the user's policy in, what can happen out, with no
+  search for the best policy (`docs/plan-tool.md`). The search — grid solvers
+  and learner — continues as research, in the same repository on the same
+  accounting, to be moved under `quant/research/`.
+- **The coarse 4-D grid was built before the learner,** not after it as first
+  planned: the grid machinery already handles any number of dimensions, a
+  coarse solve takes minutes, and it shows what the integrated firm does
+  before the learner is built to solve it finely.
 - **The BTC vault on its own loses money** at operating costs of 2% of
   capacity (fees about 1.5%), and puts all of itself in the highest-yield
   strategy: investors in the model are indifferent to risk. Recorded, not

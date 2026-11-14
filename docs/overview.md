@@ -47,16 +47,30 @@ BTC — deposits, and the collateral its borrowers post. It also holds dollar
 stablecoins, to offset BTC's swings, to have cash on hand, and to pay its
 costs, which are in dollars. We measure everything in dollars.
 
-The firm runs **vaults**. Depositors put money into a vault and own a share of
-it: they gain when its investments do well and lose when they do badly. The
-firm hires managers to run the vault's investment strategies — lending against
-BTC collateral, market-neutral trading, tokenized treasuries — and decides how
-much of the vault each strategy gets. It earns fees: a small share of the
-vault's size every year, and a share of its profits.
+The firm runs two **vaults**. Investors put money into a vault and own a share
+of it: they gain when it does well and lose when it does badly.
+
+- **A dollar lending vault.** Investors deposit dollar stablecoins. The firm
+  lends them to borrowers who hand over BTC worth more than the loan as
+  security. If BTC falls far enough, the firm sells that BTC to repay the
+  loan. The interest borrowers pay is the investors' return, and the firm
+  keeps a share of it.
+- **A BTC yield vault.** Investors deposit BTC and want more BTC back. The
+  firm hires managers to earn a return on it — lending the BTC out,
+  market-neutral trading, or simply keeping it safe — and charges fees: a
+  small share of the vault every year, and a share of its gains.
+
+The two vaults are joined. The BTC vault can turn part of its BTC into dollars
+and lend them to the same borrowers, alongside the dollar vault, while
+protecting itself so that it still gains and loses with BTC. Both then share
+the interest, and the losses, in proportion to what each put in. So one
+decision — what to charge borrowers — affects both groups of investors.
 
 Every quarter, the firm decides:
 
-- **how to split the vault** between its strategies;
+- **what to charge borrowers**, and how much to lend against their BTC;
+- **how to split the BTC vault** between its strategies, lending dollars
+  included;
 - **how much capital to keep**, and how much to pay out to its owners — or,
   after a bad quarter, whether to raise new money;
 - **how much to spend on GRC**;
@@ -133,13 +147,18 @@ believe it on the harder questions.
 
 ## What comes next
 
-- **Getting the economics right before reading results.** Two things in the
-  current version need settling. The firm's belief in BTC is so strong relative
-  to what its owners expect to earn that it pours everything into BTC; the
-  model needs to account for how investors value BTC's risk. And at the current
-  settings the firm spends nothing on GRC, because its depositors bear most of
-  the losses; we need to understand whether that is the settings or a real
-  feature.
+- **A what-if tool first.** The part of the model that keeps the books — what
+  the firm earns, owes and loses in any given situation — is the most solid.
+  The next step builds on it directly: enter a firm's own figures and its own
+  choices, and see what could happen to it, in a bad quarter or over several
+  years.
+- **Finding the best decisions, as research.** Working out what the firm
+  *should* do is harder, and the first, rough version for the joined-up firm
+  is not yet precise enough. That work continues alongside.
+- **Getting the economics right before reading results.** We do not report
+  the model's numbers yet. Earlier versions spent nothing on GRC and piled
+  into BTC; each time the cause was something missing from the model rather
+  than a finding. Results come once the model is realistic enough to trust.
 - **Paying performance fees only on new highs** — a "high-water mark", so the
   firm earns nothing extra while it is recovering past losses.
 - **Separate GRC programs** for different kinds of risk.

@@ -60,8 +60,13 @@ Built so far:
   `quant/lending_solver.py`): loans over-collateralized by BTC at a rate and
   loan-to-value the firm sets, liquidation at the threshold, bad debt from BTC
   crashes;
-- **the BTC yield vault, one period** (`quant/btc_vault.py`): strategies, fees
-  in BTC, flows; its solver is next;
+- **the BTC yield vault** (`quant/btc_vault.py`, solved on a 3-D grid by
+  `quant/btc_vault_solver.py`): strategies, fees in BTC, flows;
+- **the integrated firm** (`quant/integrated.py`): both vaults joined through
+  one loan book, funded by the dollar vault and by a hedged lending sleeve of
+  the BTC vault; solved on a coarse 4-D grid (`quant/integrated_solver.py`)
+  and read out as a CFO would want it (`quant/integrated_results.py`,
+  `scripts/integrated.py`);
 - the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
   a hedge with perps, a runway of operating costs; BTC at the market's
   expectation plus the firm's bias, with occasional crashes;
@@ -73,11 +78,14 @@ Built so far:
 
 An earlier single dollar vault and a bank form were built and removed.
 
-Next: solve the BTC vault on its own; then both vaults together, with the
-actor-critic learner (`docs/design.md` §7).
+Next: a what-if tool for a CFO or risk manager, built on the accounting — the
+user's own firm and policy in, what can happen out (`docs/plan-tool.md`). The
+search for the best policy (grid solvers, and an actor-critic learner still
+to build) continues as research (`docs/plan-integrated.md`).
 
 ```bash
 uv run pytest
+uv run python -m scripts.integrated --periods 1
 ```
 
 The previous model (finite horizon, hazard-based failure) is preserved on the

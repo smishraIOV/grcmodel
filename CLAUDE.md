@@ -58,14 +58,20 @@ a finer equity grid near the issuance kink (`docs/design.md` §4.4).
   capital floor) and BTC's market (price, crashes, scenario rule)
 - `quant/lending.py` — the stablecoin lending vault, one period
 - `quant/btc_vault.py` — the BTC yield vault, one period
+- `quant/integrated.py` — both vaults joined through one loan book, one period
 - `quant/quadrature.py` — deterministic rules for the Student-t shocks and jumps
 - `quant/grid.py` — the shared N-dimensional grid, interpolation and policy iteration
 - `quant/lending_solver.py` — the lending vault's decisions and objective on the grid
 - `quant/lending_results.py` — what a solved lending firm says
+- `quant/btc_vault_solver.py` — the BTC vault's decisions and objective on the grid
+- `quant/integrated_solver.py` — the integrated firm on a coarse 4-D grid
+- `quant/integrated_results.py` — what a solved integrated firm says: the
+  read-out a CFO would look at, and the cost ratios
 - `quant/twoperiod.py` — the two-period truncation of the paper's own bank,
   self-contained, used as the oracle (a known-answer check against the paper's formulas)
 - `quant/numerics.py` — profiles: device, dtype, RNG
-- `scripts/` — entry points (being rebuilt for the two vaults)
+- `scripts/integrated.py` — solve the integrated firm and print its read-out
+  (`uv run python -m scripts.integrated --periods 1`)
 
 ## Numerics
 

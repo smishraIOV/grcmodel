@@ -1,14 +1,23 @@
 # Plan: the integrated two-vault model, solved by an actor-critic learner
 
+**This is now the research path's plan** (2026-11-13). The project's current
+plan is `docs/plan-tool.md`: a what-if tool built on the accounting, with no
+search for the best policy. The learner and the grid solvers continue here as
+research, at lower priority.
+
 Written 2026-11-13 so that another person or agent can pick the work up
 without the conversation that produced it. Read this first, then
 `CLAUDE.md` (working rules) and `docs/design.md` (the specification; §2 and §3
 especially). Where this plan and the design disagree, the design wins; update
 this plan.
 
-**Status:** planned, not started. All decisions needed for step 1 are made
-(section 3); the user will say when to start. Steps need the user's approval as they come
-(see "Working rules").
+**Status (2026-11-13, later the same day):** steps 1 and 4 are built, with
+a read-out and an entry point (part of step 5); step 4a has had a first
+pass; steps 2 and 3 (the learner) are not started. The order changed: the
+coarse 4-D grid came before the learner (section 5). Choices made while
+building are listed in section 3; the user has confirmed them. Sections 6
+and 7 record what the first solves showed and what is open in the solver.
+Steps need the user's approval as they come (see "Working rules").
 
 ---
 
@@ -32,6 +41,10 @@ the slow solver tests take several minutes):
 | `quant/btc_vault.py` | the BTC yield vault, one period: three strategies (lending BTC, basis trading, cold custody), fees in BTC, crash and incident losses |
 | `quant/lending_solver.py`, `quant/btc_vault_solver.py` | each vault alone on a 3-D grid (equity w, GRC stock S, vault size A), by policy iteration (`quant/grid.py`) |
 | `quant/lending_results.py` | cost ratios (payroll and operating costs against revenue) |
+| `quant/integrated.py` | the integrated firm, one period (section 2): one loan book, two funding sources, the hedged sleeve |
+| `quant/integrated_solver.py` | the integrated firm on a coarse 4-D grid (w, S, A^L, A^B), by the same policy iteration |
+| `quant/integrated_results.py` | the read-out at one state: decisions, expected income and costs, investors' yields, how the period may end, cost ratios against combined revenue |
+| `scripts/integrated.py` | solves and prints the read-out: `uv run python -m scripts.integrated --periods 1` |
 | `quant/twoperiod.py` | the paper's own two-period bank, as a known-answer check |
 | `tests/` | one test file per module; solver tests run annual and coarse |
 
@@ -100,6 +113,28 @@ Made by the user on 2026-11-13:
    check. Payroll stays sticky (fixed in dollars); layoffs after a large shock
    remain a later option.
 
+Made by Claude while building step 1 and **confirmed by the user**
+(2026-11-13); each is also in the design's decisions log:
+
+4. **At most one incident a period, in either vault**: none, one in the
+   lending system, or one in the BTC vault's other strategies, each with the
+   single-vault chance. This keeps both reductions exact and the branches
+   few. Independent incidents would add a small chance of two at once.
+5. **A sleeve dollar is a dollar-vault dollar** in everything the lending
+   system does: share lent, interest, penalties, bad debt, operating losses,
+   the firm's interest share, and lending-system incidents. The BTC vault's
+   own fees are then charged on top, so the firm is paid twice on the sleeve.
+6. **Withdrawals after an incident come from the vault hit only.** The design
+   allows both vaults to lose investors (§2.5); that needs a parameter.
+7. **The capital requirement is on the two vaults' combined size;** the hedge
+   may cover the firm's own BTC and its stake in the BTC vault.
+8. **A floor on the BTC price (1% of its start)** where the sleeve's dollar
+   results are put in BTC terms: a numerical guard.
+9. **`INTEGRATED_DEFAULTS`** in `quant/params.py` carries the 2:1 sizes;
+   `DEFAULTS` is unchanged, so the single-vault solvers and tests are too.
+   The perp premium is in `DEFAULTS`, as decided, and the Prop. 2 test sets it
+   to zero ("fair hedging").
+
 ## 4. How it is solved: the actor-critic learner
 
 Concepts 1, 2, 3 and 5 below were proposed and not objected to; concept 4 was
@@ -146,18 +181,73 @@ them in a way not described here.
 Each step ends with tests passing and a commit. Stop for the user's review
 where marked.
 
-| step | what | acceptance |
-|---|---|---|
-| 1 | `quant/integrated.py`: one period of the integrated model, reusing `quant/firm.py`, `quant/lending.py` (`loan_payoff`, `loan_demand`) and `quant/btc_vault.py` pieces. Tests in `tests/test_integrated.py` against hand-worked cases. | Matches the hand-worked formulas to 1e-14. **Reduces exactly** to the lending vault alone when A^B = 0, and to the BTC vault alone (three strategies) when A^L = 0 and a_4 = 0. Pro-rata sharing checked. Sleeve hedge checked (sleeve's BTC-terms value unchanged by a BTC move, apart from interest and funding). **Stop for review.** |
-| 2 | `quant/learner.py`: scenario sampler (section 4.4), networks, actor-critic loop (section 4.2), checkpointing. | Unit tests: sampler moments (variance, crash frequency), incident branch weights sum to one and carry a gradient in GRC spend, squashed decisions within bounds. |
-| 3 | Grade the learner on the two solved 3-D problems: the lending vault alone and the BTC vault alone (use the grid solvers in `quant/lending_solver.py`, `quant/btc_vault_solver.py` as the reference). | Value within a stated tolerance of the grid over the grid's states (propose ~1% of the value's range), decisions close where the value is not flat. Report where they differ and why. |
-| 4 | A coarse 4-D grid as a second reference: extend the grid solver to the integrated objective at about 17 × 3 × 5 × 5 points. | Learner and coarse grid agree within the coarse grid's own error. |
-| 4a | **Recalibrate operating costs** for the integrated firm (section 3, item 3): solve, read combined revenue at the chosen terms, set the fixed dollar costs so the ratios sit inside the bounds, re-solve, and check again (the costs move the terms, so iterate until stable). Make the cost-ratio check integrated, and test it. | Payroll ≥ 30% and operating costs 50–60% of combined revenue at a full-size firm, after the final solve. |
-| 5 | Integrated runs (annual to explore, quarterly for realistic) and a read-out: GRC spend, the firm's capital and BTC, the allocation including the sleeve, the borrower rate and its split between investor groups, cost ratios. Update `docs/design.md` status and §7, `docs/overview.md` (plain language, no formulas), `CLAUDE.md` layout, `readme.md` status. | Numbers only in docs if from `reference` runs and the user agrees they are worth reporting (`CLAUDE.md`: no model results in docs yet). |
+**Order changed (2026-11-13):** step 4 was built straight after step 1. The
+grid solver already handles any number of dimensions, a coarse annual solve
+takes about five minutes, and it shows what the integrated firm does before
+two to three days go into a learner built to solve it finely.
 
-Rough cost: 2–3 working days plus compute; step 4a adds a few solves.
+| step | what | acceptance | status |
+|---|---|---|---|
+| 1 | `quant/integrated.py`: one period of the integrated model, reusing `quant/firm.py`, `quant/lending.py` (`loan_payoff`, `loan_demand`) and the BTC vault's formulas. Tests in `tests/test_integrated.py` against hand-worked cases. | Matches the hand-worked formulas to 1e-14. **Reduces exactly** to the lending vault alone when A^B = 0, and to the BTC vault alone (three strategies) when A^L = 0 and a_4 = 0. Pro-rata sharing checked. Sleeve hedge checked (sleeve's BTC-terms value unchanged by a BTC move, apart from interest and funding). **Stop for review.** | **done**; hand-worked cases to 1e-14, reductions scenario by scenario to 1e-13. The choices in section 3 are confirmed |
+| 4 | A coarse 4-D grid as a second reference: `quant/integrated_solver.py`, about 17 × 3 × 5 × 5 points. | Converges; value non-negative and increasing in equity; decisions within bounds. | **built, but it settles only to about 0.2% of the firm's value** (section 7). Not yet checked: that more quadrature points or grid points do not move the answer |
+| 4a | **Recalibrate operating costs** for the integrated firm (section 3, item 3): solve, read combined revenue at the chosen terms, set the fixed dollar costs so the ratios sit inside the bounds, re-solve, and check again (the costs move the terms, so iterate until stable). The integrated cost-ratio check is `ReadOut.within_bounds` in `quant/integrated_results.py`. | Payroll ≥ 30% and operating costs 50–60% of combined revenue at a full-size firm, after the final solve. | **first pass only** (section 6); the default is not changed until the user agrees the figure |
+| 2 | `quant/learner.py`: scenario sampler (section 4.4), networks, actor-critic loop (section 4.2), checkpointing. | Unit tests: sampler moments (variance, crash frequency), incident branch weights sum to one and carry a gradient in GRC spend, squashed decisions within bounds. | not started. The incident branches are now three (none, lending system, BTC vault), not two |
+| 3 | Grade the learner on the two solved 3-D problems: the lending vault alone and the BTC vault alone (use the grid solvers in `quant/lending_solver.py`, `quant/btc_vault_solver.py` as the reference), then on the coarse 4-D grid. | Value within a stated tolerance of the grid over the grid's states (propose ~1% of the value's range), decisions close where the value is not flat. Report where they differ and why. | not started |
+| 5 | Integrated runs (annual to explore, quarterly for realistic) and a read-out: GRC spend, the firm's capital and BTC, the allocation including the sleeve, the borrower rate and its split between investor groups, cost ratios. Update `docs/design.md` status and §7, `docs/overview.md` (plain language, no formulas), `CLAUDE.md` layout, `readme.md` status. | Numbers only in docs if from `reference` runs and the user agrees they are worth reporting (`CLAUDE.md`: no model results in docs yet). | **partly**: the read-out and `scripts/integrated.py` are built; design, `CLAUDE.md` and readme are updated. `docs/overview.md` still describes the earlier single vault |
 
-## 6. Working rules that matter here (from `CLAUDE.md` and the user)
+## 6. What the first integrated solves showed
+
+Exploratory, annual, coarse, and from solves that had not fully settled
+(section 7): shapes only, not to be quoted in docs.
+
+- The integrated firm **buys GRC**, which neither vault alone did.
+- It uses the **sleeve when the vaults are small** and not at full size.
+- It holds **exactly its capital floor** at every state looked at, and often
+  ends a year below it: raising equity is cheap next to carrying it. A
+  constraint that always binds (`CLAUDE.md`, "check the regime") — a candidate
+  for what is missing.
+- The BTC vault still goes **all-in on the highest-yield strategy** at full
+  size: investors do not price risk.
+- Operating costs at the single-vault figure are about half the agreed share
+  of combined revenue; about twice that figure sits inside the bounds.
+
+## 7. The grid solver does not fully settle (open)
+
+Found on 2026-11-13 when the perp funding premium made the hedge nearly free.
+
+- **The stopping rule was wrong** and is fixed: it looked at the last
+  policy-evaluation step, which goes to zero for any fixed policy. A solve
+  could stop while decisions were still moving, and the BTC vault's answer
+  then moved with the step budget (2e-3). It now stops on the change over a
+  whole iteration.
+- **The improvement step wobbled** and is fixed: it took each re-optimized
+  decision even where it was slightly worse. A decision now changes only
+  where a candidate beats it, so the value can only rise.
+- **What remains is slow drift.** With both fixes the main loop settles
+  cleanly, but repeated slow "polish" passes keep raising the value a little
+  each round (about 2e-5 a round after 30 rounds on the test-sized integrated
+  grid; 1.7e-3 in all). Probably decisions creeping toward a limit: the
+  squashing functions approach a limit ever more slowly. Not confirmed which
+  decision. The polish is capped at 3 rounds; values are good to about 2e-3
+  and slightly low.
+- **The BTC vault's unbiased solve stops short of its best.** A firm with a
+  BTC bias of 4% finds a policy that, valued at the market's expectation,
+  beats the unbiased firm's solved value by up to 5e-3 at some state, though
+  both solves report tiny residuals and the unbiased answer does not move
+  with the step budget. A policy the unbiased firm could have chosen is
+  better than the one found: a local best, not the best. Not located;
+  possibly a small unhedged BTC position near walk-away (design §3.4), which
+  a start from almost no BTC cannot find. The test is marked as a known
+  failure (`tests/test_btc_vault_solver.py`).
+- **If taken up:** first find the drifting decision; if it is not one
+  decision, how decisions at limits are represented needs rethinking — a new
+  numerical method, to be discussed first. The learner would inherit the
+  same problem, since it uses the same squashing.
+- **Speed, measured roughly:** float32 on the CPU (`cpu-fast`) is nearly 5
+  times faster than float64 on a finer grid (25 × 4 × 7 × 7) and agrees to
+  about 3e-7 on one evaluation. The GPU (MPS) is not yet timed.
+
+## 8. Working rules that matter here (from `CLAUDE.md` and the user)
 
 - Ask before long work; give estimates. Stages and steps need approval.
 - Raise any new theoretical or numerical concept (with its source) before it
@@ -169,4 +259,4 @@ Rough cost: 2–3 working days plus compute; step 4a adds a few solves.
 - Every function points to the design section it implements; keep both in
   sync. Every entry-point script is imported by a test.
 - Commit each finished step with a message ending
-  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+  `Co-Authored-By:` naming the Claude model that did the work.
