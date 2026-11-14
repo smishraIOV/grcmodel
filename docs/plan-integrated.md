@@ -62,7 +62,8 @@ funding") and §2.3 ("Stablecoin lending as a strategy, hedged").
 - **The sleeve is hedged.** The BTC vault holds a long BTC perp position of
   the sleeve's dollar size, so the sleeve still moves with BTC. In dollars the
   sleeve earns: its share of loan payoffs, plus the perp's BTC return, minus
-  perp funding at the riskless rate r. (Funding premium above r: **pending**.)
+  perp funding at **r plus a premium** (user's decision, 2026-11-13; see
+  section 3).
 - **BTC vault allocation** over four strategies: lending BTC, basis trading,
   cold custody, the hedged stablecoin-lending sleeve. Fees as now (1%/yr of
   the vault's BTC plus 15% of positive BTC yield, paid in BTC).
@@ -75,13 +76,29 @@ funding") and §2.3 ("Stablecoin lending as a strategy, hedged").
   vault's lending share move value between its two investor groups. Report
   it; do not build anything extra for it.
 
-## 3. Decisions still pending (ask the user)
+## 3. Decisions made, and what is still to confirm
 
-1. Relative size of the vaults: both capacities 1, or BTC vault larger.
-2. Perp funding cost for the sleeve: r, or r plus a premium.
-3. Operating costs for the combined firm: recalibrate against combined
-   revenue so payroll is at least 30% and all operating costs 50–60% of
-   revenue (the agreed bounds; `quant/lending_results.py`).
+Made by the user on 2026-11-13:
+
+1. **The BTC vault is larger than the dollar vault.** Proposed starting point:
+   BTC vault capacity 2, dollar vault capacity 1 (the scale stays "dollar
+   vault capacity = 1"). *To confirm:* the ratio of 2.
+2. **Perp funding is r plus a premium.** Proposed: a parameter
+   `perp_premium`, 3% a year above r, illustrative. *To confirm:* the level,
+   and whether the premium applies to **every** perp position. Recommended:
+   yes — one market funding rate. Longs pay it, shorts receive it. Then the
+   BTC vault's long sleeve hedge pays r + premium, and the firm's own short
+   hedge **earns** r + premium, so hedged BTC becomes a carry trade earning
+   r + premium less the 1.5% security cost. That is realistic, but it changes
+   the single-vault results, so the user should agree first.
+3. **Operating costs are recalibrated for the integrated firm** — a goal of
+   this stage, not a one-off. One set of fixed dollar costs for the whole
+   firm, set against **combined revenue** (the lending interest share plus
+   the BTC vault's fees) at the terms the firm chooses, within the agreed
+   bounds: payroll at least 30% and all operating costs 50–60% of revenue.
+   The cost-ratio check (`quant/lending_results.py`) becomes an integrated
+   check. Payroll stays sticky (fixed in dollars); layoffs after a large shock
+   remain a later option.
 
 ## 4. How it is solved: the actor-critic learner
 
@@ -135,9 +152,10 @@ where marked.
 | 2 | `quant/learner.py`: scenario sampler (section 4.4), networks, actor-critic loop (section 4.2), checkpointing. | Unit tests: sampler moments (variance, crash frequency), incident branch weights sum to one and carry a gradient in GRC spend, squashed decisions within bounds. |
 | 3 | Grade the learner on the two solved 3-D problems: the lending vault alone and the BTC vault alone (use the grid solvers in `quant/lending_solver.py`, `quant/btc_vault_solver.py` as the reference). | Value within a stated tolerance of the grid over the grid's states (propose ~1% of the value's range), decisions close where the value is not flat. Report where they differ and why. |
 | 4 | A coarse 4-D grid as a second reference: extend the grid solver to the integrated objective at about 17 × 3 × 5 × 5 points. | Learner and coarse grid agree within the coarse grid's own error. |
+| 4a | **Recalibrate operating costs** for the integrated firm (section 3, item 3): solve, read combined revenue at the chosen terms, set the fixed dollar costs so the ratios sit inside the bounds, re-solve, and check again (the costs move the terms, so iterate until stable). Make the cost-ratio check integrated, and test it. | Payroll ≥ 30% and operating costs 50–60% of combined revenue at a full-size firm, after the final solve. |
 | 5 | Integrated runs (annual to explore, quarterly for realistic) and a read-out: GRC spend, the firm's capital and BTC, the allocation including the sleeve, the borrower rate and its split between investor groups, cost ratios. Update `docs/design.md` status and §7, `docs/overview.md` (plain language, no formulas), `CLAUDE.md` layout, `readme.md` status. | Numbers only in docs if from `reference` runs and the user agrees they are worth reporting (`CLAUDE.md`: no model results in docs yet). |
 
-Rough cost: 2–3 working days plus compute.
+Rough cost: 2–3 working days plus compute; step 4a adds a few solves.
 
 ## 6. Working rules that matter here (from `CLAUDE.md` and the user)
 

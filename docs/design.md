@@ -1020,6 +1020,10 @@ are today's.
 - **The learner uses random scenarios,** not quadrature (user's choice), with
   incidents kept as weighted branches. The integrated stage's plan is written
   out in `docs/plan-integrated.md` so another session can resume it.
+- **For the integrated model:** the BTC vault is larger than the dollar vault
+  (2 to 1 proposed); perp funding is r plus a premium (3% a year proposed);
+  operating costs are recalibrated against the integrated firm's combined
+  revenue, within the agreed bounds. Details in `docs/plan-integrated.md` §3.
 - **The BTC vault on its own loses money** at operating costs of 2% of
   capacity (fees about 1.5%), and puts all of itself in the highest-yield
   strategy: investors in the model are indifferent to risk. Recorded, not
