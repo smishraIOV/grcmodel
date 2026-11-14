@@ -78,6 +78,7 @@ class Params:
     fee_mgmt: float = 0.02          # management fee, share of AUM per year
     fee_perf: float = 0.20          # performance fee, share of a period's positive excess return
     opex: float = 0.01              # operating costs, dollars per year
+    runway: float = 1.0             # operating costs held in stablecoins, in years (lending form); per period after conversion
     inflow_speed: float = 0.5       # share of the gap to capacity closed per year
     outflow_perf: float = 1.0       # extra outflow per unit of negative excess return
     outflow_incident: float = 0.2   # share of AUM that leaves after an incident
@@ -157,7 +158,8 @@ class Params:
         capital requirement and co-investment share are shares or sizes and do
         not convert. For the lending vault: the rate at which demand reaches
         zero and the outside rate compound; the BTC bias, the BTC holding cost and the
-        operating loss are flows; the BTC crash rate divides by n; the loss volatility follows sqrt(n); the demand line's
+        operating loss are flows; the BTC crash rate divides by n; the runway, stated in
+        years, becomes a number of periods, so runway x opex is unchanged; the loss volatility follows sqrt(n); the demand line's
         height and LTV shift, LTV bounds, liquidation threshold, penalty, trigger
         band, sale discount, interest share, flow response (a share of the vault per unit
         of yield gap, both per period) and capacity do not convert.
@@ -185,6 +187,7 @@ class Params:
             vault_vol=tuple(x / root for x in self.vault_vol),
             fee_mgmt=self.fee_mgmt / n,
             opex=self.opex / n,
+            runway=self.runway * n,
             inflow_speed=1.0 - (1.0 - self.inflow_speed) ** (1.0 / n),
             btc_bias=self.btc_bias / n,
             btc_holding_cost=self.btc_holding_cost / n,

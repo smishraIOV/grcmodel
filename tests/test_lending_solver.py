@@ -52,11 +52,19 @@ def test_with_no_bias_and_fair_hedging_the_firm_holds_no_net_btc():
     little BTC it holds as a store of value is hedged 90-96%: at high equity
     the firm is close to risk-neutral, so the last few percent of the hedge
     are worth almost nothing to it.) The hedge may run to 1.2 times the BTC
-    held in this test only, so that a full hedge is an interior point."""
+    held in this test only, so that a full hedge is an interior point.
+
+    Checked at ordinary vault sizes. At the smallest vault on the grid the
+    business is worth little, a bad period can bring the firm near walk-away,
+    and it keeps about 2% of the vault in unhedged BTC: limited liability
+    rewards a small gamble there (design.md section 3.4). A result, not an
+    error, and outside what Prop. 2 covers -- the paper has no walk-away."""
     p = replace(BASE, btc_holding_cost=0.0, c_H=0.0)
     sol = solve_lending(p, P, replace(SPEC, hedge_max=1.2))
     c = sol.controls()
-    assert float((c.q - c.H).abs().max()) < 0.005
+    _, _, A = sol.states()
+    ordinary = A >= 0.4
+    assert float((c.q - c.H)[ordinary].abs().max()) < 0.005
 
 
 def test_a_bias_above_the_security_cost_keeps_the_firm_long_but_bounded(biased):

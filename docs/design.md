@@ -286,6 +286,13 @@ to hold BTC beyond what the business needs. It plays the role of the paper's
 carrying cost $\tau$, applied to BTC only, since stablecoins already carry
 theirs.
 
+**Runway.** The firm keeps at least a year of operating costs (a parameter)
+in stablecoins, on top of what it spends on GRC, its BTC and its stake in the
+vault: a liquidity rule a CFO would set. Selling BTC is otherwise free and
+instant in the model, so without the rule stablecoins buy nothing; the rule
+guarantees costs can be paid without selling BTC after a crash. It does not by
+itself limit how much of the rest of its equity the firm keeps in BTC.
+
 **Capital is decided by three controls:** how much equity to keep (the
 dividend or new equity), how to split it between stablecoins and BTC, and how
 much of the BTC to hedge against a fall. Only part of the BTC is hedged; the
@@ -337,6 +344,11 @@ rate $r$, so hedged BTC earns about $r$. The hedge covers
 only the firm's own BTC, $H_t \le q_t$; fee income's BTC exposure is not
 hedged during the period, and reaches the hedge once the fees join the firm's
 equity.
+
+**Limited liability and small gambles.** Near walk-away, shareholders keep
+the upside of a risky position and can walk away from the downside, so the
+firm may keep some unhedged BTC even with no bias. The paper has no walk-away
+and so no such effect; here it is reported as a result, not tuned away.
 
 ### 3.5 State
 
@@ -933,6 +945,12 @@ are today's.
   paid nothing out: holding a fairly priced asset inside the firm cost
   nothing. The paper's answer is a carrying cost $\tau$; here it is the real
   cost of securing a large BTC holding, applied to BTC only.
+- **A runway rule:** at least a year of operating costs is held in
+  stablecoins. With a bias on BTC the firm otherwise kept almost all its
+  equity in BTC, and selling BTC to pay costs is frictionless in the model, so
+  stablecoins bought nothing. The rule guarantees liquidity; a cost of selling
+  BTC under stress, or a cap on the BTC share, remain options if the BTC
+  share itself needs limiting.
 - **Operating costs are paid from the firm's own stablecoins,** separate from
   the vault's.
 - **Insurance is a later option** (mechanism D).

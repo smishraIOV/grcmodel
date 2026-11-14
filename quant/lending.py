@@ -94,10 +94,11 @@ def lending_capital_floor(
     """The least equity the firm may hold.
 
     Own funds against the vault and the firm's BTC, hedged or not:
-    K >= k_A A + k_BTC q. Non-negative stablecoins after GRC, BTC and the
-    stake in the vault: K >= g + q + co A. And no negative equity.
+    K >= k_A A + k_BTC q. A runway of operating costs in stablecoins after
+    GRC, BTC and the stake in the vault: K >= g + q + co A + runway opex
+    (design.md section 3.3). And no negative equity.
     """
-    cash = g + q + p.lend_co_invest * A
+    cash = g + q + p.lend_co_invest * A + p.runway * p.opex
     return torch.maximum(torch.maximum(p.k_A * A + p.k_BTC * q, cash), torch.zeros_like(A))
 
 

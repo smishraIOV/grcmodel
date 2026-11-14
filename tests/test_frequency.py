@@ -37,6 +37,7 @@ def test_quarters_add_back_up_to_the_year():
     assert (1 + q.outside_rate) ** n == pytest.approx(1 + p.outside_rate, rel=1e-14)
     assert n * replace(p, btc_bias=0.04).per_period().btc_bias == pytest.approx(0.04, rel=1e-14)
     assert n * q.lend_loss == pytest.approx(p.lend_loss, rel=1e-14)
+    assert q.runway * q.opex == pytest.approx(p.runway * p.opex, rel=1e-14)
     assert n * q.lend_vol**2 == pytest.approx(p.lend_vol**2, rel=1e-14)
 
 

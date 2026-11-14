@@ -284,11 +284,19 @@ def test_weights_sum_to_one_and_respond_to_grc():
 
 
 def test_capital_floor_takes_the_tightest_constraint():
-    p = replace(BASE, k_A=0.02, k_BTC=0.1, lend_co_invest=0.05)
+    p = replace(BASE, k_A=0.02, k_BTC=0.1, lend_co_invest=0.05, runway=0.0)
     assert float(lending_capital_floor(p, t(1.0), t(0.0), t(0.0))) == pytest.approx(0.05)    # stake
     assert float(lending_capital_floor(p, t(1.0), t(0.01), t(0.2))) == pytest.approx(0.26)   # cash
     p = replace(p, lend_co_invest=0.0)
     assert float(lending_capital_floor(p, t(1.0), t(0.0), t(0.01))) == pytest.approx(0.021)   # own funds
+
+
+def test_the_runway_keeps_a_year_of_operating_costs_in_stablecoins():
+    """Whatever the frequency, the reserve is the same: a year of costs."""
+    for n in (1, 4):
+        p = replace(DEFAULTS, periods_per_year=n, k_A=0.0, lend_co_invest=0.0).per_period()
+        floor = float(lending_capital_floor(p, t(1.0), t(0.0), t(0.1)))
+        assert floor == pytest.approx(0.1 + DEFAULTS.runway * DEFAULTS.opex, rel=1e-12)
 
 
 def test_per_direction_quadrature_keeps_the_moments():
