@@ -124,7 +124,7 @@ def capital_floor(
     return torch.maximum(torch.maximum(p.k_A * size, cash), torch.zeros_like(size))
 
 
-def treasury_close(
+def treasury(
     p: Params,
     K: torch.Tensor,
     g: torch.Tensor,
@@ -141,12 +141,25 @@ def treasury_close(
 
     f = r + perp_premium is the market's perp funding rate: longs pay it and
     shorts receive it (design.md section 3.4). A short perp gains when BTC
-    falls and receives f, so hedged BTC earns f less its security cost. Decisions are (...,), R_btc (N,);
-    the result is (..., N).
+    falls and receives f, so hedged BTC earns f less its security cost.
+    Element-wise: the arguments broadcast together.
     """
+    btc = q * (1.0 + R_btc - p.btc_holding_cost) - H * (R_btc - p.r - p.perp_premium) - 0.5 * p.c_H * H * H
+    return ((K - g - q - stake) - p.tau * K - p.opex) + btc
+
+
+def treasury_close(
+    p: Params,
+    K: torch.Tensor,
+    g: torch.Tensor,
+    q: torch.Tensor,
+    H: torch.Tensor,
+    stake: torch.Tensor,
+    R_btc: torch.Tensor,
+) -> torch.Tensor:
+    """`treasury` over every scenario: decisions are (...,), R_btc (N,); the
+    result is (..., N)."""
     def col(x):
         return x.unsqueeze(-1)
 
-    btc = (col(q) * (1.0 + R_btc - p.btc_holding_cost) - col(H) * (R_btc - p.r - p.perp_premium)
-           - 0.5 * p.c_H * col(H) * col(H))
-    return col((K - g - q - stake) - p.tau * K - p.opex) + btc
+    return treasury(p, col(K), col(g), col(q), col(H), col(stake), R_btc)
