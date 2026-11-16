@@ -408,18 +408,26 @@ def illustrative(facts: FirmFacts, base: Params = DEFAULTS) -> FirmProfile:
     )
 
 
-def example_facts() -> FirmFacts:
-    """A made-up firm, for examples and tests: a $100m dollar vault and a
-    $200m BTC vault, with the model's default terms and costs of raising
-    equity (very expensive: 20% all in to raise $5m, 50% to raise $20m)."""
+def example_facts(capacity: float = 10e6) -> FirmFacts:
+    """A made-up firm, for examples and tests. `capacity` is the dollar
+    vault's, and sets the firm's size: by default a $10m dollar vault holding
+    $8m, a $20m BTC vault holding $15m, $2m of equity, and operating costs of
+    $0.4m a year. Every dollar amount is in proportion to it, so the same firm
+    at another size is the same firm to the model (design.md section 4.1).
+
+    The terms are the model's defaults, and so are the costs of raising
+    equity (very expensive: 20% all in to raise 5% of the dollar vault's
+    capacity, 50% to raise 20%).
+    """
+    c = capacity
     return FirmFacts(
-        dollar_vault=80e6, dollar_vault_capacity=100e6, btc_vault=150e6, btc_vault_capacity=200e6,
-        equity=20e6, grc_budget=0.5e6, operating_costs=4e6, payroll_share=0.60, runway_months=12.0,
+        dollar_vault=0.8 * c, dollar_vault_capacity=c, btc_vault=1.5 * c, btc_vault_capacity=2.0 * c,
+        equity=0.2 * c, grc_budget=0.005 * c, operating_costs=0.04 * c, payroll_share=0.60, runway_months=12.0,
         interest_share=0.40, management_fee=0.01, performance_fee=0.15,
         dollar_vault_stake=0.05, btc_vault_stake=0.05, compensation=0.5, own_funds=0.02,
         liquidation_threshold=0.80, liquidation_penalty=0.05, ltv_min=0.30, ltv_max=0.75,
         btc_security_cost=0.015, required_return=0.06,
-        small_raise=RaiseCost(amount=5e6, cost=0.20), large_raise=RaiseCost(amount=20e6, cost=0.50),
+        small_raise=RaiseCost(amount=0.05 * c, cost=0.20), large_raise=RaiseCost(amount=0.20 * c, cost=0.50),
         decisions_per_year=4,
     )
 

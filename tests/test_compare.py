@@ -17,7 +17,7 @@ from quant.readout import read_out
 from quant.stress import Stress, run
 from scripts.whatif import main
 
-MODEL = to_model(illustrative(example_facts()))
+MODEL = to_model(illustrative(example_facts(100e6)))
 A = Policy(
     equity_kept=19e6, grc_spend=0.4e6, own_btc=2e6, hedged=3e6, borrower_rate=0.09, ltv=0.5,
     allocation=(0.3, 0.5, 0.2, 0.0),
@@ -85,5 +85,5 @@ def test_the_script_compares_when_given_a_second_policy(capsys):
     main(["--ltv", "0.5", "--b-ltv", "0.7", "--b-sleeve", "0.2", "--years", "1", "--paths", "300"])
     printed = capsys.readouterr().out
     assert "The two policies" in printed and "first" in printed and "second" in printed
-    main(["--b-equity-kept", "1e6"])
+    main(["--b-equity-kept", "1e5"])
     assert "The second policy cannot be run" in capsys.readouterr().out

@@ -238,6 +238,12 @@ const money = (x, digits) => {
   const m = x / 1e6, d = digits ?? (Math.abs(m) >= 100 ? 0 : Math.abs(m) >= 10 ? 1 : 2);
   return (m < 0 ? "−$" : "$") + Math.abs(m).toFixed(d) + "m";
 };
+// For an axis: as many decimals as the gap between its ticks needs, and no more.
+function axisMoney(values) {
+  const step = values.length > 1 ? Math.abs(values[1] - values[0]) : Math.abs(values[0] ?? 1e6);
+  const digits = step >= 1e6 ? 0 : step >= 1e5 ? 1 : 2;
+  return v => money(v, digits);
+}
 const pct = (x, d = 1) => (x < 0 ? "−" : "") + Math.abs(100 * x).toFixed(d) + "%";
 const signed = (text, x) => (x > 0 ? "+" : "") + text;
 const PERIOD = {1: "year", 2: "half-year", 4: "quarter", 12: "month"};
@@ -513,7 +519,9 @@ function fan(container, years, rows, format, label, other) {
   const all = rows.flat().concat(other ? other.map(r => r[2]) : []).filter(Number.isFinite);
   const lo = Math.min(0, ...all), hi = Math.max(...all) * 1.04 || 1;
   const x = scale(years[0], years.at(-1), f.x0, f.x1), y = scale(lo, hi, f.y0, f.y1);
-  axes(f, x, y, ticks(years[0], years.at(-1), 6).filter(Number.isInteger), ticks(lo, hi, 4), v => `${v}y`, format);
+  const marks = ticks(lo, hi, 4), inDollars = format === "money";
+  if (inDollars) format = v => money(v);
+  axes(f, x, y, ticks(years[0], years.at(-1), 6).filter(Number.isInteger), marks, v => `${v}y`, inDollars ? axisMoney(marks) : format);
   const ok = rows.map((r, i) => [i, r]).filter(([, r]) => r.every(Number.isFinite));
   const band = (a, b, opacity) => f.svg.append(svgEl("path", {
     d: path(ok.map(([i, r]) => [x(years[i]), y(r[b])])) + "L" + path(ok.slice().reverse().map(([i, r]) => [x(years[i]), y(r[a])])).slice(1) + "Z",
@@ -569,9 +577,10 @@ function stressBars(container, results, needed) {
   const values = results.map(r => r.equity);
   const lo = Math.min(0, ...values), hi = Math.max(needed, ...values) * 1.05;
   const x = scale(lo, hi, f.x0, f.x1);
-  for (const v of ticks(lo, hi, 6)) {
+  const marks = ticks(lo, hi, 6), onAxis = axisMoney(marks);
+  for (const v of marks) {
     f.svg.append(svgEl("line", {x1: x(v), x2: x(v), y1: f.y1, y2: f.y0, stroke: css("grid"), "stroke-width": 1}));
-    f.svg.append(svgEl("text", {x: x(v), y: f.y0 + 17, "text-anchor": "middle"}, money(v, 0)));
+    f.svg.append(svgEl("text", {x: x(v), y: f.y0 + 17, "text-anchor": "middle"}, onAxis(v)));
   }
   results.forEach((r, i) => {
     const cy = f.y1 + rowH * (i + 0.5), short = r.shortfall > 0;
@@ -698,12 +707,12 @@ function render(answer) {
   $("#paths-sub").textContent = `${paths.paths.toLocaleString()} random paths under a simple rule: above the capital it needs plus ` +
     `${money(paths.rule.equity_buffer)} the firm pays the rest out; below what it needs it raises equity; needing more than ` +
     `${money(paths.rule.largest_raise)} at once, it fails.`;
-  fan($("#equity-chart"), paths.year, paths.equity, v => money(v, 0), "The firm's equity over the years", other?.equity);
+  fan($("#equity-chart"), paths.year, paths.equity, "money", "The firm's equity over the years", other?.equity);
   const chance = [{name: "has raised equity", short: "raised", color: css("series-1"), values: paths.chance_raised},
                   {name: "has failed", short: "failed", color: css("series-2"), values: paths.chance_failed}];
   lines($("#chance-chart"), paths.year, chance, v => pct(v, 0), "The chance of having raised equity and of having failed");
-  fan($("#dollar-chart"), paths.year, paths.dollar_vault, v => money(v, 0), "The dollar vault's size over the years", other?.dollar_vault);
-  fan($("#btcvault-chart"), paths.year, paths.btc_vault, v => money(v, 0), "The BTC vault's size over the years", other?.btc_vault);
+  fan($("#dollar-chart"), paths.year, paths.dollar_vault, "money", "The dollar vault's size over the years", other?.dollar_vault);
+  fan($("#btcvault-chart"), paths.year, paths.btc_vault, "money", "The BTC vault's size over the years", other?.btc_vault);
   fan($("#btc-chart"), paths.year, paths.btc_price, v => v.toFixed(1), "BTC's price over the years");
   const n = paths.decisions_per_year, marks = paths.year.map((_, i) => i).filter(i => i % n === 0 || i === end);
   rowsTable($("#paths-table"), ["year", "equity: 5%", "median", "95%", "has failed", "has raised", "paid out", "raised", "cost of raising", "dollar vault", "BTC vault", "BTC's price"],

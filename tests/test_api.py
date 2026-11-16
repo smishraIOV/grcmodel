@@ -79,11 +79,11 @@ def test_a_firm_alone_is_enough():
 
 
 def test_statements_are_given_as_named_values():
-    request = {"firm": FIRM, "risk": {"grc_on_incidents": {"spend": 1e6, "reduction": 0.2, "limit": 0.5}},
-               "market": {"loan_demand": {"loans": 50e6, "rate": 0.08}, "strategy_yield": [0.02, 0.05, 0.0]}}
+    request = {"firm": FIRM, "risk": {"grc_on_incidents": {"spend": 1e5, "reduction": 0.2, "limit": 0.5}},
+               "market": {"loan_demand": {"loans": 5e6, "rate": 0.08}, "strategy_yield": [0.02, 0.05, 0.0]}}
     got = respond(request)
     assert got["ok"]
-    assert got["inputs"]["risk"]["grc_on_incidents"] == {"spend": 1e6, "reduction": 0.2, "limit": 0.5}
+    assert got["inputs"]["risk"]["grc_on_incidents"] == {"spend": 1e5, "reduction": 0.2, "limit": 0.5}
     assert got["inputs"]["market"]["strategy_yield"] == [0.02, 0.05, 0.0]
     assert got["read_out"]["loans"] < respond({"firm": FIRM})["read_out"]["loans"]
 
@@ -109,7 +109,7 @@ def test_the_sensitivity_and_a_stress_of_the_user_s_own():
     ({"firm": {**FIRM, "dollar_vault_capacity": 0}}, "cannot be used"),
     ({"firm": {**FIRM, "interest_share": 1.5}}, "interest share must be between 0 and 1"),
     ({"firm": FIRM, "market": {"loan_demand": {"loans": 1}}}, "'market.loan_demand' needs 'rate'"),
-    ({"firm": FIRM, "policy": {"equity_kept": 5e6}}, "policy: equity kept, .* the runway needs"),
+    ({"firm": FIRM, "policy": {"equity_kept": 5e5}}, "policy: equity kept, .* the runway needs"),
     ({"firm": FIRM, "second_policy": {"ltv": 0.9}}, "second_policy: the loan-to-value of 90%"),
     ({"firm": FIRM, "want": ["compare"]}, "'compare' needs a 'second_policy'"),
     ({"firm": FIRM, "want": ["paths"]}, "'paths' needs 'years'"),
@@ -145,7 +145,7 @@ def test_the_command(tmp_path, capsys, monkeypatch):
     path = tmp_path / "request.json"
     path.write_text(json.dumps({"firm": FIRM, "want": ["read_out"]}))
     assert main([str(path)]) == 0
-    assert json.loads(capsys.readouterr().out)["read_out"]["equity"] == 20e6
+    assert json.loads(capsys.readouterr().out)["read_out"]["equity"] == 2e6
     monkeypatch.setattr("sys.stdin", io.StringIO('{"firm": {}}'))
     assert main(["-"]) == 1
     assert "'firm' needs" in capsys.readouterr().out
@@ -163,7 +163,7 @@ def test_a_saved_firm_is_a_request_and_comes_back_as_it_was(tmp_path, capsys):
                      "second_policy": {"ltv": 0.7}})["inputs"]
     saved = {"name": "Acme Vaults", "firm": first["firm"], "market": first["market"], "risk": first["risk"],
              "policy": first["policy"], "second_policy": first["second_policy"],
-             "want": ["read_out", "stress", "paths"], "years": 3, "equity_buffer": 6e6}
+             "want": ["read_out", "stress", "paths"], "years": 3, "equity_buffer": 6e5}
     again = carried(respond({**saved, "want": ["read_out"]}))
     assert again["ok"] and again["name"] == "Acme Vaults"
     for part in ("firm", "market", "risk", "policy", "second_policy"):
@@ -172,5 +172,5 @@ def test_a_saved_firm_is_a_request_and_comes_back_as_it_was(tmp_path, capsys):
     path.write_text(json.dumps(saved))
     assert main([str(path)]) == 0
     answer = json.loads(capsys.readouterr().out)
-    assert answer["name"] == "Acme Vaults" and answer["paths"]["years"] == 3 and answer["paths"]["rule"]["equity_buffer"] == 6e6
+    assert answer["name"] == "Acme Vaults" and answer["paths"]["years"] == 3 and answer["paths"]["rule"]["equity_buffer"] == 6e5
     assert respond({"firm": FIRM})["name"] == "" and respond({"firm": FIRM, "name": 7})["problems"] == ["'name' must be text"]

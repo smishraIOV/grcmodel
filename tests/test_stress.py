@@ -18,7 +18,7 @@ from scripts.whatif import main
 from tests.test_integrated import by_hand
 
 P = REFERENCE
-FACTS = example_facts()
+FACTS = example_facts(100e6)
 POLICY = Policy(
     equity_kept=19e6, grc_spend=0.4e6, own_btc=2e6, hedged=3e6, borrower_rate=0.09, ltv=0.6,
     allocation=(0.2, 0.4, 0.1, 0.3),

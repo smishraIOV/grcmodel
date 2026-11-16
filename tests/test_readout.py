@@ -13,7 +13,7 @@ from quant.profile import FirmState, ModelFirm, example_facts, illustrative, to_
 from quant.readout import ReadOut, read_out, report, scenario_set
 from scripts.whatif import main
 
-FACTS = example_facts()
+FACTS = example_facts(100e6)
 MODEL = to_model(illustrative(FACTS))
 POLICY = Policy(
     equity_kept=19e6, grc_spend=0.4e6, own_btc=2e6, hedged=3e6, borrower_rate=0.09, ltv=0.6,
@@ -167,5 +167,5 @@ def test_the_report_and_the_script(base, capsys):
     main(["--periods", "1", "--rate", "0.08", "--sleeve", "0.2"])
     printed = capsys.readouterr().out
     assert "How the next year may end" in printed and "illustrative" in printed
-    main(["--equity-kept", "1e7"])
+    main(["--equity-kept", "1e6"])
     assert "This policy cannot be run" in capsys.readouterr().out

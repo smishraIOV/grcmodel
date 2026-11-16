@@ -21,7 +21,7 @@ from quant.sensitivity import (
 )
 from scripts.whatif import main
 
-PROFILE = illustrative(example_facts())
+PROFILE = illustrative(example_facts(100e6))
 MODEL = to_model(PROFILE)
 POLICY = Policy(
     equity_kept=19e6, grc_spend=0.4e6, own_btc=2e6, hedged=3e6, borrower_rate=0.09, ltv=0.6,

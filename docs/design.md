@@ -1315,6 +1315,11 @@ are today's.
   needed today; everything else in the rule held fixed; "what shareholders
   take" counting equity at the end at book, not at a solved value; 20,000
   paths by default.
+- **The made-up example firm is ten times smaller** (2026-11-15, at the
+  user's request): a $10m dollar vault, a $20m BTC vault, $2m of equity.
+  Every dollar amount of the example is in proportion to the dollar vault's
+  capacity, so to the model it is the same firm (§4.1); only the scale
+  changed. It is what the dashboard and the command line start from.
 - **BTC's price moves in its logarithm** (2026-11-14, raised and agreed
   before the change; §3.4 gives the reason). The price could reach zero, and
   did so far too often; found when the BTC vault's yield with a lending

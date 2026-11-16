@@ -62,7 +62,7 @@ def test_the_inputs_are_served(address):
 
 def test_a_request_is_answered_as_the_interface_answers_it(address):
     status, answer = post(address + "/api", json.dumps({"firm": plain(example_facts())}).encode())
-    assert status == 200 and answer["ok"] and answer["read_out"]["equity"] == 20e6
+    assert status == 200 and answer["ok"] and answer["read_out"]["equity"] == 2e6
     status, answer = post(address + "/api", json.dumps({"firm": {}}).encode())
     assert status == 200 and answer["ok"] is False and any("'firm' needs" in line for line in answer["problems"])
 

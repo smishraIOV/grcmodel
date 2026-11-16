@@ -20,7 +20,7 @@ from quant.policy import Policy, check, position, problems, starting_policy, to_
 from quant.profile import example_facts, illustrative, to_model
 
 P = REFERENCE
-FACTS = example_facts()          # $100m dollar vault at $80m, $200m BTC vault at $150m, $20m of equity
+FACTS = example_facts(100e6)          # $100m dollar vault at $80m, $200m BTC vault at $150m, $20m of equity
 MODEL = to_model(illustrative(FACTS))
 # Stakes are 5% of 80m + 5% of 150m = 11.5m; the runway is 12 months of 4m.
 SOUND = Policy(

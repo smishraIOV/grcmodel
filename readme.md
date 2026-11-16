@@ -12,7 +12,7 @@ One of the main end goals is a model that works as a **decision-support tool for
 ## Academic Roots
 
 Even a risk-neutral firm will pay to manage risks,
-if losing money in bad states stops it from funding good investments. Risk management is then not insurance or reducing volatlity — it is protection of the firm's capacity to keep investing and operating.
+if losing money in bad states stops it from funding good investments. Risk management is then not insurance or reducing volatility — it is protection of the firm's capacity to keep investing and operating.
 
 1. Risk Management: Coordinating Corporate Investment and Financing Policies (1993).
 Kenneth A. Froot, David S. Scharfstein, Jeremy C. Stein, [The Journal of Finance, 48(5)](https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1993.tb05123.x).
@@ -22,103 +22,94 @@ Kenneth A. Froot, David S. Scharfstein, Jeremy C. Stein, [The Journal of Finance
 Financial institutions should evaluate investments not just by their market risk, but also by how they interact with the institution's existing portfolio of **unhedgeable risks** and its scarce capital. The paper develops an integrated framework linking risk management, capital allocation, and investment decisions, including a comparison with RAROC. 
 
 
-## Model
-The firm is modeled as a **financial intermediary on crypto rails**: it takes
-deposits into vaults, and invests them. It runs the tokenized
-infrastructure those assets live on. 
+## The firm
 
-It carries the usual set of banking risks 
-— credit is the largest single loss channel at 62% of expected loss.
+The model is of a **crypto-native financial firm** that runs two vaults and
+earns fees on both:
 
-A second family the rails add: 
-- operational incidents at 16%
-- cliff events such as a drained bridge at 13%
-- and compliance penalties at 9% 
+- **a dollar lending vault**: investors deposit stablecoins, which the firm
+  lends to borrowers who post BTC worth more than the loan. If BTC falls far
+  enough the collateral is sold to repay the loan; a sudden crash can leave
+  bad debt;
+- **a BTC yield vault**: investors deposit BTC and want more BTC back. The
+  firm spreads it over strategies, and may swap part of it into stablecoins
+  and lend those to the same borrowers, hedged so that it still tracks BTC.
 
-A firm of this shape has to budget a GRC program against both.
+Each period the firm decides how much equity to keep, how much BTC to hold
+and hedge, what to charge borrowers and how much to lend against their
+collateral, how to allocate the BTC vault, and how much to spend on GRC. GRC
+spend builds protection that makes incidents rarer and losses smaller, and
+wears off if it is not kept up. Following Froot and Stein, raising new equity
+is expensive, so a loss costs the firm more than its face value.
 
-Todo: no units, ok. But these numbers seem out of place at the moment.
-> **Note on units.** Money here has no specific denomination. Opening capital is 16 and
-> every other quantity — a book of 77, a program costing 0.95, a franchise of
-> 26.93 — is in the same arbitrary currency. Only ratios carry meaning, which is
-> deliberate: the cost functions are built so the answer cannot depend on
-> whether the firm is denominated in dollars or cents. Bare numbers are not
-> percentages.
+## What is here
 
-## Status
+**A what-if tool for a CFO or risk manager.** Enter a firm and what it does;
+see what could happen to it. It does not search for the best policy.
 
-The model is a dynamic version of Froot & Stein (1998): a crypto-native firm
-that decides risk management, capital budgeting and capital structure together,
-every quarter, with no end date. GRC is a fourth lever alongside those three.
-The design, and the reasoning behind each choice, is in
-[`docs/design.md`](docs/design.md); a plain-language account is in
-[`docs/overview.md`](docs/overview.md).
+- **A dashboard** on your own machine: a form for the firm, its assumptions
+  and its policy, with what each input means beside it; results as you type.
+  A firm can be saved to a file and loaded back.
+- **One period ahead**: what the firm expects to earn and spend, what its two
+  groups of investors expect, and how likely the period is to end badly.
+- **Stress scenarios**: what a fall in BTC, a crash or an incident would
+  leave the firm, its vaults and their investors.
+- **Several years ahead**: the firm carried forward on thousands of simulated
+  paths — how often it has to raise equity, how often it fails, what it pays
+  out.
+- **Two policies side by side**: what changing from one to the other buys
+  and costs.
+- **What a figure leans on**: how much each result depends on the assumptions
+  nobody can observe, such as how well GRC works.
+- **An interface for other programs**: the same, as JSON in and JSON out.
 
-Built so far:
+**Research: the best policy.** Solvers that work out what the firm *should*
+do in every situation, by policy iteration on a grid, for each vault alone
+and coarsely for the two together. They are less mature than the tool, and a
+learner to solve the full problem finely is planned, not built.
 
-- **the stablecoin lending vault** (`quant/lending.py`, solved on a 3-D grid by
-  `quant/research/lending_solver.py`): loans over-collateralized by BTC at a rate and
-  loan-to-value the firm sets, liquidation at the threshold, bad debt from BTC
-  crashes;
-- **the BTC yield vault** (`quant/btc_vault.py`, solved on a 3-D grid by
-  `quant/research/btc_vault_solver.py`): strategies, fees in BTC, flows;
-- **the integrated firm** (`quant/integrated.py`): both vaults joined through
-  one loan book, funded by the dollar vault and by a hedged lending sleeve of
-  the BTC vault; solved on a coarse 4-D grid (`quant/research/integrated_solver.py`)
-  and read out as a CFO would want it (`quant/research/integrated_results.py`,
-  `scripts/research/integrated.py`);
-- **a firm profile in real units** (`quant/profile.py`): a firm entered in
-  dollars and yearly rates, mapped onto the model and back — the first step of
-  the what-if tool;
-- **the policy as an input** (`quant/policy.py`) and **the one-period
-  read-out** (`quant/readout.py`): what the next period holds for that firm
-  under the user's own decisions, with no search for the best ones;
-- **stress scenarios** (`quant/stress.py`): what a BTC fall, a crash or an
-  incident would leave the firm, its vaults and their investors;
-- **multi-year paths** (`quant/paths.py`): the firm carried forward on random
-  paths under a simple rule — how often it must raise equity, how often it
-  fails, what it pays out;
-- **two policies side by side** (`quant/compare.py`): what changing from one
-  to the other buys and costs, on the same scenarios;
-- **assumptions as dials** (`quant/sensitivity.py`): how much each figure
-  leans on what cannot be observed, such as how well GRC works;
-- **an interface for other programs** (`quant/api.py`): a request in as JSON,
-  results out as JSON;
-- **a dashboard** (`uv run python -m scripts.dashboard`): one page on your own
-  machine to enter a firm and a policy and see all of the above;
-- the firm's own books, shared by both (`quant/firm.py`): stablecoins and BTC,
-  a hedge with perps, a runway of operating costs; BTC at the market's
-  expectation plus the firm's bias, with occasional crashes;
-- fat-tailed shocks with tail dependence and heavy-tailed jump losses,
-  integrated by deterministic quadrature rather than Monte Carlo
-  (`quant/quadrature.py`);
-- an infinite-horizon solver on an N-dimensional grid (`quant/research/grid.py`), checked
-  against the paper's own results in a two-period version (`quant/research/twoperiod.py`).
+**The assumptions are illustrative, not calibrated.** The mechanics are
+tested; the levels mean little yet. Calibration is the next stage.
 
-An earlier single dollar vault and a bank form were built and removed.
+## Running it
 
-The what-if tool for a CFO or risk manager is built (`docs/plan-tool.md`): the
-user's own firm and policy in, what can happen out, with a dashboard. Its
-assumptions are illustrative. **Next: calibration**
-(`docs/plan-calibration.md`). The search for the best policy (grid solvers,
-and an actor-critic learner still to build) continues as research
-(`docs/plan-integrated.md`).
+Everything goes through [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-uv run python -m scripts.dashboard   # the what-if dashboard, in a browser on this machine
-uv run pytest               # seconds; add `-m slow` for the solver tests (about five minutes)
-uv run python -m scripts.whatif --ltv 0.7 --stress --years 5   # an example firm: one quarter ahead, under stress, and over five years
-uv run python -m scripts.whatif --ltv 0.5 --b-ltv 0.7 --b-sleeve 0.2 --years 5   # two policies side by side
-uv run python -m scripts.whatif --b-grc-spend 1.5e6 --years 5 --sensitivity     # what more GRC spend is worth, and what that leans on
-uv run python -m scripts.api --example > request.json && uv run python -m scripts.api request.json   # the same, as JSON
-uv run python -m scripts.research.integrated --periods 1
+uv run python -m scripts.dashboard     # the dashboard, in a browser on this machine
+uv run pytest                          # the tests: under a minute
+uv run pytest -m slow                  # the solvers' tests: several minutes
 ```
 
-The previous model (finite horizon, hazard-based failure) is preserved on the
+The same tool from the command line, on a made-up example firm:
+
+```bash
+uv run python -m scripts.whatif --ltv 0.7 --stress --years 5                     # one quarter ahead, under stress, over five years
+uv run python -m scripts.whatif --ltv 0.5 --b-ltv 0.7 --b-sleeve 0.2 --years 5   # two policies side by side
+uv run python -m scripts.whatif --b-grc-spend 1.5e5 --years 5 --sensitivity      # what more GRC spend is worth, and what that leans on
+uv run python -m scripts.api --example > request.json                            # an example request, as JSON
+uv run python -m scripts.api request.json                                        # and its answer
+```
+
+## Where things are
+
+- `quant/` — the model. The accounting for one period (`lending.py`,
+  `btc_vault.py`, `integrated.py`, `firm.py`), and the tool built on it
+  (`profile.py`, `policy.py`, `readout.py`, `stress.py`, `paths.py`,
+  `compare.py`, `sensitivity.py`, `guide.py`, `api.py`).
+- `quant/research/` — the solvers.
+- `dashboard/` and `scripts/` — the dashboard's page, and the commands above.
+- `tests/` — one file per module.
+- `docs/` — below.
+
+An earlier model (finite horizon, failure as an assumed rate) is kept on the
 `legacy` branch.
 
 ## See also
 
 * [`docs/overview.md`](docs/overview.md) — the project in plain language, for non-technical readers
-* [`docs/design.md`](docs/design.md) — the model being built, and why
+* [`docs/design.md`](docs/design.md) — the model, and the reason for each choice
+* [`docs/plan-calibration.md`](docs/plan-calibration.md) — the current plan
+* [`docs/plan-tool.md`](docs/plan-tool.md) — how the what-if tool was planned and built
+* [`docs/plan-integrated.md`](docs/plan-integrated.md) — the research on the best policy: what is built and what is open
 * [`docs/framework.md`](docs/framework.md) — GRC pillars, risk taxonomy, operating environment, and the firm-value definition this project uses

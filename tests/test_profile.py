@@ -29,7 +29,7 @@ from quant.profile import (
 )
 
 P = REFERENCE
-FACTS = example_facts()
+FACTS = example_facts(100e6)
 PROFILE = illustrative(FACTS)
 
 
@@ -220,6 +220,20 @@ def test_a_zero_reduction_means_grc_does_nothing():
 def test_a_profile_the_model_cannot_represent_is_refused_with_a_reason(change, message):
     with pytest.raises(ValueError, match=message):
         to_model(replace(PROFILE, **change))
+
+
+def test_the_example_firm_is_the_same_firm_at_any_size():
+    """Its dollar amounts are in proportion to the dollar vault's capacity, so
+    the model's parameters and state do not depend on the size chosen. By
+    default it is a $10m dollar vault."""
+    small, large = example_facts(), example_facts(100e6)
+    assert (small.dollar_vault_capacity, small.dollar_vault, small.btc_vault_capacity, small.btc_vault) == (10e6, 8e6, 20e6, 15e6)
+    assert (small.equity, small.operating_costs, small.grc_budget) == (2e6, 0.4e6, 0.05e6)
+    assert (small.small_raise.amount, small.large_raise.amount) == (0.5e6, 2e6)
+    a, b = to_model(illustrative(small)), to_model(illustrative(large))
+    assert b.scale == 10 * a.scale
+    assert_close(asdict(a.params), asdict(b.params))
+    assert_close(a.state, b.state)
 
 
 def test_the_example_is_valid_and_lists_its_inputs():

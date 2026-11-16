@@ -38,7 +38,7 @@ to be merged back.
 Everything goes through `uv`:
 
 ```bash
-uv run pytest                          # the core and the quick research checks: seconds
+uv run pytest                          # the core and the quick research checks: under a minute
 uv run pytest -m slow                  # the solver tests: about five minutes
 uv run pytest -m "slow or not slow"    # everything
 ```

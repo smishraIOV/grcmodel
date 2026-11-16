@@ -147,7 +147,7 @@ FIRM = {
         "Raising equity: a small raise",
         "What it costs to raise a modest amount of new equity in normal times, everything included: fees, the "
         "discount to new investors, management's time.",
-        "Give an amount and its all-in cost. The example: raising $5m costs 20% of it.",
+        "Give an amount and its all-in cost. The example: raising $0.5m costs 20% of it.",
     ),
     "small_raise.amount": ("Amount raised", "The size of the small raise.", "In millions of dollars. Smaller than the large raise."),
     "small_raise.cost": (
@@ -159,7 +159,7 @@ FIRM = {
         "Raising equity: a large raise",
         "The same for a large raise. Large raises cost more per dollar; the model draws a straight line through the "
         "two answers.",
-        "Give an amount and its all-in cost. The example: raising $20m costs 50% of it.",
+        "Give an amount and its all-in cost. The example: raising $2m costs 50% of it.",
     ),
     "large_raise.amount": ("Amount raised", "The size of the large raise.", "In millions of dollars. Larger than the small raise."),
     "large_raise.cost": (
@@ -229,7 +229,7 @@ MARKET = {
         "Loan demand",
         "How much borrowers would take at a given borrower rate, at the reference loan-to-value. Demand falls in a "
         "straight line as the rate rises.",
-        "Give an amount and the rate it holds at. The example: about $72m at 10%.",
+        "Give an amount and the rate it holds at. The example: about $7.2m at 10%.",
     ),
     "loan_demand.loans": ("Loans placeable", "The loans the firm could place at the rate below.", "In millions of dollars."),
     "loan_demand.rate": (

@@ -6,10 +6,10 @@ policies side by side; or how much any of it leans on what cannot be observed
     uv run python -m scripts.whatif
     uv run python -m scripts.whatif --periods 1 --rate 0.08 --ltv 0.6 --sleeve 0.2
     uv run python -m scripts.whatif --ltv 0.7 --stress
-    uv run python -m scripts.whatif --years 5 --buffer 8e6
+    uv run python -m scripts.whatif --years 5 --buffer 8e5
     uv run python -m scripts.whatif --ltv 0.5 --b-ltv 0.7 --b-sleeve 0.2 --years 5
     uv run python -m scripts.whatif --sensitivity
-    uv run python -m scripts.whatif --b-grc-spend 1.5e6 --years 5 --sensitivity
+    uv run python -m scripts.whatif --b-grc-spend 1.5e5 --years 5 --sensitivity
 
 For now the firm is the made-up example of `quant.profile.example_facts`,
 with illustrative assumptions, and the policy is `quant.policy.starting_policy`
